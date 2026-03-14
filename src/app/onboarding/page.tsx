@@ -1,445 +1,640 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-const TOTAL_STEPS = 4;
+// ---- Types ----
+
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  displayText: string | null;
+  toolNotifications?: ToolNotification[];
+}
+
+interface ToolNotification {
+  type: string;
+  message: string;
+  data?: Record<string, unknown>;
+}
+
+// ---- Step Indicator ----
 
 function StepIndicator({ current }: { current: number }) {
+  const labels = ["Strava", "Interview", "Finish"];
   return (
-    <div className="flex items-center gap-2 mb-8">
-      {Array.from({ length: TOTAL_STEPS }, (_, i) => (
-        <div
-          key={i}
-          className={`h-1.5 flex-1 rounded-full transition-colors ${
-            i < current ? "bg-green-500" : i === current ? "bg-green-400" : "bg-gray-700"
-          }`}
-        />
+    <div className="flex items-center gap-2 mb-6">
+      {labels.map((label, i) => (
+        <div key={i} className="flex-1">
+          <div
+            className={`h-1.5 rounded-full transition-colors ${
+              i < current
+                ? "bg-green-500"
+                : i === current
+                ? "bg-green-400"
+                : "bg-gray-700"
+            }`}
+          />
+          <p
+            className={`text-xs mt-1 text-center ${
+              i <= current ? "text-gray-300" : "text-gray-600"
+            }`}
+          >
+            {label}
+          </p>
+        </div>
       ))}
     </div>
   );
 }
 
-function StepProfile({
-  name,
-  setName,
-  yearsRunning,
-  setYearsRunning,
-  weeklyKm,
-  setWeeklyKm,
-  onNext,
+// ---- Step 1: Strava Connect ----
+
+function StepStrava({
+  onSkip,
+  onConnected,
+  stravaConnected,
 }: {
-  name: string;
-  setName: (v: string) => void;
-  yearsRunning: string;
-  setYearsRunning: (v: string) => void;
-  weeklyKm: string;
-  setWeeklyKm: (v: string) => void;
-  onNext: () => void;
+  onSkip: () => void;
+  onConnected: () => void;
+  stravaConnected: boolean;
 }) {
-  const canContinue = name.trim().length > 0;
-
-  return (
-    <div>
-      <h2 className="text-xl font-semibold mb-1">About you</h2>
-      <p className="text-gray-400 text-sm mb-6">
-        Tell Brocco a bit about your running background.
-      </p>
-
-      <div className="space-y-4">
-        <div>
-          <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-1">
-            Name
-          </label>
-          <input
-            id="name"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="What should Brocco call you?"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="years" className="block text-sm font-medium text-gray-300 mb-1">
-            Years running
-          </label>
-          <input
-            id="years"
-            type="number"
-            min="0"
-            max="60"
-            value={yearsRunning}
-            onChange={(e) => setYearsRunning(e.target.value)}
-            className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="0"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="km" className="block text-sm font-medium text-gray-300 mb-1">
-            Typical weekly km
-          </label>
-          <input
-            id="km"
-            type="number"
-            min="0"
-            max="300"
-            step="5"
-            value={weeklyKm}
-            onChange={(e) => setWeeklyKm(e.target.value)}
-            className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="e.g. 30"
-          />
-        </div>
-      </div>
-
-      <button
-        onClick={onNext}
-        disabled={!canContinue}
-        className="w-full mt-6 py-2.5 px-4 bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
-      >
-        Continue
-      </button>
-    </div>
-  );
-}
-
-function StepGoal({
-  goalRace,
-  setGoalRace,
-  goalRaceDate,
-  setGoalRaceDate,
-  goalTime,
-  setGoalTime,
-  onNext,
-  onBack,
-}: {
-  goalRace: string;
-  setGoalRace: (v: string) => void;
-  goalRaceDate: string;
-  setGoalRaceDate: (v: string) => void;
-  goalTime: string;
-  setGoalTime: (v: string) => void;
-  onNext: () => void;
-  onBack: () => void;
-}) {
-  return (
-    <div>
-      <h2 className="text-xl font-semibold mb-1">Your goal</h2>
-      <p className="text-gray-400 text-sm mb-6">
-        Training for a race? Tell Brocco your target. Skip if you&apos;re just running for fun.
-      </p>
-
-      <div className="space-y-4">
-        <div>
-          <label htmlFor="race" className="block text-sm font-medium text-gray-300 mb-1">
-            Race name
-          </label>
-          <input
-            id="race"
-            type="text"
-            value={goalRace}
-            onChange={(e) => setGoalRace(e.target.value)}
-            className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="e.g. Barcelona Marathon 2026"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="date" className="block text-sm font-medium text-gray-300 mb-1">
-            Race date
-          </label>
-          <input
-            id="date"
-            type="date"
-            value={goalRaceDate}
-            onChange={(e) => setGoalRaceDate(e.target.value)}
-            className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-          />
-        </div>
-
-        <div>
-          <label htmlFor="time" className="block text-sm font-medium text-gray-300 mb-1">
-            Target time
-          </label>
-          <input
-            id="time"
-            type="text"
-            value={goalTime}
-            onChange={(e) => setGoalTime(e.target.value)}
-            className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="e.g. Sub 3:30"
-          />
-        </div>
-      </div>
-
-      <div className="flex gap-3 mt-6">
-        <button
-          onClick={onBack}
-          className="flex-1 py-2.5 px-4 border border-gray-700 text-gray-300 hover:bg-gray-800 font-medium rounded-lg transition-colors"
-        >
-          Back
-        </button>
-        <button
-          onClick={onNext}
-          className="flex-1 py-2.5 px-4 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors"
-        >
-          {goalRace ? "Continue" : "Skip"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function StepTimezone({
-  timezone,
-  setTimezone,
-  onNext,
-  onBack,
-}: {
-  timezone: string;
-  setTimezone: (v: string) => void;
-  onNext: () => void;
-  onBack: () => void;
-}) {
-  const [detected, setDetected] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [showDepthChoice, setShowDepthChoice] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
 
   useEffect(() => {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    setDetected(tz);
-    if (!timezone) {
-      setTimezone(tz);
+    if (stravaConnected) {
+      setShowDepthChoice(true);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stravaConnected]);
 
-  return (
-    <div>
-      <h2 className="text-xl font-semibold mb-1">Timezone</h2>
-      <p className="text-gray-400 text-sm mb-6">
-        Brocco needs this to match your activities to your training plan correctly.
-      </p>
+  async function handleSync(depth: "quick" | "full") {
+    setSyncing(true);
+    setSyncResult(depth === "full" ? "Crunching your data... 🥦" : "Syncing recent activities...");
 
-      <div className="space-y-4">
-        {detected && (
-          <div className="text-sm text-gray-400">
-            Detected: <span className="text-gray-200">{detected}</span>
+    try {
+      const res = await fetch("/api/onboarding/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ depth }),
+      });
+
+      if (!res.ok) throw new Error("Sync failed");
+
+      const data = await res.json();
+      setSyncResult(`Imported ${data.activitiesImported} activities!`);
+
+      // Short delay so user sees the result
+      setTimeout(() => onConnected(), 1500);
+    } catch {
+      setSyncResult("Sync failed. You can try again later in Settings.");
+      setTimeout(() => onConnected(), 2000);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  if (syncing || (syncResult && !showDepthChoice)) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-5xl mb-6">🥦</p>
+        <p className="text-gray-200 text-lg">{syncResult}</p>
+        {syncing && (
+          <div className="mt-4 flex justify-center">
+            <span className="inline-block w-6 h-6 border-2 border-green-400/30 border-t-green-400 rounded-full animate-spin" />
           </div>
         )}
+      </div>
+    );
+  }
 
-        <div>
-          <label htmlFor="tz" className="block text-sm font-medium text-gray-300 mb-1">
-            Your timezone
-          </label>
-          <input
-            id="tz"
-            type="text"
-            value={timezone}
-            onChange={(e) => setTimezone(e.target.value)}
-            className="w-full px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-            placeholder="Europe/Berlin"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            IANA format, e.g. Europe/Berlin, America/New_York
+  if (showDepthChoice) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-5xl mb-4">🥦</p>
+        <h2 className="text-xl font-semibold mb-2">Strava connected!</h2>
+        <p className="text-gray-400 text-sm mb-8">
+          How far back should I look?
+        </p>
+
+        <div className="space-y-3">
+          <button
+            onClick={() => handleSync("quick")}
+            className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors"
+          >
+            Quick sync (last 6 months)
+          </button>
+          <button
+            onClick={() => handleSync("full")}
+            className="w-full py-3 px-4 border border-gray-700 text-gray-300 hover:bg-gray-800 font-medium rounded-lg transition-colors"
+          >
+            Full history (everything)
+          </button>
+          <p className="text-xs text-gray-500">
+            Full history takes longer but gives me deeper context about your training.
           </p>
         </div>
       </div>
+    );
+  }
 
-      <div className="flex gap-3 mt-6">
-        <button
-          onClick={onBack}
-          className="flex-1 py-2.5 px-4 border border-gray-700 text-gray-300 hover:bg-gray-800 font-medium rounded-lg transition-colors"
-        >
-          Back
-        </button>
-        <button
-          onClick={onNext}
-          disabled={!timezone}
-          className="flex-1 py-2.5 px-4 bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
-        >
-          Continue
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function StepWelcome({
-  name,
-  onFinish,
-  loading,
-  onBack,
-}: {
-  name: string;
-  onFinish: () => void;
-  loading: boolean;
-  onBack: () => void;
-}) {
   return (
-    <div className="text-center">
-      <p className="text-7xl mb-4">&#x1F966;</p>
-      <h2 className="text-2xl font-bold mb-2">
-        Hey {name || "there"}, I&apos;m Brocco.
-      </h2>
-      <p className="text-gray-400 mb-6 leading-relaxed">
-        Your personal running coach. I&apos;m a broccoli with an exercise physiology degree and
-        an aggressively healthy outlook on life. I&apos;ll track your training, adjust your plan,
-        and keep you on course for your goals.
+    <div className="text-center py-8">
+      <p className="text-5xl mb-4">🥦</p>
+      <h2 className="text-2xl font-bold mb-2">Hey, I&apos;m Brocco.</h2>
+      <p className="text-gray-400 mb-2 leading-relaxed">
+        Your running coach. Before we get to know each other, want to connect
+        your Strava? It&apos;ll save us a lot of questions.
       </p>
       <p className="text-gray-500 text-sm mb-8">
-        You can connect Strava later in Settings to auto-import your activities.
-        For now, let&apos;s get started.
+        I&apos;ll use your activity data to give you better, more specific
+        coaching from day one.
       </p>
 
-      <div className="flex gap-3">
-        <button
-          onClick={onBack}
-          className="flex-1 py-2.5 px-4 border border-gray-700 text-gray-300 hover:bg-gray-800 font-medium rounded-lg transition-colors"
+      <div className="space-y-3">
+        <a
+          href="/api/strava/auth?returnTo=/onboarding"
+          className="block w-full py-3 px-4 bg-[#FC4C02] hover:bg-[#e04400] text-white font-semibold rounded-lg transition-colors text-center"
         >
-          Back
-        </button>
+          Connect with Strava
+        </a>
         <button
-          onClick={onFinish}
-          disabled={loading}
-          className="flex-1 py-3 px-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors"
+          onClick={onSkip}
+          className="w-full py-3 px-4 text-gray-400 hover:text-gray-200 font-medium transition-colors"
         >
-          {loading ? "Setting up..." : "Let's go"}
+          Skip for now
         </button>
       </div>
     </div>
   );
 }
 
+// ---- Step 2: Brocco Interview (Chat) ----
+
+function ToolNotificationBadge({ notification }: { notification: ToolNotification }) {
+  const icons: Record<string, string> = {
+    profile_updated: "✅",
+    health_logged: "❤️",
+    activity_logged: "🏃",
+  };
+
+  return (
+    <div className="flex items-center gap-2 bg-green-900/30 border border-green-800/40 rounded-lg px-3 py-1.5 text-xs text-green-300 mb-1">
+      <span>{icons[notification.type] || "✅"}</span>
+      <span>{notification.message}</span>
+    </div>
+  );
+}
+
+function MessageBubble({ msg }: { msg: Message }) {
+  if (msg.role === "user") {
+    return (
+      <div className="flex justify-end mb-3">
+        <div className="max-w-[85%] bg-gray-800 rounded-2xl rounded-br-md px-4 py-2.5">
+          <p className="text-sm text-gray-100 whitespace-pre-wrap">
+            {msg.displayText}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex gap-2 mb-3 items-start">
+      <div className="w-7 h-7 rounded-full bg-green-900/50 flex items-center justify-center flex-shrink-0 mt-0.5 text-sm">
+        🥦
+      </div>
+      <div className="max-w-[85%] space-y-1">
+        {msg.toolNotifications?.map((n, i) => (
+          <ToolNotificationBadge key={i} notification={n} />
+        ))}
+        {msg.displayText && (
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5">
+            <p className="text-sm text-gray-200 whitespace-pre-wrap">
+              {msg.displayText}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StepInterview({
+  onComplete,
+}: {
+  onComplete: () => void;
+}) {
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
+  const [streamingNotifications, setStreamingNotifications] = useState<ToolNotification[]>([]);
+  const [interviewStarted, setInterviewStarted] = useState(false);
+  const [messageCount, setMessageCount] = useState(0);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, streamingText, scrollToBottom]);
+
+  // Create onboarding session and send first message on mount
+  useEffect(() => {
+    async function init() {
+      try {
+        const res = await fetch("/api/onboarding/session", { method: "POST" });
+        const data = await res.json();
+        setSessionId(data.id);
+
+        // Check if session already has messages (resuming)
+        const sessRes = await fetch(`/api/chat/sessions/${data.id}`);
+        if (sessRes.ok) {
+          const sessData = await sessRes.json();
+          if (sessData.messages && sessData.messages.length > 0) {
+            setMessages(
+              sessData.messages.map((m: { id: string; role: string; displayText: string | null }) => ({
+                id: m.id,
+                role: m.role as "user" | "assistant",
+                displayText: m.displayText,
+              }))
+            );
+            setMessageCount(sessData.messages.length);
+            setInterviewStarted(true);
+            return;
+          }
+        }
+
+        // Start the interview by sending an initial message
+        setInterviewStarted(true);
+        await sendMessage(data.id, "Hi! I just signed up.");
+      } catch (err) {
+        console.error("Failed to init onboarding session:", err);
+      }
+    }
+    init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function sendMessage(sid: string, text: string) {
+    setSending(true);
+    setStreamingText("");
+    setStreamingNotifications([]);
+
+    // Add user message optimistically
+    const userMsg: Message = {
+      id: `temp-${Date.now()}`,
+      role: "user",
+      displayText: text,
+    };
+    setMessages((prev) => [...prev, userMsg]);
+    setMessageCount((c) => c + 1);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, sessionId: sid }),
+      });
+
+      if (!res.ok) throw new Error("Chat request failed");
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No stream");
+
+      const decoder = new TextDecoder();
+      let accumulated = "";
+      const notifications: ToolNotification[] = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n");
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.text) {
+              accumulated += data.text;
+              setStreamingText(accumulated);
+            }
+            if (data.tool) {
+              notifications.push(data.tool as ToolNotification);
+              setStreamingNotifications([...notifications]);
+            }
+            if (data.done) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `assistant-${Date.now()}`,
+                  role: "assistant",
+                  displayText: accumulated || null,
+                  toolNotifications:
+                    notifications.length > 0 ? notifications : undefined,
+                },
+              ]);
+              setMessageCount((c) => c + 1);
+              setStreamingText("");
+              setStreamingNotifications([]);
+            }
+            if (data.error) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `error-${Date.now()}`,
+                  role: "assistant",
+                  displayText: `Error: ${data.error}`,
+                },
+              ]);
+              setStreamingText("");
+              setStreamingNotifications([]);
+            }
+          } catch {
+            // Skip malformed JSON
+          }
+        }
+      }
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `error-${Date.now()}`,
+          role: "assistant",
+          displayText: `Something went wrong. ${err instanceof Error ? err.message : ""}`,
+        },
+      ]);
+      setStreamingText("");
+      setStreamingNotifications([]);
+    } finally {
+      setSending(false);
+      inputRef.current?.focus();
+    }
+  }
+
+  async function handleSend() {
+    const text = input.trim();
+    if (!text || sending || !sessionId) return;
+    setInput("");
+    await sendMessage(sessionId, text);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  }
+
+  // Show "Finish onboarding" button after enough back-and-forth (at least 6 messages = 3 exchanges)
+  const showFinishButton = messageCount >= 6 && !sending && !streamingText;
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Chat header */}
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-800 flex-shrink-0">
+        <span className="text-xl">🥦</span>
+        <span className="font-semibold">Brocco</span>
+        <span className="text-xs text-gray-500 ml-1">Getting to know you</span>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {!interviewStarted && (
+          <div className="text-center py-12">
+            <span className="inline-block w-6 h-6 border-2 border-green-400/30 border-t-green-400 rounded-full animate-spin" />
+            <p className="text-gray-500 text-sm mt-3">Starting interview...</p>
+          </div>
+        )}
+
+        {messages.map((msg) => (
+          <MessageBubble key={msg.id} msg={msg} />
+        ))}
+
+        {/* Streaming indicator */}
+        {(streamingText || streamingNotifications.length > 0) && (
+          <div className="flex gap-2 mb-3 items-start">
+            <div className="w-7 h-7 rounded-full bg-green-900/50 flex items-center justify-center flex-shrink-0 mt-0.5 text-sm">
+              🥦
+            </div>
+            <div className="max-w-[85%] space-y-1">
+              {streamingNotifications.map((n, i) => (
+                <ToolNotificationBadge key={i} notification={n} />
+              ))}
+              {streamingText && (
+                <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5">
+                  <p className="text-sm text-gray-200 whitespace-pre-wrap">
+                    {streamingText}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Sending indicator (dots) */}
+        {sending && !streamingText && !streamingNotifications.length && (
+          <div className="flex gap-2 mb-3 items-start">
+            <div className="w-7 h-7 rounded-full bg-green-900/50 flex items-center justify-center flex-shrink-0 mt-0.5 text-sm">
+              🥦
+            </div>
+            <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5">
+              <span className="inline-flex gap-1">
+                <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+              </span>
+            </div>
+          </div>
+        )}
+
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Finish button */}
+      {showFinishButton && (
+        <div className="px-4 py-2 flex-shrink-0">
+          <button
+            onClick={onComplete}
+            className="w-full py-2.5 px-4 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors text-sm"
+          >
+            Finish onboarding →
+          </button>
+        </div>
+      )}
+
+      {/* Input */}
+      <div className="px-4 py-3 border-t border-gray-800 flex-shrink-0">
+        <div className="flex gap-2 items-end">
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Talk to Brocco..."
+            rows={1}
+            className="flex-1 px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none text-sm"
+            style={{ maxHeight: "120px" }}
+            disabled={sending}
+          />
+          <button
+            onClick={handleSend}
+            disabled={sending || !input.trim()}
+            className="px-4 py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl transition-colors flex-shrink-0"
+          >
+            {sending ? (
+              <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 12h14M12 5l7 7-7 7"
+                />
+              </svg>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Main Page ----
+
 export default function OnboardingPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen flex items-center justify-center">
+          <span className="inline-block w-6 h-6 border-2 border-green-400/30 border-t-green-400 rounded-full animate-spin" />
+        </main>
+      }
+    >
+      <OnboardingContent />
+    </Suspense>
+  );
+}
+
+function OnboardingContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [step, setStep] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [stravaConnected, setStravaConnected] = useState(false);
+  const [finishing, setFinishing] = useState(false);
 
-  // Profile
-  const [name, setName] = useState("");
-  const [yearsRunning, setYearsRunning] = useState("");
-  const [weeklyKm, setWeeklyKm] = useState("");
-
-  // Goal
-  const [goalRace, setGoalRace] = useState("");
-  const [goalRaceDate, setGoalRaceDate] = useState("");
-  const [goalTime, setGoalTime] = useState("");
-
-  // Timezone
-  const [timezone, setTimezone] = useState("");
-
-  // Load existing profile data on mount
+  // Check onboarding status and Strava connection on mount
   useEffect(() => {
     async function load() {
       try {
         const res = await fetch("/api/onboarding");
         if (!res.ok) return;
         const data = await res.json();
+
         if (data.onboardingCompleted) {
           router.push("/");
           return;
         }
-        if (data.name) setName(data.name);
-        if (data.yearsRunning != null) setYearsRunning(String(data.yearsRunning));
-        if (data.weeklyKmBaseline != null) setWeeklyKm(String(data.weeklyKmBaseline));
-        if (data.goalRace) setGoalRace(data.goalRace);
-        if (data.goalRaceDate) setGoalRaceDate(data.goalRaceDate.split("T")[0]);
-        if (data.goalTime) setGoalTime(data.goalTime);
-        if (data.timezone) setTimezone(data.timezone);
+
+        setStravaConnected(data.stravaConnected);
+
+        // If returning from Strava OAuth
+        const stravaParam = searchParams.get("strava");
+        if (stravaParam === "connected") {
+          setStravaConnected(true);
+          // Stay on step 0 to show depth choice
+        }
       } catch {
-        // ignore — defaults are fine
+        // ignore
+      } finally {
+        setLoading(false);
       }
     }
     load();
-  }, [router]);
+  }, [router, searchParams]);
 
   async function handleFinish() {
-    setLoading(true);
-    setError("");
-
+    setFinishing(true);
     try {
-      const res = await fetch("/api/onboarding", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          yearsRunning: yearsRunning ? parseInt(yearsRunning) : null,
-          weeklyKmBaseline: weeklyKm ? parseFloat(weeklyKm) : null,
-          goalRace: goalRace.trim() || null,
-          goalRaceDate: goalRaceDate || null,
-          goalTime: goalTime.trim() || null,
-          timezone,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Something went wrong");
-        return;
-      }
-
+      await fetch("/api/onboarding", { method: "POST" });
       router.push("/");
       router.refresh();
     } catch {
-      setError("Something went wrong");
-    } finally {
-      setLoading(false);
+      setFinishing(false);
     }
   }
 
+  if (loading) {
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <span className="inline-block w-6 h-6 border-2 border-green-400/30 border-t-green-400 rounded-full animate-spin" />
+      </main>
+    );
+  }
+
+  // Step 2 (interview) takes full height
+  if (step === 1) {
+    return (
+      <main className="h-screen flex flex-col max-w-2xl mx-auto">
+        <div className="px-4 pt-4 flex-shrink-0">
+          <StepIndicator current={1} />
+        </div>
+        <div className="flex-1 flex flex-col min-h-0">
+          <StepInterview onComplete={() => setStep(2)} />
+        </div>
+      </main>
+    );
+  }
+
+  // Step 3: Finish
+  if (step === 2) {
+    return (
+      <main className="min-h-screen flex items-center justify-center px-4">
+        <div className="w-full max-w-sm py-12 text-center">
+          <StepIndicator current={2} />
+          <p className="text-5xl mb-4">🥦</p>
+          <h2 className="text-2xl font-bold mb-2">You&apos;re all set!</h2>
+          <p className="text-gray-400 mb-8 leading-relaxed">
+            Brocco knows you now. Head to the dashboard to see your training overview,
+            or chat with Brocco anytime for coaching advice.
+          </p>
+          <button
+            onClick={handleFinish}
+            disabled={finishing}
+            className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold rounded-lg transition-colors"
+          >
+            {finishing ? "Setting up..." : "Go to dashboard"}
+          </button>
+        </div>
+      </main>
+    );
+  }
+
+  // Step 0: Strava connect
   return (
     <main className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm py-12">
-        <StepIndicator current={step} />
-
-        {error && (
-          <p className="text-red-400 text-sm mb-4 text-center">{error}</p>
-        )}
-
-        {step === 0 && (
-          <StepProfile
-            name={name}
-            setName={setName}
-            yearsRunning={yearsRunning}
-            setYearsRunning={setYearsRunning}
-            weeklyKm={weeklyKm}
-            setWeeklyKm={setWeeklyKm}
-            onNext={() => setStep(1)}
-          />
-        )}
-
-        {step === 1 && (
-          <StepGoal
-            goalRace={goalRace}
-            setGoalRace={setGoalRace}
-            goalRaceDate={goalRaceDate}
-            setGoalRaceDate={setGoalRaceDate}
-            goalTime={goalTime}
-            setGoalTime={setGoalTime}
-            onNext={() => setStep(2)}
-            onBack={() => setStep(0)}
-          />
-        )}
-
-        {step === 2 && (
-          <StepTimezone
-            timezone={timezone}
-            setTimezone={setTimezone}
-            onNext={() => setStep(3)}
-            onBack={() => setStep(1)}
-          />
-        )}
-
-        {step === 3 && (
-          <StepWelcome
-            name={name}
-            onFinish={handleFinish}
-            loading={loading}
-            onBack={() => setStep(2)}
-          />
-        )}
+        <StepIndicator current={0} />
+        <StepStrava
+          stravaConnected={stravaConnected}
+          onSkip={() => setStep(1)}
+          onConnected={() => setStep(1)}
+        />
       </div>
     </main>
   );

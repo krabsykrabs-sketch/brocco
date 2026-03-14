@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/session";
 
@@ -20,49 +20,24 @@ export async function GET() {
 
     return NextResponse.json({
       name: user?.name || "",
-      yearsRunning: profile?.yearsRunning,
-      weeklyKmBaseline: profile?.weeklyKmBaseline ? Number(profile.weeklyKmBaseline) : null,
-      goalRace: profile?.goalRace,
-      goalRaceDate: profile?.goalRaceDate,
-      goalTime: profile?.goalTime,
-      timezone: profile?.timezone || "Europe/Berlin",
       onboardingCompleted: profile?.onboardingCompleted || false,
+      stravaConnected: !!profile?.stravaAccessToken,
     });
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     const session = await getSession();
     if (!session.userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { name, yearsRunning, weeklyKmBaseline, goalRace, goalRaceDate, goalTime, timezone } = body;
-
-    // Update user name
-    if (name) {
-      await prisma.user.update({
-        where: { id: session.userId },
-        data: { name },
-      });
-    }
-
-    // Update profile
     await prisma.userProfile.update({
       where: { userId: session.userId },
-      data: {
-        yearsRunning: yearsRunning != null ? Number(yearsRunning) : undefined,
-        weeklyKmBaseline: weeklyKmBaseline != null ? Number(weeklyKmBaseline) : undefined,
-        goalRace: goalRace || undefined,
-        goalRaceDate: goalRaceDate ? new Date(goalRaceDate) : undefined,
-        goalTime: goalTime || undefined,
-        timezone: timezone || undefined,
-        onboardingCompleted: true,
-      },
+      data: { onboardingCompleted: true },
     });
 
     return NextResponse.json({ ok: true });

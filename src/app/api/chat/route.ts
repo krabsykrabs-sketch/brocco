@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
-import { buildCoachContext, buildSystemPrompt } from "@/lib/coach-context";
+import { buildCoachContext, buildSystemPrompt, buildOnboardingSystemPrompt } from "@/lib/coach-context";
 import { toolDefinitions, handleToolCall } from "@/lib/tools";
 
 const anthropic = new Anthropic();
@@ -43,13 +43,22 @@ export async function POST(request: NextRequest) {
     ? "claude-opus-4-6"
     : "claude-sonnet-4-20250514";
 
-  // Build context
-  const context = await buildCoachContext(session.userId);
+  // Build context and system prompt
   const user = await prisma.user.findUnique({
     where: { id: session.userId },
     select: { name: true },
   });
-  const systemPrompt = buildSystemPrompt(user?.name || "Runner", context);
+  const userName = user?.name || "Runner";
+
+  let systemPrompt: string;
+  let context: string;
+  if (chatSession.type === "onboarding") {
+    systemPrompt = await buildOnboardingSystemPrompt(session.userId, userName);
+    context = ""; // onboarding prompt builds its own context
+  } else {
+    context = await buildCoachContext(session.userId);
+    systemPrompt = buildSystemPrompt(userName, context);
+  }
 
   // Store user message
   await prisma.chatMessage.create({
@@ -253,7 +262,7 @@ async function runWithTools(
     if (response.stop_reason === "end_turn") {
       // Execute one final turn to let Claude respond to tool results, then stop
       const finalResponse = await anthropic.messages.create({
-        model: "claude-sonnet-4-20250514",
+        model,
         max_tokens: 4096,
         system: systemPrompt,
         messages: currentMessages,
