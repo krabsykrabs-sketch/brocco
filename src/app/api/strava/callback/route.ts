@@ -18,7 +18,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/settings?strava=denied", process.env.BASE_URL));
   }
 
-  if (!code || state !== session.userId) {
+  // Verify OAuth state against the cookie set during auth initiation
+  const savedState = request.cookies.get("strava_oauth_state")?.value;
+  if (!code || !state || !savedState || state !== savedState) {
+    console.error("Strava OAuth state mismatch", { state, savedState: savedState ? "[present]" : "[missing]" });
     return NextResponse.redirect(new URL("/settings?strava=error", process.env.BASE_URL));
   }
 
@@ -42,9 +45,14 @@ export async function GET(request: NextRequest) {
       console.error(`Backfill error for user ${session.userId}:`, err);
     });
 
-    return NextResponse.redirect(new URL("/settings?strava=connected", process.env.BASE_URL));
+    // Clear the OAuth state cookie and redirect to settings
+    const response = NextResponse.redirect(new URL("/settings?strava=connected", process.env.BASE_URL));
+    response.cookies.delete("strava_oauth_state");
+    return response;
   } catch (err) {
     console.error("Strava callback error:", err);
-    return NextResponse.redirect(new URL("/settings?strava=error", process.env.BASE_URL));
+    const response = NextResponse.redirect(new URL("/settings?strava=error", process.env.BASE_URL));
+    response.cookies.delete("strava_oauth_state");
+    return response;
   }
 }
