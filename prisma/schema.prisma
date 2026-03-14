@@ -1,0 +1,313 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  name         String
+  passwordHash String   @map("password_hash")
+  inviteCode   String?  @map("invite_code")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  profile           UserProfile?
+  plans             Plan[]
+  activities        Activity[]
+  healthLog         HealthLog[]
+  chatSessions      ChatSession[]
+  pendingChanges    PendingPlanChange[]
+  adjustmentLog     PlanAdjustmentLog[]
+  createdInvites    InviteCode[]        @relation("CreatedInvites")
+  usedInvite        InviteCode?         @relation("UsedInvite")
+
+  @@map("users")
+}
+
+model UserProfile {
+  id                    String   @id @default(uuid()) @db.Uuid
+  userId                String   @unique @map("user_id") @db.Uuid
+  goalRace              String?  @map("goal_race")
+  goalRaceDate          DateTime? @map("goal_race_date") @db.Date
+  goalTime              String?  @map("goal_time")
+  yearsRunning          Int?     @map("years_running")
+  weeklyKmBaseline      Decimal? @map("weekly_km_baseline") @db.Decimal(6, 2)
+  timezone              String   @default("Europe/Berlin")
+  stravaAccessToken     String?  @map("strava_access_token")
+  stravaRefreshToken    String?  @map("strava_refresh_token")
+  stravaAthleteId       String?  @map("strava_athlete_id")
+  stravaTokenExpiresAt  DateTime? @map("strava_token_expires_at")
+  aiPreferences         Json?    @map("ai_preferences") @db.JsonB
+  onboardingCompleted   Boolean  @default(false) @map("onboarding_completed")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+model Plan {
+  id        String     @id @default(uuid()) @db.Uuid
+  userId    String     @map("user_id") @db.Uuid
+  name      String
+  goal      String?
+  raceDate  DateTime?  @map("race_date") @db.Date
+  startDate DateTime   @map("start_date") @db.Date
+  endDate   DateTime   @map("end_date") @db.Date
+  status    PlanStatus @default(draft)
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phases   PlanPhase[]
+  workouts PlannedWorkout[]
+
+  @@map("plans")
+}
+
+enum PlanStatus {
+  active
+  completed
+  draft
+}
+
+model PlanPhase {
+  id          String  @id @default(uuid()) @db.Uuid
+  planId      String  @map("plan_id") @db.Uuid
+  name        String
+  orderIndex  Int     @map("order_index")
+  description String?
+  startWeek   Int     @map("start_week")
+  endWeek     Int     @map("end_week")
+
+  plan     Plan             @relation(fields: [planId], references: [id], onDelete: Cascade)
+  workouts PlannedWorkout[]
+
+  @@map("plan_phases")
+}
+
+model PlannedWorkout {
+  id                String        @id @default(uuid()) @db.Uuid
+  planId            String        @map("plan_id") @db.Uuid
+  phaseId           String?       @map("phase_id") @db.Uuid
+  weekNumber        Int           @map("week_number")
+  date              DateTime      @db.Date
+  title             String
+  workoutType       WorkoutType   @map("workout_type")
+  activityType      ActivityKind  @default(run) @map("activity_type")
+  targetDistanceKm  Decimal?      @map("target_distance_km") @db.Decimal(6, 2)
+  targetPace        String?       @map("target_pace")
+  targetPaceSecs    Int?          @map("target_pace_secs")
+  targetDurationMin Int?          @map("target_duration_min")
+  description       String?
+  status            WorkoutStatus @default(planned)
+  matchedActivityId String?       @map("matched_activity_id") @db.Uuid
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  plan            Plan               @relation(fields: [planId], references: [id], onDelete: Cascade)
+  phase           PlanPhase?         @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+  matchedActivity Activity?          @relation(fields: [matchedActivityId], references: [id], onDelete: SetNull)
+  adjustmentLog   PlanAdjustmentLog[]
+
+  @@map("planned_workouts")
+}
+
+enum WorkoutType {
+  easy
+  long
+  tempo
+  interval
+  race_pace
+  recovery
+  rest
+  cross_training
+  race
+  strength
+}
+
+enum ActivityKind {
+  run
+  cycle
+  swim
+  hike
+  strength
+  rest
+  other
+}
+
+enum WorkoutStatus {
+  planned
+  completed
+  skipped
+  modified
+}
+
+model Activity {
+  id                String        @id @default(uuid()) @db.Uuid
+  userId            String        @map("user_id") @db.Uuid
+  source            ActivitySource
+  stravaId          String?       @unique @map("strava_id")
+  name              String
+  activityType      String        @map("activity_type")
+  distanceKm        Decimal?      @map("distance_km") @db.Decimal(8, 2)
+  durationMin       Decimal       @map("duration_min") @db.Decimal(8, 2)
+  movingTimeMin     Decimal?      @map("moving_time_min") @db.Decimal(8, 2)
+  avgPacePerKm      String?       @map("avg_pace_per_km")
+  paceSecondsPerKm  Int?          @map("pace_seconds_per_km")
+  avgHeartRate      Int?          @map("avg_heart_rate")
+  maxHeartRate      Int?          @map("max_heart_rate")
+  elevationGainM    Decimal?      @map("elevation_gain_m") @db.Decimal(8, 2)
+  avgCadence        Int?          @map("avg_cadence")
+  calories          Int?
+  perceivedEffort   Int?          @map("perceived_effort")
+  startDate         DateTime      @map("start_date")
+  startDateLocal    DateTime      @map("start_date_local")
+  splits            Json?         @db.JsonB
+  rawData           Json?         @map("raw_data") @db.JsonB
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plannedWorkouts PlannedWorkout[]
+
+  @@map("activities")
+}
+
+enum ActivitySource {
+  strava
+  manual
+}
+
+model HealthLog {
+  id          String          @id @default(uuid()) @db.Uuid
+  userId      String          @map("user_id") @db.Uuid
+  date        DateTime        @db.Date
+  entryType   HealthEntryType @map("entry_type")
+  description String
+  bodyPart    String?         @map("body_part")
+  severity    Severity?
+  status      HealthStatus?   @default(active)
+  value       Decimal?        @db.Decimal(10, 2)
+  createdAt   DateTime        @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("health_log")
+}
+
+enum HealthEntryType {
+  injury
+  note
+  race_result
+  weight
+}
+
+enum Severity {
+  minor
+  moderate
+  severe
+}
+
+enum HealthStatus {
+  active
+  resolved
+}
+
+model ChatSession {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  title     String   @default("New conversation")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id              String      @id @default(uuid()) @db.Uuid
+  sessionId       String      @map("session_id") @db.Uuid
+  role            MessageRole
+  content         Json        @db.JsonB
+  displayText     String?     @map("display_text")
+  contextSnapshot Json?       @map("context_snapshot") @db.JsonB
+  createdAt       DateTime    @default(now()) @map("created_at")
+
+  session        ChatSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  pendingChanges PendingPlanChange[]
+
+  @@map("chat_messages")
+}
+
+enum MessageRole {
+  user
+  assistant
+  tool_result
+}
+
+model PendingPlanChange {
+  id              String              @id @default(uuid()) @db.Uuid
+  userId          String              @map("user_id") @db.Uuid
+  chatMessageId   String              @map("chat_message_id") @db.Uuid
+  changes         Json                @db.JsonB
+  summary         String
+  status          PendingChangeStatus @default(pending)
+  createdAt       DateTime            @default(now()) @map("created_at")
+  resolvedAt      DateTime?           @map("resolved_at")
+  expiresAt       DateTime            @map("expires_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chatMessage ChatMessage @relation(fields: [chatMessageId], references: [id], onDelete: Cascade)
+
+  @@map("pending_plan_changes")
+}
+
+enum PendingChangeStatus {
+  pending
+  approved
+  rejected
+  expired
+}
+
+model PlanAdjustmentLog {
+  id          String         @id @default(uuid()) @db.Uuid
+  userId      String         @map("user_id") @db.Uuid
+  workoutId   String         @map("workout_id") @db.Uuid
+  action      AdjustAction
+  beforeState Json           @map("before_state") @db.JsonB
+  afterState  Json           @map("after_state") @db.JsonB
+  reason      String
+  summary     String
+  undone      Boolean        @default(false)
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workout PlannedWorkout @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+
+  @@map("plan_adjustment_log")
+}
+
+enum AdjustAction {
+  update_targets
+  swap_rest_day
+  mark_covered
+}
+
+model InviteCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  code      String    @unique
+  createdBy String    @map("created_by") @db.Uuid
+  usedBy    String?   @unique @map("used_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at")
+  usedAt    DateTime? @map("used_at")
+
+  creator  User  @relation("CreatedInvites", fields: [createdBy], references: [id], onDelete: Cascade)
+  redeemer User? @relation("UsedInvite", fields: [usedBy], references: [id], onDelete: SetNull)
+
+  @@map("invite_codes")
+}
