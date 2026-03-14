@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
         select: {
           id: true,
           source: true,
+          stravaId: true,
           name: true,
           activityType: true,
           distanceKm: true,

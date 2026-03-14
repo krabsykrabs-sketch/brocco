@@ -6,6 +6,7 @@ import Link from "next/link";
 interface Activity {
   id: string;
   source: string;
+  stravaId: string | null;
   name: string;
   activityType: string;
   distanceKm: string | null;
@@ -47,6 +48,16 @@ function ActivityCard({ activity }: { activity: Activity }) {
             )}
           </p>
         </div>
+        {activity.stravaId && (
+          <a
+            href={`https://www.strava.com/activities/${activity.stravaId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-[#FC4C02] hover:underline flex-shrink-0"
+          >
+            View on Strava
+          </a>
+        )}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">

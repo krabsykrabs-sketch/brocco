@@ -190,6 +190,7 @@ export async function GET() {
       take: 10,
       select: {
         id: true,
+        stravaId: true,
         name: true,
         activityType: true,
         distanceKm: true,
@@ -227,6 +228,7 @@ export async function GET() {
       weeklyData,
       recentActivities: recentActivities.map((a) => ({
         id: a.id,
+        stravaId: a.stravaId,
         name: a.name,
         activityType: a.activityType,
         distanceKm: a.distanceKm ? Number(a.distanceKm) : null,

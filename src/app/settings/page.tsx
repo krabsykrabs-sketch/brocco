@@ -159,9 +159,6 @@ function SettingsContent() {
               {syncResult && (
                 <p className="text-sm text-gray-400">{syncResult}</p>
               )}
-              <p className="text-xs text-gray-600">
-                Powered by Strava
-              </p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -170,9 +167,12 @@ function SettingsContent() {
               </p>
               <a
                 href="/api/strava/auth"
-                className="inline-block px-4 py-2 text-sm bg-[#FC4C02] hover:bg-[#e04400] text-white font-medium rounded-lg transition-colors"
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#FC4C02] hover:bg-[#e04400] text-white font-semibold rounded-md transition-colors text-sm"
               >
-                Connect Strava
+                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden="true">
+                  <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
+                </svg>
+                Connect with Strava
               </a>
             </div>
           )}

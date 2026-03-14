@@ -58,6 +58,7 @@ interface WeeklyBar {
 
 interface ActivityItem {
   id: string;
+  stravaId: string | null;
   name: string;
   activityType: string;
   distanceKm: number | null;
@@ -358,6 +359,16 @@ function ActivityFeed({ activities }: { activities: ActivityItem[] }) {
                 <p className="text-xs text-gray-500">{a.avgHeartRate} bpm</p>
               )}
             </div>
+            {a.stravaId && (
+              <a
+                href={`https://www.strava.com/activities/${a.stravaId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-[#FC4C02] hover:underline"
+              >
+                View on Strava
+              </a>
+            )}
           </div>
         </div>
       ))}
