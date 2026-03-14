@@ -10,6 +10,7 @@ interface Message {
   role: "user" | "assistant";
   displayText: string | null;
   toolNotifications?: ToolNotification[];
+  pendingChange?: PendingChange;
 }
 
 interface ToolNotification {
@@ -18,10 +19,16 @@ interface ToolNotification {
   data?: Record<string, unknown>;
 }
 
+interface PendingChange {
+  id: string;
+  summary: string;
+  status: "pending" | "approved" | "rejected" | "expired";
+}
+
 // ---- Step Indicator ----
 
 function StepIndicator({ current }: { current: number }) {
-  const labels = ["Strava", "Interview", "Finish"];
+  const labels = ["Strava", "Quick Intro", "Training Plan", "Done"];
   return (
     <div className="flex items-center gap-2 mb-6">
       {labels.map((label, i) => (
@@ -71,7 +78,11 @@ function StepStrava({
 
   async function handleSync(depth: "quick" | "full") {
     setSyncing(true);
-    setSyncResult(depth === "full" ? "Crunching your data... 🥦" : "Syncing recent activities...");
+    setSyncResult(
+      depth === "full"
+        ? "Crunching your data... 🥦"
+        : "Syncing recent activities..."
+    );
 
     try {
       const res = await fetch("/api/onboarding/sync", {
@@ -84,8 +95,6 @@ function StepStrava({
 
       const data = await res.json();
       setSyncResult(`Imported ${data.activitiesImported} activities!`);
-
-      // Short delay so user sees the result
       setTimeout(() => onConnected(), 1500);
     } catch {
       setSyncResult("Sync failed. You can try again later in Settings.");
@@ -117,7 +126,6 @@ function StepStrava({
         <p className="text-gray-400 text-sm mb-8">
           How far back should I look?
         </p>
-
         <div className="space-y-3">
           <button
             onClick={() => handleSync("quick")}
@@ -132,7 +140,8 @@ function StepStrava({
             Full history (everything)
           </button>
           <p className="text-xs text-gray-500">
-            Full history takes longer but gives me deeper context about your training.
+            Full history takes longer but gives me deeper context about your
+            training.
           </p>
         </div>
       </div>
@@ -151,7 +160,6 @@ function StepStrava({
         I&apos;ll use your activity data to give you better, more specific
         coaching from day one.
       </p>
-
       <div className="space-y-3">
         <a
           href="/api/strava/auth?returnTo=/onboarding"
@@ -170,13 +178,18 @@ function StepStrava({
   );
 }
 
-// ---- Step 2: Brocco Interview (Chat) ----
+// ---- Shared Chat Components ----
 
-function ToolNotificationBadge({ notification }: { notification: ToolNotification }) {
+function ToolNotificationBadge({
+  notification,
+}: {
+  notification: ToolNotification;
+}) {
   const icons: Record<string, string> = {
     profile_updated: "✅",
     health_logged: "❤️",
     activity_logged: "🏃",
+    plan_change_proposed: "📋",
   };
 
   return (
@@ -187,7 +200,59 @@ function ToolNotificationBadge({ notification }: { notification: ToolNotificatio
   );
 }
 
-function MessageBubble({ msg }: { msg: Message }) {
+function PendingChangeCard({
+  change,
+  onAction,
+}: {
+  change: PendingChange;
+  onAction: (id: string, action: "approve" | "reject") => void;
+}) {
+  if (change.status !== "pending") {
+    const statusColors: Record<string, string> = {
+      approved: "text-green-400",
+      rejected: "text-red-400",
+      expired: "text-gray-500",
+    };
+    return (
+      <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2">
+        <p className="text-gray-300">{change.summary}</p>
+        <p
+          className={`text-xs mt-1 ${statusColors[change.status] || "text-gray-500"}`}
+        >
+          {change.status.charAt(0).toUpperCase() + change.status.slice(1)}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-gray-800 border border-yellow-700/50 rounded-lg px-3 py-2.5 mb-2">
+      <p className="text-sm text-gray-200 mb-2">{change.summary}</p>
+      <div className="flex gap-2">
+        <button
+          onClick={() => onAction(change.id, "approve")}
+          className="px-3 py-1 text-xs bg-green-700 hover:bg-green-600 text-white rounded-md transition-colors"
+        >
+          Approve
+        </button>
+        <button
+          onClick={() => onAction(change.id, "reject")}
+          className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md transition-colors"
+        >
+          Reject
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MessageBubble({
+  msg,
+  onPlanAction,
+}: {
+  msg: Message;
+  onPlanAction?: (id: string, action: "approve" | "reject") => void;
+}) {
   if (msg.role === "user") {
     return (
       <div className="flex justify-end mb-3">
@@ -216,24 +281,44 @@ function MessageBubble({ msg }: { msg: Message }) {
             </p>
           </div>
         )}
+        {msg.pendingChange && onPlanAction && (
+          <PendingChangeCard change={msg.pendingChange} onAction={onPlanAction} />
+        )}
       </div>
     </div>
   );
 }
 
-function StepInterview({
+// ---- Reusable Chat Interview Component ----
+
+function ChatInterview({
+  sessionType,
+  sessionEndpoint,
+  subtitle,
+  firstMessage,
   onComplete,
+  showCompleteButton,
+  completeButtonLabel,
 }: {
+  sessionType: "onboarding" | "plan_creation";
+  sessionEndpoint: string;
+  subtitle: string;
+  firstMessage: string;
   onComplete: () => void;
+  showCompleteButton: boolean;
+  completeButtonLabel: string;
 }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [streamingText, setStreamingText] = useState("");
-  const [streamingNotifications, setStreamingNotifications] = useState<ToolNotification[]>([]);
+  const [streamingNotifications, setStreamingNotifications] = useState<
+    ToolNotification[]
+  >([]);
   const [interviewStarted, setInterviewStarted] = useState(false);
   const [messageCount, setMessageCount] = useState(0);
+  const [planApproved, setPlanApproved] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -245,25 +330,36 @@ function StepInterview({
     scrollToBottom();
   }, [messages, streamingText, scrollToBottom]);
 
-  // Create onboarding session and send first message on mount
+  // Create session and send first message
   useEffect(() => {
     async function init() {
       try {
-        const res = await fetch("/api/onboarding/session", { method: "POST" });
+        const res = await fetch(sessionEndpoint, { method: "POST" });
         const data = await res.json();
         setSessionId(data.id);
 
-        // Check if session already has messages (resuming)
+        // Check for existing messages (resuming)
         const sessRes = await fetch(`/api/chat/sessions/${data.id}`);
         if (sessRes.ok) {
           const sessData = await sessRes.json();
           if (sessData.messages && sessData.messages.length > 0) {
             setMessages(
-              sessData.messages.map((m: { id: string; role: string; displayText: string | null }) => ({
-                id: m.id,
-                role: m.role as "user" | "assistant",
-                displayText: m.displayText,
-              }))
+              sessData.messages
+                .filter(
+                  (m: { role: string }) =>
+                    m.role === "user" || m.role === "assistant"
+                )
+                .map(
+                  (m: {
+                    id: string;
+                    role: string;
+                    displayText: string | null;
+                  }) => ({
+                    id: m.id,
+                    role: m.role as "user" | "assistant",
+                    displayText: m.displayText,
+                  })
+                )
             );
             setMessageCount(sessData.messages.length);
             setInterviewStarted(true);
@@ -271,23 +367,55 @@ function StepInterview({
           }
         }
 
-        // Start the interview by sending an initial message
         setInterviewStarted(true);
-        await sendMessage(data.id, "Hi! I just signed up.");
+        await sendMessage(data.id, firstMessage);
       } catch (err) {
-        console.error("Failed to init onboarding session:", err);
+        console.error("Failed to init session:", err);
       }
     }
     init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  async function handlePlanAction(
+    changeId: string,
+    action: "approve" | "reject"
+  ) {
+    try {
+      const res = await fetch("/api/plan/changes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: changeId, action }),
+      });
+      if (res.ok) {
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (m.pendingChange?.id === changeId) {
+              return {
+                ...m,
+                pendingChange: {
+                  ...m.pendingChange,
+                  status: action === "approve" ? "approved" : "rejected",
+                },
+              };
+            }
+            return m;
+          })
+        );
+        if (action === "approve") {
+          setPlanApproved(true);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   async function sendMessage(sid: string, text: string) {
     setSending(true);
     setStreamingText("");
     setStreamingNotifications([]);
 
-    // Add user message optimistically
     const userMsg: Message = {
       id: `temp-${Date.now()}`,
       role: "user",
@@ -311,6 +439,7 @@ function StepInterview({
       const decoder = new TextDecoder();
       let accumulated = "";
       const notifications: ToolNotification[] = [];
+      let pendingChange: PendingChange | undefined;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -328,8 +457,20 @@ function StepInterview({
               setStreamingText(accumulated);
             }
             if (data.tool) {
-              notifications.push(data.tool as ToolNotification);
+              const notif = data.tool as ToolNotification;
+              notifications.push(notif);
               setStreamingNotifications([...notifications]);
+
+              if (
+                notif.type === "plan_change_proposed" &&
+                notif.data?.pendingChangeId
+              ) {
+                pendingChange = {
+                  id: notif.data.pendingChangeId as string,
+                  summary: notif.data.summary as string,
+                  status: "pending",
+                };
+              }
             }
             if (data.done) {
               setMessages((prev) => [
@@ -340,6 +481,7 @@ function StepInterview({
                   displayText: accumulated || null,
                   toolNotifications:
                     notifications.length > 0 ? notifications : undefined,
+                  pendingChange,
                 },
               ]);
               setMessageCount((c) => c + 1);
@@ -394,32 +536,39 @@ function StepInterview({
     }
   }
 
-  // Show "Finish onboarding" button after enough back-and-forth (at least 6 messages = 3 exchanges)
-  const showFinishButton = messageCount >= 6 && !sending && !streamingText;
+  // For onboarding: show "next" button after enough back-and-forth
+  // For plan_creation: show only after a plan has been approved
+  const canComplete =
+    sessionType === "onboarding"
+      ? showCompleteButton && messageCount >= 6 && !sending && !streamingText
+      : showCompleteButton && planApproved && !sending && !streamingText;
 
   return (
     <div className="flex flex-col h-full">
-      {/* Chat header */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-800 flex-shrink-0">
         <span className="text-xl">🥦</span>
         <span className="font-semibold">Brocco</span>
-        <span className="text-xs text-gray-500 ml-1">Getting to know you</span>
+        <span className="text-xs text-gray-500 ml-1">{subtitle}</span>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {!interviewStarted && (
           <div className="text-center py-12">
             <span className="inline-block w-6 h-6 border-2 border-green-400/30 border-t-green-400 rounded-full animate-spin" />
-            <p className="text-gray-500 text-sm mt-3">Starting interview...</p>
+            <p className="text-gray-500 text-sm mt-3">
+              Starting conversation...
+            </p>
           </div>
         )}
 
         {messages.map((msg) => (
-          <MessageBubble key={msg.id} msg={msg} />
+          <MessageBubble
+            key={msg.id}
+            msg={msg}
+            onPlanAction={handlePlanAction}
+          />
         ))}
 
-        {/* Streaming indicator */}
         {(streamingText || streamingNotifications.length > 0) && (
           <div className="flex gap-2 mb-3 items-start">
             <div className="w-7 h-7 rounded-full bg-green-900/50 flex items-center justify-center flex-shrink-0 mt-0.5 text-sm">
@@ -440,7 +589,6 @@ function StepInterview({
           </div>
         )}
 
-        {/* Sending indicator (dots) */}
         {sending && !streamingText && !streamingNotifications.length && (
           <div className="flex gap-2 mb-3 items-start">
             <div className="w-7 h-7 rounded-full bg-green-900/50 flex items-center justify-center flex-shrink-0 mt-0.5 text-sm">
@@ -448,9 +596,18 @@ function StepInterview({
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5">
               <span className="inline-flex gap-1">
-                <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                <span
+                  className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce"
+                  style={{ animationDelay: "0ms" }}
+                />
+                <span
+                  className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce"
+                  style={{ animationDelay: "150ms" }}
+                />
+                <span
+                  className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce"
+                  style={{ animationDelay: "300ms" }}
+                />
               </span>
             </div>
           </div>
@@ -459,19 +616,17 @@ function StepInterview({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Finish button */}
-      {showFinishButton && (
+      {canComplete && (
         <div className="px-4 py-2 flex-shrink-0">
           <button
             onClick={onComplete}
             className="w-full py-2.5 px-4 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors text-sm"
           >
-            Finish onboarding →
+            {completeButtonLabel}
           </button>
         </div>
       )}
 
-      {/* Input */}
       <div className="px-4 py-3 border-t border-gray-800 flex-shrink-0">
         <div className="flex gap-2 items-end">
           <textarea
@@ -538,7 +693,6 @@ function OnboardingContent() {
   const [stravaConnected, setStravaConnected] = useState(false);
   const [finishing, setFinishing] = useState(false);
 
-  // Check onboarding status and Strava connection on mount
   useEffect(() => {
     async function load() {
       try {
@@ -553,11 +707,9 @@ function OnboardingContent() {
 
         setStravaConnected(data.stravaConnected);
 
-        // If returning from Strava OAuth
         const stravaParam = searchParams.get("strava");
         if (stravaParam === "connected") {
           setStravaConnected(true);
-          // Stay on step 0 to show depth choice
         }
       } catch {
         // ignore
@@ -571,6 +723,15 @@ function OnboardingContent() {
   async function handleFinish() {
     setFinishing(true);
     try {
+      // Verify there's an active plan before completing
+      const checkRes = await fetch("/api/onboarding");
+      const checkData = await checkRes.json();
+
+      if (!checkData.hasActivePlan) {
+        setFinishing(false);
+        return;
+      }
+
       await fetch("/api/onboarding", { method: "POST" });
       router.push("/");
       router.refresh();
@@ -587,7 +748,7 @@ function OnboardingContent() {
     );
   }
 
-  // Step 2 (interview) takes full height
+  // Step 1: Quick intro chat
   if (step === 1) {
     return (
       <main className="h-screen flex flex-col max-w-2xl mx-auto">
@@ -595,31 +756,37 @@ function OnboardingContent() {
           <StepIndicator current={1} />
         </div>
         <div className="flex-1 flex flex-col min-h-0">
-          <StepInterview onComplete={() => setStep(2)} />
+          <ChatInterview
+            sessionType="onboarding"
+            sessionEndpoint="/api/onboarding/session"
+            subtitle="Getting to know you"
+            firstMessage="Hi! I just signed up."
+            onComplete={() => setStep(2)}
+            showCompleteButton={true}
+            completeButtonLabel="Next: Build your training plan →"
+          />
         </div>
       </main>
     );
   }
 
-  // Step 3: Finish
+  // Step 2: Plan creation chat
   if (step === 2) {
     return (
-      <main className="min-h-screen flex items-center justify-center px-4">
-        <div className="w-full max-w-sm py-12 text-center">
+      <main className="h-screen flex flex-col max-w-2xl mx-auto">
+        <div className="px-4 pt-4 flex-shrink-0">
           <StepIndicator current={2} />
-          <p className="text-5xl mb-4">🥦</p>
-          <h2 className="text-2xl font-bold mb-2">You&apos;re all set!</h2>
-          <p className="text-gray-400 mb-8 leading-relaxed">
-            Brocco knows you now. Head to the dashboard to see your training overview,
-            or chat with Brocco anytime for coaching advice.
-          </p>
-          <button
-            onClick={handleFinish}
-            disabled={finishing}
-            className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold rounded-lg transition-colors"
-          >
-            {finishing ? "Setting up..." : "Go to dashboard"}
-          </button>
+        </div>
+        <div className="flex-1 flex flex-col min-h-0">
+          <ChatInterview
+            sessionType="plan_creation"
+            sessionEndpoint="/api/plan/new-plan-session"
+            subtitle="Building your training plan"
+            firstMessage="I'm ready to build my first training plan!"
+            onComplete={handleFinish}
+            showCompleteButton={true}
+            completeButtonLabel="Finish onboarding →"
+          />
         </div>
       </main>
     );

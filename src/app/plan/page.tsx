@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 
 interface Phase {
   id: string;
@@ -248,8 +249,26 @@ function Legend() {
 }
 
 export default function PlanPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen max-w-2xl mx-auto px-4 py-6">
+          <Nav />
+          <div className="text-gray-500 text-center py-12">Loading...</div>
+        </main>
+      }
+    >
+      <PlanPageContent />
+    </Suspense>
+  );
+}
+
+function PlanPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(true);
+  const [startingPlan, setStartingPlan] = useState(false);
 
   useEffect(() => {
     fetch("/api/plan")
@@ -258,6 +277,25 @@ export default function PlanPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  // Handle ?new=1 param — auto-start plan creation
+  useEffect(() => {
+    if (searchParams.get("new") === "1" && !loading) {
+      handleNewPlan();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
+  async function handleNewPlan() {
+    setStartingPlan(true);
+    try {
+      const res = await fetch("/api/plan/new-plan-session", { method: "POST" });
+      const data = await res.json();
+      router.push(`/chat/${data.id}`);
+    } catch {
+      setStartingPlan(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -275,12 +313,16 @@ export default function PlanPage() {
         <div className="text-center py-16">
           <p className="text-5xl mb-4">&#x1F966;</p>
           <p className="text-gray-400 text-lg font-medium">No training plan yet</p>
-          <p className="text-gray-500 text-sm mt-2">
-            Ask Brocco to generate one!{" "}
-            <Link href="/chat" className="text-green-400 underline">
-              Go to Chat
-            </Link>
+          <p className="text-gray-500 text-sm mt-2 mb-4">
+            Let Brocco build you a personalized plan.
           </p>
+          <button
+            onClick={handleNewPlan}
+            disabled={startingPlan}
+            className="px-6 py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+          >
+            {startingPlan ? "Starting..." : "Build a new plan"}
+          </button>
         </div>
       </main>
     );
@@ -306,7 +348,16 @@ export default function PlanPage() {
 
       {/* Plan header */}
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-white">{plan.name}</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-semibold text-white">{plan.name}</h1>
+          <button
+            onClick={handleNewPlan}
+            disabled={startingPlan}
+            className="px-3 py-1.5 text-xs border border-gray-700 text-gray-300 hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-50"
+          >
+            {startingPlan ? "Starting..." : "New Plan"}
+          </button>
+        </div>
         <div className="flex items-center gap-3 mt-1 text-sm text-gray-400">
           {plan.goal && <span>{plan.goal}</span>}
           {plan.raceDate && (

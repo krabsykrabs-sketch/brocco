@@ -255,6 +255,7 @@ enum MessageRole {
 enum ChatSessionType {
   general
   onboarding
+  plan_creation
 }
 
 model PendingPlanChange {

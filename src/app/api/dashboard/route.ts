@@ -202,6 +202,16 @@ export async function GET() {
       },
     });
 
+    // Check active plan status
+    const activePlan = await prisma.plan.findFirst({
+      where: { userId, status: "active" },
+      select: { id: true, name: true, raceDate: true },
+    });
+    const hasActivePlan = !!activePlan;
+    const planExpired = activePlan?.raceDate
+      ? new Date(activePlan.raceDate) < now
+      : false;
+
     // Active health notes
     const healthNotes = await prisma.healthLog.findMany({
       where: { userId, status: "active" },
@@ -239,6 +249,9 @@ export async function GET() {
         source: a.source,
       })),
       healthNotes,
+      hasActivePlan,
+      planExpired,
+      activePlanName: activePlan?.name || null,
     });
   } catch (err) {
     console.error("Dashboard error:", err);

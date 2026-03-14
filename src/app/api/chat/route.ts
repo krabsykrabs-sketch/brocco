@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
-import { buildCoachContext, buildSystemPrompt, buildOnboardingSystemPrompt } from "@/lib/coach-context";
+import { buildCoachContext, buildSystemPrompt, buildOnboardingSystemPrompt, buildPlanCreationSystemPrompt } from "@/lib/coach-context";
 import { toolDefinitions, handleToolCall } from "@/lib/tools";
 
 const anthropic = new Anthropic();
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Select model based on session type
-  const model = chatSession.type === "onboarding"
+  const model = (chatSession.type === "onboarding" || chatSession.type === "plan_creation")
     ? "claude-opus-4-6"
     : "claude-sonnet-4-20250514";
 
@@ -54,7 +54,10 @@ export async function POST(request: NextRequest) {
   let context: string;
   if (chatSession.type === "onboarding") {
     systemPrompt = await buildOnboardingSystemPrompt(session.userId, userName);
-    context = ""; // onboarding prompt builds its own context
+    context = "";
+  } else if (chatSession.type === "plan_creation") {
+    systemPrompt = await buildPlanCreationSystemPrompt(session.userId, userName);
+    context = "";
   } else {
     context = await buildCoachContext(session.userId);
     systemPrompt = buildSystemPrompt(userName, context);

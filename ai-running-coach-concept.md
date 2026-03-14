@@ -124,9 +124,15 @@ These change the shape of the training block and are shown as pending changes in
 
 ### 4. Training Plan
 
-A structured training plan that the AI generates and you can modify together through conversation.
+A structured training plan that Brocco generates through the Plan Creation Interview (see section 8). The plan is the core of the app — without an active plan, the app is just an activity tracker.
 
-**Plan structure:**
+**There can only be one active plan at a time.** Old plans are archived when a new one is created.
+
+**Plan types:**
+- **Race-specific:** Periodized plan (base → build → peak → taper) targeting a specific race and goal time.
+- **General fitness:** Progressive blocks with periodic benchmark workouts. For base building, speed development, off-season maintenance, or injury comeback. No taper, no race date required.
+
+**Plan structure (race example):**
 ```
 Goal: Barcelona Marathon, October 2026, Sub-3:30
   └── Phase: Base Building (Weeks 1-8)
@@ -141,10 +147,9 @@ Goal: Barcelona Marathon, October 2026, Sub-3:30
 ```
 
 **How plans are created:**
-- You tell the AI your goal: "I want to run sub-3:30 at Barcelona Marathon in October"
-- The AI generates a full periodized plan (base → build → peak → taper)
-- You review it, discuss adjustments ("I can't run on Wednesdays", "I want to include cycling")
-- Once confirmed, the plan is saved to the database
+- Always through a Plan Creation Interview (section 8) — a dedicated Brocco conversation using Opus 4.6
+- First plan is created during onboarding (mandatory)
+- Subsequent plans via user request or Brocco prompt when the current plan ends
 
 **How plans adapt:**
 - When a new activity comes in, Brocco automatically adjusts the current week's remaining sessions to account for what actually happened (micro-adjustments: distance, pace, rest day shifts)
@@ -204,9 +209,9 @@ A simple log for tracking things Strava doesn't capture.
 - Or just tell the AI in chat: "my left calf is sore today, about 3/10" → it logs it automatically
 - Active injuries are flagged in the AI's context so it adjusts advice accordingly
 
-### 7. Onboarding Interview
+### 7. Onboarding Interview (one-time, quick → flows into plan creation)
 
-New users don't fill in static forms — they have a conversation with Brocco. This replaces the old step-by-step wizard with a chat-based interview that feels personal from the first interaction.
+New users don't fill in static forms — they have a conversation with Brocco. The onboarding is intentionally quick because it always ends by flowing directly into a plan creation interview. You cannot finish onboarding without an active plan — the app is useless without one.
 
 **Flow:**
 
@@ -243,28 +248,63 @@ Show a loading state while backfill runs: "Crunching your data... 🥦"
 }
 ```
 
-**Step 2 — The Brocco Interview:** A special chat session (tagged `type: 'onboarding'`) using **Opus 4.6** (higher quality for this one-time, high-stakes conversation) with a custom system prompt guiding Brocco through these sections:
+**Step 2 — Quick personal intro:** A special chat session (tagged `type: 'onboarding'`) using **Opus 4.6**. Brocco covers the basics efficiently — this is NOT the deep plan interview, just getting to know you:
 
-- **A) Introduction** — Brocco sets the tone. If Strava is connected, opens with observations from the data (including training history summary if full sync was chosen). If not, asks about running background.
-- **B) Running Background** — How long running, past injuries or current niggles. With Strava data, Brocco focuses on what the data *can't* tell it: injury history, how training feels. If Brocco sees a gap in the data, it asks about it: "I notice you had 6 weeks off in January-February — what happened?"
-- **C) Current Fitness** — Recent race results (Brocco may already know these from Strava), how easy running feels right now, cross-training activities. With Strava: "Your easy pace seems to be around 5:30-5:45/km recently — does that feel genuinely easy or are you pushing it?"
-- **D) Goals & Races** — What are you training for, target time, any races already scheduled, preferred distances. If Strava shows past races: "I can see you ran Valencia Marathon in 1:45 last December. You mentioned the prep wasn't great — what went wrong?"
-- **E) Capacity & Lifestyle** — NOT "what does a typical training week look like" (too vague, depends on training phase). Instead ask about what the data can't tell:
-  - "How many days a week can you realistically train?"
-  - "Are there specific days that are off-limits or tricky?"
-  - "Do you prefer morning or evening runs?"
-  - "Do you have access to a gym, bike trainer, pool, or trails?"
-  - With Strava: "Looking at your last few months, you've been running 3-4 days a week. Is that what fits your life, or would you want to do more if you had a plan guiding you?"
-- **F) Timezone & Wrap-up** — Auto-detect timezone, confirm. Brocco summarizes what it learned.
+- **A) Introduction** — Brocco sets the tone. If Strava is connected, opens with observations from the data. If not, asks about running background.
+- **B) Running Background** — How long running, past injuries or current niggles. With Strava data, Brocco focuses on what the data *can't* tell: injury history, how training feels.
+- **C) Capacity & Lifestyle** — How many days can you realistically train? Off-limit days? Morning or evening? Gym/bike/pool/trail access?
+- **D) Timezone** — Auto-detect, confirm.
 
-Throughout the interview, Brocco uses the `save_profile` tool to store structured data and coaching notes as they come up. This means even if the user abandons the interview halfway, whatever was captured is saved.
+Brocco uses `save_profile` throughout to store data as it comes up.
 
-**Step 3 — Optional instant plan:** If Brocco has enough info (goal race + date + current fitness), it offers to generate a training plan immediately. Plan generation also uses **Opus 4.6**.
+**Step 3 — Flows directly into plan creation:** Brocco transitions naturally: "Great, I've got a good picture of you. Let's build your first training plan." This starts the Plan Creation Interview (see section 8 below). Onboarding is not complete until a plan is confirmed and active.
+
+**Step 4 — Done:** `onboarding_completed = true`, redirect to dashboard.
+
+### 8. Plan Creation Interview (repeatable, deep)
+
+A dedicated conversation for building a new training plan. This is triggered:
+- Automatically at the end of onboarding (first plan)
+- By the user at any time ("I want a new plan", or via a button in /plan or /settings)
+- Proactively by Brocco when the current plan ends (see Plan Lifecycle below)
+
+Uses **Opus 4.6** for higher reasoning quality.
+
+**If an active plan exists:** Before starting, Brocco warns: "You currently have a plan for Valencia Marathon running through December. Creating a new plan will replace it. Want to continue?" The old plan is archived (status → 'completed') when the new one is confirmed.
+
+**There can only be one active plan at a time.**
+
+**The interview covers:**
+
+- **Goal type:** Brocco asks what the runner wants to achieve. Two main paths:
+  - **Race-specific:** Target race, date, goal time. Brocco generates a periodized plan (base → build → peak → taper).
+  - **General fitness:** No specific race. Brocco asks what they want: build mileage base, get faster at a specific distance, maintain fitness through off-season, come back from injury, etc. Brocco generates progressive blocks with periodic benchmark workouts instead of a taper.
+  - Brocco can also suggest goals if the runner isn't sure: "Based on your 1:37 half marathon, you could target sub-3:30 for a marathon, or we could work on getting your 10k under 42 minutes. What excites you?"
+
+- **Current fitness assessment:** References Strava data + onboarding coaching_notes. Acknowledges where the runner is starting from honestly.
+
+- **Schedule for this training block:** Which days are available for THIS period specifically (may differ from general preferences). Known conflicts: holidays, travel, work trips. Intermediate races along the way (e.g., a half marathon tune-up race).
+
+- **Preferences for this plan:** Amount of cross-training, long run day preference, how many quality sessions per week, any specific workouts to include or avoid.
+
+- **Plan generation:** Brocco generates the full plan using `modify_plan` tool. User reviews and can discuss adjustments before confirming.
+
+**Plan Lifecycle:**
+
+```
+No plan → Onboarding → Plan Creation Interview → Active plan
+Active plan → Race day passes → Brocco prompts: "Valencia is done! 🥦 Ready to talk about what's next?" → Plan Creation Interview → New active plan
+Active plan → User requests new plan → Confirmation dialog → Plan Creation Interview → Old plan archived, new plan active
+Active plan (general/no race) → Brocco periodically checks in: "We're 12 weeks into this base-building block. Want to keep going, set a race target, or adjust?"
+```
+
+The dashboard shows a prompt when no active plan exists or when the current plan has ended.
 
 **Data storage:**
 - Typed fields (name, goal_race, years_running, etc.) are saved to `user_profiles` columns via `save_profile` tool calls during the conversation.
 - Everything else (injury history, preferences, race history, schedule constraints, nutrition, training partners, training history summary, etc.) is saved to `user_profiles.coaching_notes` as structured JSON.
 - `coaching_notes` is included in every future AI context, so Brocco never forgets what it learned during onboarding.
+- Plan-specific data (schedule conflicts, intermediate races) is stored on the plan itself, not in coaching_notes.
 
 **`coaching_notes` structure example:**
 ```json
@@ -276,7 +316,6 @@ Throughout the interview, Brocco uses the `save_profile` tool to store structure
   "preferences": {
     "dislikes": ["track workouts", "running in heat"],
     "enjoys": ["trail runs", "long slow runs", "cycling cross-training"],
-    "schedule_constraints": "travels for work every other Wednesday-Friday",
     "preferred_time": "morning before work",
     "available_days": 5,
     "off_days": ["Friday"],
@@ -329,7 +368,7 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 |------|-----|-------------|
 | Login | /login | Email + password login |
 | Signup | /signup | Email + password + invite code |
-| Onboarding | /onboarding | Step 1: optional Strava connect. Step 2: AI interview with Brocco (chat-based, replaces static forms). Step 3: optional instant plan generation. |
+| Onboarding | /onboarding | Step 1: optional Strava connect. Step 2: quick Brocco intro (Opus 4.6). Step 3: mandatory Plan Creation Interview → active plan required to finish onboarding. |
 | Dashboard | / | Training week, mileage chart, metrics, activity feed |
 | Chat | /chat | AI coach conversation with voice support |
 | Plan | /plan | Full training plan view (phases, weeks, workouts) |
@@ -463,6 +502,7 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 |--------|------|-------|
 | id | uuid | PK |
 | user_id | uuid | FK → users |
+| type | enum | 'general' (default), 'onboarding', 'plan_creation' |
 | title | text | auto-generated summary, e.g., "Weekly review Mar 10" |
 | created_at | timestamp | |
 | updated_at | timestamp | |
