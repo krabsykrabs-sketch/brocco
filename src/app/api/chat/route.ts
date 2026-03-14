@@ -28,6 +28,7 @@ export async function POST(request: NextRequest) {
   // Verify session ownership
   const chatSession = await prisma.chatSession.findFirst({
     where: { id: sessionId, userId: session.userId },
+    select: { id: true, title: true, type: true, userId: true },
   });
 
   if (!chatSession) {
@@ -36,6 +37,11 @@ export async function POST(request: NextRequest) {
       headers: { "Content-Type": "application/json" },
     });
   }
+
+  // Select model based on session type
+  const model = chatSession.type === "onboarding"
+    ? "claude-opus-4-6"
+    : "claude-sonnet-4-20250514";
 
   // Build context
   const context = await buildCoachContext(session.userId);
@@ -68,14 +74,20 @@ export async function POST(request: NextRequest) {
   const messages: Anthropic.MessageParam[] = history
     .filter((m) => m.role === "user" || m.role === "assistant")
     .map((m) => {
-      const blocks = m.content as Array<{ type: string; text: string }>;
-      const text = blocks
-        .filter((b) => b.type === "text")
-        .map((b) => b.text)
-        .join("");
+      // content is stored as JSON — could be an array of blocks, a string, or null
+      const raw = m.content;
+      let text = "";
+      if (typeof raw === "string") {
+        text = raw;
+      } else if (Array.isArray(raw)) {
+        text = (raw as Array<Record<string, unknown>>)
+          .filter((b) => b && b.type === "text" && typeof b.text === "string")
+          .map((b) => b.text as string)
+          .join("");
+      }
       return {
         role: m.role as "user" | "assistant",
-        content: text,
+        content: text || "",
       };
     });
 
@@ -102,7 +114,8 @@ export async function POST(request: NextRequest) {
           sessionId,
           assistantMsg.id,
           controller,
-          encoder
+          encoder,
+          model
         );
 
         // Update assistant message with final text
@@ -160,6 +173,7 @@ async function runWithTools(
   chatMessageId: string,
   controller: ReadableStreamDefaultController,
   encoder: TextEncoder,
+  model: string,
   maxIterations = 5
 ): Promise<ToolUseResult> {
   let fullText = "";
@@ -167,7 +181,7 @@ async function runWithTools(
 
   for (let i = 0; i < maxIterations; i++) {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model,
       max_tokens: 4096,
       system: systemPrompt,
       messages: currentMessages,
@@ -197,7 +211,7 @@ async function runWithTools(
     fullText += textInThisTurn;
 
     // If no tool use, we're done
-    if (toolUseBlocks.length === 0 || response.stop_reason === "end_turn") {
+    if (toolUseBlocks.length === 0) {
       break;
     }
 
@@ -233,6 +247,29 @@ async function runWithTools(
       { role: "assistant", content: response.content },
       { role: "user", content: toolResults },
     ];
+
+    // If Claude signaled end_turn alongside tool use, run one more iteration
+    // so it can produce a final text response after seeing tool results
+    if (response.stop_reason === "end_turn") {
+      // Execute one final turn to let Claude respond to tool results, then stop
+      const finalResponse = await anthropic.messages.create({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: currentMessages,
+        tools: toolDefinitions,
+      });
+
+      for (const block of finalResponse.content) {
+        if (block.type === "text") {
+          fullText += block.text;
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ text: block.text })}\n\n`)
+          );
+        }
+      }
+      break;
+    }
   }
 
   return { fullText };

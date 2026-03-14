@@ -58,6 +58,22 @@ export async function buildCoachContext(userId: string): Promise<string> {
     `- Timezone: ${profile.timezone}`,
   ].filter(Boolean).join("\n");
 
+  // --- Coaching notes (from onboarding + ongoing) ---
+  let coachingNotesBlock = "";
+  const notes = profile.coachingNotes as Record<string, unknown> | null;
+  if (notes && Object.keys(notes).length > 0) {
+    coachingNotesBlock = "COACHING NOTES:\n";
+    for (const [key, value] of Object.entries(notes)) {
+      if (typeof value === "string") {
+        coachingNotesBlock += `- ${key}: ${value}\n`;
+      } else if (Array.isArray(value)) {
+        coachingNotesBlock += `- ${key}: ${JSON.stringify(value)}\n`;
+      } else if (typeof value === "object" && value !== null) {
+        coachingNotesBlock += `- ${key}: ${JSON.stringify(value)}\n`;
+      }
+    }
+  }
+
   // --- Current plan (next 14 days) ---
   const planBlock = await buildPlanContext(userId, now);
 
@@ -98,7 +114,10 @@ export async function buildCoachContext(userId: string): Promise<string> {
       .join("\n");
   }
 
-  return [profileBlock, "", planBlock, "", activitiesBlock, "", loadBlock, "", healthBlock].join("\n");
+  const blocks = [profileBlock];
+  if (coachingNotesBlock) blocks.push(coachingNotesBlock);
+  blocks.push(planBlock, activitiesBlock, loadBlock, healthBlock);
+  return blocks.join("\n\n");
 }
 
 async function buildPlanContext(userId: string, now: Date): Promise<string> {

@@ -168,6 +168,34 @@ export const toolDefinitions: Anthropic.Tool[] = [
     },
   },
   {
+    name: "save_profile",
+    description:
+      "Save structured profile data and coaching notes. Used during onboarding interview and when users share new info in regular chat. Typed fields update user_profiles columns. coaching_notes_update is deep-merged into existing coaching_notes jsonb.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        name: { type: "string" },
+        years_running: { type: "integer" },
+        weekly_km_baseline: { type: "number" },
+        goal_race: { type: "string" },
+        goal_race_date: {
+          type: "string",
+          description: "ISO date",
+        },
+        goal_time: { type: "string" },
+        timezone: {
+          type: "string",
+          description: "IANA timezone",
+        },
+        coaching_notes_update: {
+          type: "object",
+          description:
+            "Partial update deep-merged into coaching_notes. Can include: injury_history, preferences, nutrition, race_history, training_history_summary, other.",
+        },
+      },
+    },
+  },
+  {
     name: "generate_plan",
     description:
       "Generate a complete periodized training plan. Use when the user asks to create a new plan from scratch. Creates phases (base, build, peak, taper) and individual workouts for each day. Requires user confirmation before activation. Plan dates should start from next Monday. Each workout needs a date, type, distance/pace targets, and description. Use workout_type values: easy, long, tempo, interval, race_pace, recovery, rest, cross_training, strength, race. Use activity_type values: run, cycle, swim, hike, strength, rest, other.",
@@ -270,6 +298,8 @@ export async function handleToolCall(
       return handleAdjustPlan(input, userId);
     case "modify_plan":
       return handleModifyPlan(input, userId, chatMessageId);
+    case "save_profile":
+      return handleSaveProfile(input, userId);
     case "generate_plan":
       return handleGeneratePlan(input, userId, chatMessageId);
     default:
@@ -596,13 +626,17 @@ async function handleAdjustPlan(
   input: Record<string, unknown>,
   userId: string
 ): Promise<ToolResult> {
-  const adjustments = input.adjustments as Array<{
+  const adjustments = (input.adjustments || []) as Array<{
     workout_id: string;
     action: string;
     updates?: Record<string, unknown>;
     reason: string;
   }>;
   const summary = input.summary as string;
+
+  if (!Array.isArray(adjustments) || adjustments.length === 0) {
+    return { success: false, error: "No adjustments provided" };
+  }
 
   const results: Array<{ workoutId: string; action: string; success: boolean }> = [];
 
@@ -678,8 +712,12 @@ async function handleModifyPlan(
   userId: string,
   chatMessageId?: string
 ): Promise<ToolResult> {
-  const changes = input.changes as Array<Record<string, unknown>>;
+  const changes = (input.changes || []) as Array<Record<string, unknown>>;
   const summary = input.summary as string;
+
+  if (!Array.isArray(changes) || changes.length === 0) {
+    return { success: false, error: "No changes provided" };
+  }
 
   if (!chatMessageId) {
     return { success: false, error: "Chat message ID required for plan modifications" };
@@ -726,13 +764,13 @@ async function handleGeneratePlan(
   const goal = input.goal as string;
   const raceDate = input.race_date as string;
   const startDate = input.start_date as string;
-  const phases = input.phases as Array<{
+  const phases = (input.phases || []) as Array<{
     name: string;
     description?: string;
     start_week: number;
     end_week: number;
   }>;
-  const workouts = input.workouts as Array<{
+  const workouts = (input.workouts || []) as Array<{
     date: string;
     week_number: number;
     title: string;
@@ -797,6 +835,93 @@ async function handleGeneratePlan(
         totalWorkouts: workouts.length,
         totalPhases: phases.length,
       },
+    },
+  };
+}
+
+// --- save_profile ---
+
+function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...target };
+  for (const key of Object.keys(source)) {
+    const tVal = target[key];
+    const sVal = source[key];
+    if (
+      tVal && sVal &&
+      typeof tVal === "object" && !Array.isArray(tVal) &&
+      typeof sVal === "object" && !Array.isArray(sVal)
+    ) {
+      result[key] = deepMerge(tVal as Record<string, unknown>, sVal as Record<string, unknown>);
+    } else {
+      result[key] = sVal;
+    }
+  }
+  return result;
+}
+
+async function handleSaveProfile(
+  input: Record<string, unknown>,
+  userId: string
+): Promise<ToolResult> {
+  const profile = await prisma.userProfile.findUnique({ where: { userId } });
+  if (!profile) {
+    return { success: false, error: "User profile not found" };
+  }
+
+  // Build update data for typed columns
+  const updateData: Record<string, unknown> = {};
+  const savedFields: string[] = [];
+
+  if (input.name !== undefined) {
+    // Update user name, not profile
+    await prisma.user.update({ where: { id: userId }, data: { name: input.name as string } });
+    savedFields.push("name");
+  }
+  if (input.years_running !== undefined) {
+    updateData.yearsRunning = Number(input.years_running);
+    savedFields.push("years_running");
+  }
+  if (input.weekly_km_baseline !== undefined) {
+    updateData.weeklyKmBaseline = Number(input.weekly_km_baseline);
+    savedFields.push("weekly_km_baseline");
+  }
+  if (input.goal_race !== undefined) {
+    updateData.goalRace = input.goal_race as string;
+    savedFields.push("goal_race");
+  }
+  if (input.goal_race_date !== undefined) {
+    updateData.goalRaceDate = new Date(input.goal_race_date as string);
+    savedFields.push("goal_race_date");
+  }
+  if (input.goal_time !== undefined) {
+    updateData.goalTime = input.goal_time as string;
+    savedFields.push("goal_time");
+  }
+  if (input.timezone !== undefined) {
+    updateData.timezone = input.timezone as string;
+    savedFields.push("timezone");
+  }
+
+  // Deep-merge coaching_notes_update into existing coaching_notes
+  if (input.coaching_notes_update && typeof input.coaching_notes_update === "object") {
+    const existing = (profile.coachingNotes as Record<string, unknown>) || {};
+    updateData.coachingNotes = deepMerge(existing, input.coaching_notes_update as Record<string, unknown>);
+    savedFields.push("coaching_notes");
+  }
+
+  if (Object.keys(updateData).length > 0) {
+    await prisma.userProfile.update({
+      where: { userId },
+      data: updateData,
+    });
+  }
+
+  return {
+    success: true,
+    data: { saved_fields: savedFields },
+    notification: {
+      type: "profile_updated",
+      message: `Profile updated: ${savedFields.join(", ")}`,
     },
   };
 }

@@ -204,6 +204,99 @@ A simple log for tracking things Strava doesn't capture.
 - Or just tell the AI in chat: "my left calf is sore today, about 3/10" → it logs it automatically
 - Active injuries are flagged in the AI's context so it adjusts advice accordingly
 
+### 7. Onboarding Interview
+
+New users don't fill in static forms — they have a conversation with Brocco. This replaces the old step-by-step wizard with a chat-based interview that feels personal from the first interaction.
+
+**Flow:**
+
+**Step 0 — Account creation:** Email + password + invite code. Just auth, nothing else.
+
+**Step 1 — Strava first (optional):** Immediately after first login, Brocco introduces itself and offers to connect Strava before starting the interview. If the user connects, they choose a sync depth:
+
+- **Quick sync (default):** Last 6 months of activities. Covers current fitness picture.
+- **Full history:** Everything Strava has. After backfill, the app runs a one-time analysis that extracts a `training_history_summary` (stored in `coaching_notes`):
+  - All race results (detected by Strava's `workout_type: 'race'` flag or matching known race distances)
+  - Peak training blocks (highest consecutive 4-week mileage periods)
+  - Training volume trend by month (weekly averages, not individual runs)
+  - Inactivity gaps (periods of zero activity longer than 10 days)
+
+This gives Brocco deep context: "you peaked at 55km/week before Valencia, ran 1:45 on suboptimal prep, then took 6 weeks off."
+
+Show a loading state while backfill runs: "Crunching your data... 🥦"
+
+**`training_history_summary` structure:**
+```json
+{
+  "races": [
+    {"date": "2024-12", "name": "Valencia Marathon", "distance_km": 42.2, "time": "1:45:00"},
+    {"date": "2025-03", "name": "Barcelona Half", "distance_km": 21.1, "time": "1:37:00"}
+  ],
+  "peak_mileage": {"period": "2024-10 to 2024-11", "avg_weekly_km": 55},
+  "volume_trend": [
+    {"month": "2024-06", "avg_weekly_km": 25},
+    {"month": "2024-07", "avg_weekly_km": 32}
+  ],
+  "inactivity_gaps": [
+    {"from": "2025-01-20", "to": "2025-03-01", "duration_days": 40}
+  ]
+}
+```
+
+**Step 2 — The Brocco Interview:** A special chat session (tagged `type: 'onboarding'`) using **Opus 4.6** (higher quality for this one-time, high-stakes conversation) with a custom system prompt guiding Brocco through these sections:
+
+- **A) Introduction** — Brocco sets the tone. If Strava is connected, opens with observations from the data (including training history summary if full sync was chosen). If not, asks about running background.
+- **B) Running Background** — How long running, past injuries or current niggles. With Strava data, Brocco focuses on what the data *can't* tell it: injury history, how training feels. If Brocco sees a gap in the data, it asks about it: "I notice you had 6 weeks off in January-February — what happened?"
+- **C) Current Fitness** — Recent race results (Brocco may already know these from Strava), how easy running feels right now, cross-training activities. With Strava: "Your easy pace seems to be around 5:30-5:45/km recently — does that feel genuinely easy or are you pushing it?"
+- **D) Goals & Races** — What are you training for, target time, any races already scheduled, preferred distances. If Strava shows past races: "I can see you ran Valencia Marathon in 1:45 last December. You mentioned the prep wasn't great — what went wrong?"
+- **E) Capacity & Lifestyle** — NOT "what does a typical training week look like" (too vague, depends on training phase). Instead ask about what the data can't tell:
+  - "How many days a week can you realistically train?"
+  - "Are there specific days that are off-limits or tricky?"
+  - "Do you prefer morning or evening runs?"
+  - "Do you have access to a gym, bike trainer, pool, or trails?"
+  - With Strava: "Looking at your last few months, you've been running 3-4 days a week. Is that what fits your life, or would you want to do more if you had a plan guiding you?"
+- **F) Timezone & Wrap-up** — Auto-detect timezone, confirm. Brocco summarizes what it learned.
+
+Throughout the interview, Brocco uses the `save_profile` tool to store structured data and coaching notes as they come up. This means even if the user abandons the interview halfway, whatever was captured is saved.
+
+**Step 3 — Optional instant plan:** If Brocco has enough info (goal race + date + current fitness), it offers to generate a training plan immediately. Plan generation also uses **Opus 4.6**.
+
+**Data storage:**
+- Typed fields (name, goal_race, years_running, etc.) are saved to `user_profiles` columns via `save_profile` tool calls during the conversation.
+- Everything else (injury history, preferences, race history, schedule constraints, nutrition, training partners, training history summary, etc.) is saved to `user_profiles.coaching_notes` as structured JSON.
+- `coaching_notes` is included in every future AI context, so Brocco never forgets what it learned during onboarding.
+
+**`coaching_notes` structure example:**
+```json
+{
+  "injury_history": [
+    {"date": "2024-03", "description": "Stress fracture left metatarsal, 8 weeks off"},
+    {"date": "2025-12", "description": "Ankle sprain, mostly resolved"}
+  ],
+  "preferences": {
+    "dislikes": ["track workouts", "running in heat"],
+    "enjoys": ["trail runs", "long slow runs", "cycling cross-training"],
+    "schedule_constraints": "travels for work every other Wednesday-Friday",
+    "preferred_time": "morning before work",
+    "available_days": 5,
+    "off_days": ["Friday"],
+    "equipment": ["home bike trainer", "gym access"]
+  },
+  "nutrition": "plant-based diet, supplements with creatine and B12",
+  "race_history": [
+    {"race": "Barcelona Half Marathon", "date": "2025-03", "time": "1:37:00"},
+    {"race": "Valencia Marathon", "date": "2024-12", "time": "1:45:00", "notes": "suboptimal prep, started too fast"}
+  ],
+  "training_history_summary": {
+    "races": [],
+    "peak_mileage": {"period": "2024-10 to 2024-11", "avg_weekly_km": 55},
+    "volume_trend": [],
+    "inactivity_gaps": []
+  },
+  "other": "runs with dog on easy days, has a friend for Sunday long runs"
+}
+```
+
 ---
 
 ## Brocco — The Coach
@@ -235,12 +328,14 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 | Page | URL | Description |
 |------|-----|-------------|
 | Login | /login | Email + password login |
-| Onboarding | /onboarding | First-time setup: profile, goals, Strava connect |
+| Signup | /signup | Email + password + invite code |
+| Onboarding | /onboarding | Step 1: optional Strava connect. Step 2: AI interview with Brocco (chat-based, replaces static forms). Step 3: optional instant plan generation. |
 | Dashboard | / | Training week, mileage chart, metrics, activity feed |
 | Chat | /chat | AI coach conversation with voice support |
 | Plan | /plan | Full training plan view (phases, weeks, workouts) |
 | History | /history | All past activities with search/filter |
 | Settings | /settings | Profile, goals, Strava connection, AI preferences |
+| Legal | /legal | Imprint (Impressum) and privacy policy |
 
 ---
 
@@ -269,6 +364,7 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 | years_running | int | |
 | weekly_km_baseline | decimal | typical weekly mileage before plan |
 | timezone | text | e.g., "Europe/Barcelona" — required for date matching |
+| coaching_notes | jsonb | flexible structured data from onboarding interview: injury history, preferences, race history, constraints, nutrition, etc. Included in every AI context. |
 | strava_access_token | text | encrypted |
 | strava_refresh_token | text | encrypted |
 | strava_athlete_id | text | |
@@ -511,7 +607,7 @@ COACHING GUIDELINES:
 
 ### AI Tool Definitions
 
-Five tools available to Claude during chat:
+Six tools available to Claude during chat:
 
 **adjust_plan** — Auto-apply micro-adjustments to the current week (no confirmation needed)
 ```json
@@ -634,15 +730,46 @@ Five tools available to Claude during chat:
 }
 ```
 
-### Model Selection
-- Use `claude-sonnet-4-20250514` for most interactions (fast, capable, cost-effective)
-- Consider `claude-opus-4-6` for complex plan generation or detailed race analysis
-- Model is configurable per user in settings (stored in ai_preferences)
+**save_profile** — Save profile data and coaching notes during onboarding (and later conversations)
+```json
+{
+  "name": "save_profile",
+  "description": "Save structured profile data and coaching notes. Used primarily during the onboarding interview but also available in regular chat when the user shares new information (e.g., new injury history, changed schedule, new race). Typed fields update the user_profiles columns directly. coaching_notes_update is deep-merged into the existing coaching_notes jsonb.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "name": { "type": "string" },
+      "years_running": { "type": "integer" },
+      "weekly_km_baseline": { "type": "number" },
+      "goal_race": { "type": "string" },
+      "goal_race_date": { "type": "string", "description": "ISO date" },
+      "goal_time": { "type": "string" },
+      "timezone": { "type": "string", "description": "IANA timezone, e.g., Europe/Barcelona" },
+      "coaching_notes_update": {
+        "type": "object",
+        "description": "Partial update to coaching_notes. Deep-merged with existing data. Can include any of: injury_history, preferences, nutrition, race_history, training_history_summary, other."
+      }
+    }
+  }
+}
+```
+
+### Model Selection — Dual-Model Approach
+- **Opus 4.6** (`claude-opus-4-6`) for high-stakes interactions:
+  - Onboarding interview (nuanced conversation, extracting structured data from freeform chat)
+  - Training plan generation and regeneration
+  - Complex race analysis or multi-factor coaching decisions
+- **Sonnet 4** (`claude-sonnet-4-20250514`) for regular interactions:
+  - Daily chat ("how was my run?", "should I do intervals tomorrow?")
+  - Tool calls (log_health, log_activity, adjust_plan, modify_plan, query_data)
+  - Quick questions and routine coaching
+- The app selects the model automatically based on the interaction type — no user configuration needed. The routing logic lives server-side in the chat API route.
 
 ### Cost Estimate
-- Average coaching interaction: ~2000 input tokens (context) + ~500 output tokens
-- At Sonnet pricing: roughly $0.01-0.02 per interaction
-- 5-10 interactions per day per user = $0.05-0.20/day per user
+- Regular coaching (Sonnet): ~2000 input + ~500 output tokens ≈ $0.01-0.02 per message
+- Onboarding interview (Opus): ~3000 input + ~2000 output tokens ≈ $0.06-0.08 per message (one-time, ~10-15 messages)
+- Plan generation (Opus): ~3000 input + ~5000 output tokens ≈ $0.15 per plan (rare)
+- Daily usage per user (Sonnet): 5-10 messages = $0.05-0.20/day
 - With 5 friends: ~$15-30/month total — very manageable
 
 ---
@@ -678,6 +805,28 @@ Five tools available to Claude during chat:
 
 ---
 
+## Legal / Imprint
+
+The app needs a `/legal` page accessible from the footer (next to "Powered by Strava"). Required because the site is publicly accessible and the operator is based in the EU (Germany/Spain).
+
+**Imprint (Impressum):**
+- Name: Jan Herberg
+- Email: jan@brocco.run
+- Note: This is a non-commercial, personal project.
+
+**Privacy Policy (keep it short and honest):**
+- We store your email, name, and password hash for authentication
+- If you connect Strava, we store your activity data (distance, pace, heart rate, splits) and OAuth tokens (encrypted)
+- Your data is used solely to provide personalized coaching advice
+- We use the Anthropic API (Claude) to generate coaching responses — your training context is sent to their API with each chat message
+- We do not sell, share, or use your data for advertising
+- You can delete your account and all associated data by contacting jan@brocco.run
+- Strava data is handled per the Strava API Agreement
+
+**Footer:** Every page shows a footer with "Powered by Strava" logo and a link to /legal.
+
+---
+
 ## Error Handling
 
 ### Strava API Down
@@ -708,12 +857,12 @@ Five tools available to Claude during chat:
 
 1. Project setup (Next.js 15, PostgreSQL, Prisma, Coolify deployment, Docker)
 2. Auth: users table, email + password login, invite codes, session middleware
-3. Onboarding flow: profile, goals, timezone, Brocco intro
+3. Onboarding: chat-based Brocco interview (optional Strava connect first, then AI-guided conversation covering running background, fitness, goals, preferences, constraints). Uses `save_profile` tool to store typed fields + `coaching_notes` jsonb.
 4. Strava OAuth + webhook + activity import + historical backfill (multi-user aware)
 5. Dashboard: current week, activity feed, weekly mileage chart
 6. AI chat: text-based conversation with training context + Brocco personality
 7. Health log: quick-add form + AI can log via tool use
-8. AI tool use: adjust_plan, modify_plan, log_health, log_activity, query_data
+8. AI tool use: adjust_plan, modify_plan, log_health, log_activity, query_data, save_profile
 9. Pending changes: store, display, confirm/reject UI
 
 **Estimated scope:** 3-4 weekends with Claude Code.
