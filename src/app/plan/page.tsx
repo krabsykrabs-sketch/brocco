@@ -38,6 +38,14 @@ interface Workout {
   matchedActivity: MatchedActivity | null;
 }
 
+interface WeeklyTask {
+  id: string;
+  weekNumber: number;
+  description: string;
+  category: string;
+  status: string;
+}
+
 interface Plan {
   id: string;
   name: string;
@@ -48,6 +56,7 @@ interface Plan {
   status: string;
   phases: Phase[];
   workouts: Workout[];
+  weeklyTasks: WeeklyTask[];
 }
 
 function getWorkoutTypeColor(type: string): string {
@@ -166,14 +175,56 @@ function WorkoutCard({ workout }: { workout: Workout }) {
   );
 }
 
+function TaskChecklist({
+  tasks,
+  onToggle,
+}: {
+  tasks: WeeklyTask[];
+  onToggle: (id: string, status: string) => void;
+}) {
+  if (tasks.length === 0) return null;
+
+  const categoryIcons: Record<string, string> = {
+    strength: "\ud83d\udcaa",
+    mobility: "\ud83e\uddd8",
+    nutrition: "\ud83e\udd66",
+    recovery: "\ud83d\udca4",
+    other: "\u2705",
+  };
+
+  return (
+    <div className="mt-2 space-y-1">
+      {tasks.map((t) => (
+        <button
+          key={t.id}
+          onClick={() => onToggle(t.id, t.status === "done" ? "pending" : "done")}
+          className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900/50 border border-gray-800/40 hover:bg-gray-800/50 transition-colors text-left"
+        >
+          <span className={`text-xs ${t.status === "done" ? "text-green-400" : "text-gray-600"}`}>
+            {t.status === "done" ? "\u2611" : "\u2610"}
+          </span>
+          <span className="text-xs">{categoryIcons[t.category] || "\u2705"}</span>
+          <span className={`text-xs flex-1 ${t.status === "done" ? "text-gray-500 line-through" : "text-gray-300"}`}>
+            {t.description}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function WeekView({
   weekNumber,
   workouts,
   phase,
+  tasks,
+  onToggleTask,
 }: {
   weekNumber: number;
   workouts: Workout[];
   phase: Phase | null;
+  tasks: WeeklyTask[];
+  onToggleTask: (id: string, status: string) => void;
 }) {
   const weekKm = workouts.reduce(
     (sum, w) => sum + (w.targetDistanceKm || 0),
@@ -217,6 +268,7 @@ function WeekView({
           <WorkoutCard key={w.id} workout={w} />
         ))}
       </div>
+      <TaskChecklist tasks={tasks} onToggle={onToggleTask} />
     </div>
   );
 }
@@ -336,6 +388,31 @@ function PlanPageContent() {
   }
   const weeks = Array.from(weekMap.entries()).sort(([a], [b]) => a - b);
 
+  // Group tasks by week
+  const taskMap = new Map<number, WeeklyTask[]>();
+  for (const t of plan.weeklyTasks || []) {
+    if (!taskMap.has(t.weekNumber)) taskMap.set(t.weekNumber, []);
+    taskMap.get(t.weekNumber)!.push(t);
+  }
+
+  async function handleToggleTask(id: string, status: string) {
+    // Optimistic update
+    setPlan((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        weeklyTasks: prev.weeklyTasks.map((t) =>
+          t.id === id ? { ...t, status } : t
+        ),
+      };
+    });
+    await fetch("/api/plan/tasks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status }),
+    });
+  }
+
   // Find current week
   const today = new Date().toISOString().split("T")[0];
   const currentWeekNum = plan.workouts.find(
@@ -437,6 +514,8 @@ function PlanPageContent() {
               weekNumber={weekNum}
               workouts={workouts}
               phase={phase}
+              tasks={taskMap.get(weekNum) || []}
+              onToggleTask={handleToggleTask}
             />
           </div>
         );
@@ -447,7 +526,7 @@ function PlanPageContent() {
 
 function Nav() {
   return (
-    <nav className="flex items-center justify-between mb-6">
+    <nav className="sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm flex items-center justify-between py-3 -mx-4 px-4 mb-6">
       <div className="flex items-center gap-2">
         <span className="text-2xl">&#x1F966;</span>
         <span className="font-bold text-lg">brocco.run</span>

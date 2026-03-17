@@ -265,6 +265,32 @@ export const toolDefinitions: Anthropic.Tool[] = [
       required: ["plan_name", "goal", "race_date", "start_date", "phases", "workouts", "summary"],
     },
   },
+  {
+    name: "add_weekly_tasks",
+    description:
+      "Add weekly tasks (non-run activities) to the training plan. Use for strength work, mobility, nutrition reminders, recovery protocols. These appear as a checklist the user can tick off. Only works when an active plan exists.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        tasks: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              week_number: { type: "integer", description: "Which week of the plan" },
+              description: { type: "string", description: "e.g., '2x lower body strength (squats, lunges, calf raises)'" },
+              category: {
+                type: "string",
+                enum: ["strength", "mobility", "nutrition", "recovery", "other"],
+              },
+            },
+            required: ["week_number", "description", "category"],
+          },
+        },
+      },
+      required: ["tasks"],
+    },
+  },
 ];
 
 // --- Tool handlers ---
@@ -302,6 +328,8 @@ export async function handleToolCall(
       return handleSaveProfile(input, userId);
     case "generate_plan":
       return handleGeneratePlan(input, userId, chatMessageId);
+    case "add_weekly_tasks":
+      return handleAddWeeklyTasks(input, userId);
     default:
       return { success: false, error: `Unknown tool: ${toolName}` };
   }
@@ -849,6 +877,52 @@ async function handleGeneratePlan(
         totalWorkouts: workouts.length,
         totalPhases: phases.length,
       },
+    },
+  };
+}
+
+// --- add_weekly_tasks ---
+
+async function handleAddWeeklyTasks(
+  input: Record<string, unknown>,
+  userId: string
+): Promise<ToolResult> {
+  const tasks = (input.tasks || []) as Array<{
+    week_number: number;
+    description: string;
+    category: string;
+  }>;
+
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    return { success: false, error: "No tasks provided" };
+  }
+
+  const activePlan = await prisma.plan.findFirst({
+    where: { userId, status: "active" },
+    select: { id: true },
+  });
+
+  if (!activePlan) {
+    return { success: false, error: "No active plan. Create a plan first." };
+  }
+
+  const validCategories = ["strength", "mobility", "nutrition", "recovery", "other"];
+  const taskData = tasks.map((t) => ({
+    planId: activePlan.id,
+    weekNumber: t.week_number,
+    description: t.description,
+    category: (validCategories.includes(t.category) ? t.category : "other") as "strength" | "mobility" | "nutrition" | "recovery" | "other",
+    status: "pending" as const,
+  }));
+
+  await prisma.weeklyTask.createMany({ data: taskData });
+
+  return {
+    success: true,
+    data: { tasksCreated: taskData.length },
+    notification: {
+      type: "tasks_added",
+      message: `Added ${taskData.length} weekly task${taskData.length > 1 ? "s" : ""} to your plan`,
     },
   };
 }

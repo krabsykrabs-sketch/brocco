@@ -63,9 +63,10 @@ model Plan {
   status    PlanStatus @default(draft)
   createdAt DateTime   @default(now()) @map("created_at")
 
-  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  phases   PlanPhase[]
-  workouts PlannedWorkout[]
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phases      PlanPhase[]
+  workouts    PlannedWorkout[]
+  weeklyTasks WeeklyTask[]
 
   @@map("plans")
 }
@@ -305,6 +306,33 @@ enum AdjustAction {
   update_targets
   swap_rest_day
   mark_covered
+}
+
+model WeeklyTask {
+  id          String           @id @default(uuid()) @db.Uuid
+  planId      String           @map("plan_id") @db.Uuid
+  weekNumber  Int              @map("week_number")
+  description String
+  category    TaskCategory
+  status      TaskStatus       @default(pending)
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@map("weekly_tasks")
+}
+
+enum TaskCategory {
+  strength
+  mobility
+  nutrition
+  recovery
+  other
+}
+
+enum TaskStatus {
+  pending
+  done
 }
 
 model InviteCode {

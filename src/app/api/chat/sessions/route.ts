@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
+import { startOfDay, endOfDay } from "date-fns";
 
 export async function GET() {
   try {
@@ -40,6 +41,23 @@ export async function POST() {
     const session = await getSession();
     if (!session.userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const now = new Date();
+
+    // Reuse today's general session if one exists
+    const todaySession = await prisma.chatSession.findFirst({
+      where: {
+        userId: session.userId,
+        type: "general",
+        createdAt: { gte: startOfDay(now), lte: endOfDay(now) },
+      },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, title: true },
+    });
+
+    if (todaySession) {
+      return NextResponse.json({ id: todaySession.id, title: todaySession.title, reused: true });
     }
 
     const chatSession = await prisma.chatSession.create({

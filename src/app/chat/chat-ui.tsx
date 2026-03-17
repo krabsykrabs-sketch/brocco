@@ -316,14 +316,35 @@ export default function ChatUI({
             }
           }
         } else {
-          // Normal new session — create it and fetch an opener
+          // Get or reuse today's session
           const res = await fetch("/api/chat/sessions", { method: "POST" });
           const data = await res.json();
           if (cancelled) return;
           setSessionId(data.id);
           window.history.replaceState(null, "", `/chat/${data.id}`);
 
-          // Request contextual opener
+          if (data.reused) {
+            // Load existing messages from today's session
+            const sessRes = await fetch(`/api/chat/sessions/${data.id}`);
+            if (cancelled) return;
+            if (sessRes.ok) {
+              const sessData = await sessRes.json();
+              if (sessData.messages?.length > 0) {
+                setMessages(
+                  sessData.messages
+                    .filter((m: { role: string }) => m.role === "user" || m.role === "assistant")
+                    .map((m: { id: string; role: string; displayText: string | null }) => ({
+                      id: m.id,
+                      role: m.role as "user" | "assistant",
+                      displayText: m.displayText,
+                    }))
+                );
+                return;
+              }
+            }
+          }
+
+          // New session — request contextual opener
           const openerRes = await fetch("/api/chat/opener", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -382,6 +403,8 @@ export default function ChatUI({
     if (!text || sending) return;
 
     setInput("");
+    // Reset textarea height after clearing
+    if (inputRef.current) inputRef.current.style.height = "auto";
     setSending(true);
     setStreamingText("");
     setStreamingNotifications([]);
@@ -574,12 +597,18 @@ export default function ChatUI({
           <textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              // Auto-expand: reset height then set to scrollHeight
+              const el = e.target;
+              el.style.height = "auto";
+              el.style.height = Math.min(el.scrollHeight, 160) + "px";
+            }}
             onKeyDown={handleKeyDown}
             placeholder="Ask Brocco..."
             rows={1}
             className="flex-1 px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none text-sm"
-            style={{ maxHeight: "120px" }}
+            style={{ height: "auto", maxHeight: "160px", overflow: "auto" }}
             disabled={sending}
           />
           <button

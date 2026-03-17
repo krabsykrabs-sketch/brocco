@@ -520,7 +520,7 @@ function PlanAdjustments({
 
 function NavBar() {
   return (
-    <nav className="flex items-center justify-between mb-6">
+    <nav className="sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm flex items-center justify-between py-3 -mx-4 px-4 mb-6">
       <div className="flex items-center gap-2">
         <span className="text-2xl">&#x1F966;</span>
         <span className="font-bold text-lg">brocco.run</span>

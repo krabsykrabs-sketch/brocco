@@ -15,6 +15,9 @@ export async function GET() {
       phases: {
         orderBy: { orderIndex: "asc" },
       },
+      weeklyTasks: {
+        orderBy: [{ weekNumber: "asc" }, { category: "asc" }],
+      },
       workouts: {
         orderBy: { date: "asc" },
         select: {
@@ -66,6 +69,13 @@ export async function GET() {
         description: p.description,
         startWeek: p.startWeek,
         endWeek: p.endWeek,
+      })),
+      weeklyTasks: plan.weeklyTasks.map((t) => ({
+        id: t.id,
+        weekNumber: t.weekNumber,
+        description: t.description,
+        category: t.category,
+        status: t.status,
       })),
       workouts: plan.workouts.map((w) => ({
         id: w.id,

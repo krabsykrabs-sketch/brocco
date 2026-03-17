@@ -148,7 +148,7 @@ Goal: Barcelona Marathon, October 2026, Sub-3:30
 
 **How plans are created:**
 - Always through a Plan Creation Interview (section 8) — a dedicated Brocco conversation using Opus 4.6
-- First plan is created during onboarding (mandatory)
+- First plan is typically created during onboarding, but can be deferred
 - Subsequent plans via user request or Brocco prompt when the current plan ends
 
 **How plans adapt:**
@@ -166,6 +166,7 @@ When Brocco proposes structural modifications (via chat), they are stored as pen
 **Plan storage:**
 - Plans are stored as structured data (phases, weeks, workouts) in PostgreSQL
 - Each workout has: date, type, target distance, target pace, target duration, description, status (planned/completed/skipped/modified)
+- **Weekly tasks:** In addition to daily workouts, each week can have flexible tasks without a specific date — e.g., "3 sessions of 10min ankle strengthening", "Increase protein intake this week", "Foam roll daily". Stored in a `weekly_tasks` table (plan_id, week_number, description, category, status). Displayed as a separate section in the weekly view on /plan and dashboard. Brocco can assign these during plan creation or add them via chat.
 - Strava activities are auto-matched to planned workouts (same day, similar activity type)
 - Manual activities (logged via chat) are also matched
 
@@ -209,15 +210,15 @@ A simple log for tracking things Strava doesn't capture.
 - Or just tell the AI in chat: "my left calf is sore today, about 3/10" → it logs it automatically
 - Active injuries are flagged in the AI's context so it adjusts advice accordingly
 
-### 7. Onboarding Interview (one-time, quick → flows into plan creation)
+### 7. Onboarding (optional, interruptible)
 
-New users don't fill in static forms — they have a conversation with Brocco. The onboarding is intentionally quick because it always ends by flowing directly into a plan creation interview. You cannot finish onboarding without an active plan — the app is useless without one.
+New users are welcomed by Brocco and given the choice to build a plan immediately or explore first. The app is usable without a plan — but the plan is where the real value is, so Brocco encourages it.
 
 **Flow:**
 
 **Step 0 — Account creation:** Email + password + invite code. Just auth, nothing else.
 
-**Step 1 — Strava first (optional):** Immediately after first login, Brocco introduces itself and offers to connect Strava before starting the interview. If the user connects, they choose a sync depth:
+**Step 1 — Strava first (optional):** Immediately after first login, Brocco introduces itself and offers to connect Strava. If the user connects, they choose a sync depth:
 
 - **Quick sync (default):** Last 6 months of activities. Covers current fitness picture.
 - **Full history:** Everything Strava has. After backfill, the app runs a one-time analysis that extracts a `training_history_summary` (stored in `coaching_notes`):
@@ -248,18 +249,17 @@ Show a loading state while backfill runs: "Crunching your data... 🥦"
 }
 ```
 
-**Step 2 — Quick personal intro:** A special chat session (tagged `type: 'onboarding'`) using **Opus 4.6**. Brocco covers the basics efficiently — this is NOT the deep plan interview, just getting to know you:
+**Step 2 — Welcome screen with choice:**
+- "Hey, I'm Brocco 🥦. I can build you a training plan, or you can explore first."
+- **"Build my plan"** → starts Plan Creation Interview (section 8). If Brocco doesn't have coaching_notes yet, the plan creation prompt instructs Brocco to ask the necessary background questions first before diving into plan specifics.
+- **"Let me look around first"** → marks `onboarding_completed = true`, redirects to dashboard.
+- If the user starts "Build my plan" but exits mid-conversation, that's fine — mark onboarding complete, go to dashboard. The plan can be built later.
 
-- **A) Introduction** — Brocco sets the tone. If Strava is connected, opens with observations from the data. If not, asks about running background.
-- **B) Running Background** — How long running, past injuries or current niggles. With Strava data, Brocco focuses on what the data *can't* tell: injury history, how training feels.
-- **C) Capacity & Lifestyle** — How many days can you realistically train? Off-limit days? Morning or evening? Gym/bike/pool/trail access?
-- **D) Timezone** — Auto-detect, confirm.
+**No plan? No problem (but encouraged):**
+- Dashboard shows a persistent, non-blocking prompt when no active plan exists: "🥦 No active plan yet. Chat with Brocco to build one whenever you're ready." with a button linking to plan creation.
+- Brocco adapts in regular chat: if the user chats without having done any interview, Brocco naturally asks background questions ("I don't know much about you yet — how long have you been running?") and uses `save_profile` to fill in coaching_notes organically over time.
 
-Brocco uses `save_profile` throughout to store data as it comes up.
-
-**Step 3 — Flows directly into plan creation:** Brocco transitions naturally: "Great, I've got a good picture of you. Let's build your first training plan." This starts the Plan Creation Interview (see section 8 below). Onboarding is not complete until a plan is confirmed and active.
-
-**Step 4 — Done:** `onboarding_completed = true`, redirect to dashboard.
+**Step 3 — Done:** `onboarding_completed = true`, redirect to dashboard.
 
 ### 8. Plan Creation Interview (repeatable, deep)
 
@@ -281,18 +281,33 @@ Uses **Opus 4.6** for higher reasoning quality.
   - **General fitness:** No specific race. Brocco asks what they want: build mileage base, get faster at a specific distance, maintain fitness through off-season, come back from injury, etc. Brocco generates progressive blocks with periodic benchmark workouts instead of a taper.
   - Brocco can also suggest goals if the runner isn't sure: "Based on your 1:37 half marathon, you could target sub-3:30 for a marathon, or we could work on getting your 10k under 42 minutes. What excites you?"
 
-- **Current fitness assessment:** References Strava data + onboarding coaching_notes. Acknowledges where the runner is starting from honestly.
+- **Current fitness assessment:** References Strava data + coaching_notes. Acknowledges where the runner is starting from honestly.
+
+- **Training philosophy:** Brocco asks preference-revealing questions to determine the best approach — it does NOT present a dropdown of methodologies. Questions like:
+  - "Do you prefer lots of easy running with a few hard days, or fewer runs but more intense?"
+  - "How long do you want your longest run to be?"
+  - "Do you have a strong preference for any training approach? Some runners follow Jack Daniels, Pfitzinger, 80/20, etc."
+  Based on the answers (and the runner's available days/volume tolerance), Brocco selects the best-fit philosophy and explains why:
+  - Runner available 3-4 days/week → time-crunched approach, every session counts
+  - Runner available 5-6 days/week, prefers easy volume → polarized/80-20
+  - Runner targeting specific time goal with race data → Jack Daniels VDOT pacing
+  - Marathon with high mileage tolerance → Pfitzinger-style with medium-long runs
+  - Runner prefers threshold work → Norwegian-influenced approach
+  Brocco always names the approach it chose and explains the reasoning. Experienced runners can override if they have a preference.
 
 - **Schedule for this training block:** Which days are available for THIS period specifically (may differ from general preferences). Known conflicts: holidays, travel, work trips. Intermediate races along the way (e.g., a half marathon tune-up race).
 
-- **Preferences for this plan:** Amount of cross-training, long run day preference, how many quality sessions per week, any specific workouts to include or avoid.
+- **Preferences for this plan:** Long run day preference, how many quality sessions per week, any specific workouts to include or avoid, cross-training preferences.
 
-- **Plan generation:** Brocco generates the full plan using `modify_plan` tool. User reviews and can discuss adjustments before confirming.
+- **Block-first approach:** For plans longer than 8 weeks, Brocco strongly suggests building the first phase/block in full detail (4-8 weeks) with a rough outline for later phases. This is both better coaching (plans always change) and produces better output (avoids token limits). If the runner insists on a full detailed plan, Brocco generates it in multiple tool calls (one per phase).
+
+- **Plan generation:** Brocco generates the plan using `modify_plan` tool. User reviews and can discuss adjustments before confirming.
 
 **Plan Lifecycle:**
 
 ```
-No plan → Onboarding → Plan Creation Interview → Active plan
+No plan → Dashboard prompt encourages building one → User starts Plan Creation Interview → Active plan
+No plan → User chats with Brocco → Brocco suggests building a plan → Plan Creation Interview → Active plan
 Active plan → Race day passes → Brocco prompts: "Valencia is done! 🥦 Ready to talk about what's next?" → Plan Creation Interview → New active plan
 Active plan → User requests new plan → Confirmation dialog → Plan Creation Interview → Old plan archived, new plan active
 Active plan (general/no race) → Brocco periodically checks in: "We're 12 weeks into this base-building block. Want to keep going, set a race target, or adjust?"
@@ -368,7 +383,7 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 |------|-----|-------------|
 | Login | /login | Email + password login |
 | Signup | /signup | Email + password + invite code |
-| Onboarding | /onboarding | Step 1: optional Strava connect. Step 2: quick Brocco intro (Opus 4.6). Step 3: mandatory Plan Creation Interview → active plan required to finish onboarding. |
+| Onboarding | /onboarding | Step 1: optional Strava connect. Step 2: welcome screen — "Build my plan" or "Let me look around first". Plan creation is encouraged but not forced. |
 | Dashboard | / | Training week, mileage chart, metrics, activity feed |
 | Chat | /chat | AI coach conversation with voice support |
 | Plan | /plan | Full training plan view (phases, weeks, workouts) |
@@ -455,6 +470,17 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 | description | text | detailed workout description |
 | status | enum | 'planned', 'completed', 'skipped', 'modified' |
 | matched_activity_id | uuid | nullable, FK → activities, auto-linked |
+| created_at | timestamp | |
+
+**weekly_tasks** (flexible tasks assigned to a week, not a specific date)
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK |
+| plan_id | uuid | FK → plans |
+| week_number | int | plan-global week number |
+| description | text | e.g., "3 sessions of 10min ankle strengthening" |
+| category | enum | 'strength', 'mobility', 'nutrition', 'recovery', 'other' |
+| status | enum | 'pending', 'done' — user can check off |
 | created_at | timestamp | |
 
 **activities** (unified: Strava + manual)
@@ -794,23 +820,16 @@ Six tools available to Claude during chat:
 }
 ```
 
-### Model Selection — Dual-Model Approach
-- **Opus 4.6** (`claude-opus-4-6`) for high-stakes interactions:
-  - Onboarding interview (nuanced conversation, extracting structured data from freeform chat)
-  - Training plan generation and regeneration
-  - Complex race analysis or multi-factor coaching decisions
-- **Sonnet 4** (`claude-sonnet-4-20250514`) for regular interactions:
-  - Daily chat ("how was my run?", "should I do intervals tomorrow?")
-  - Tool calls (log_health, log_activity, adjust_plan, modify_plan, query_data)
-  - Quick questions and routine coaching
-- The app selects the model automatically based on the interaction type — no user configuration needed. The routing logic lives server-side in the chat API route.
+### Model Selection — Opus Only
+- **Opus 4.6** (`claude-opus-4-6`) for all interactions. Single model, no routing logic.
+- Higher quality across the board: better coaching nuance, better plan generation, better pattern recognition in daily chat.
+- Simpler codebase — no model selection logic needed.
 
 ### Cost Estimate
-- Regular coaching (Sonnet): ~2000 input + ~500 output tokens ≈ $0.01-0.02 per message
-- Onboarding interview (Opus): ~3000 input + ~2000 output tokens ≈ $0.06-0.08 per message (one-time, ~10-15 messages)
-- Plan generation (Opus): ~3000 input + ~5000 output tokens ≈ $0.15 per plan (rare)
-- Daily usage per user (Sonnet): 5-10 messages = $0.05-0.20/day
-- With 5 friends: ~$15-30/month total — very manageable
+- All interactions (Opus): ~2000 input + ~500 output tokens ≈ $0.02-0.03 per message
+- Plan generation (Opus): ~5000 input + ~15000 output tokens ≈ $0.40 per plan (rare)
+- Daily usage per user: 5-10 messages = $0.10-0.30/day
+- With 5 friends: ~$20-40/month total — very manageable
 
 ---
 
@@ -940,7 +959,7 @@ The app needs a `/legal` page accessible from the footer (next to "Powered by St
 |----------|--------|--------|
 | Frontend | Next.js 15 + TypeScript + Tailwind | Same stack as previous projects, reuse knowledge |
 | Database | PostgreSQL (via Coolify) | Relational data, free on your server |
-| AI | Anthropic API (Claude Sonnet 4) | Best reasoning, tool use support |
+| AI | Anthropic API (Claude Opus 4.6) | Best reasoning, tool use support |
 | Voice Input | Web Speech API | Free, browser-native, good enough |
 | Voice Output | Browser SpeechSynthesis (v1) | Free, upgrade to ElevenLabs later |
 | Strava | Direct API integration | Free, well-documented |
