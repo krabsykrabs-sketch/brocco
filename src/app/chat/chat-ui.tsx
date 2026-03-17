@@ -250,7 +250,9 @@ export default function ChatUI({
 
   function toggleRecording() {
     if (recording) {
-      recognitionRef.current?.stop();
+      const rec = recognitionRef.current;
+      recognitionRef.current = null; // prevent auto-restart in onend
+      rec?.stop();
       setRecording(false);
       return;
     }
@@ -260,28 +262,31 @@ export default function ChatUI({
     if (!SpeechRecognition) return;
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = true;
+    recognition.continuous = false;
     recognition.interimResults = true;
     recognition.lang = navigator.language || "en-US";
     recognitionRef.current = recognition;
 
-    // Track the text that was in the input before recording started
-    const baseText = input;
+    // We accumulate finalized text across restarts in a ref-like variable
+    let committed = input; // text committed so far (base + previous final results)
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let transcript = "";
-      for (let i = 0; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript;
-      }
-      const newValue = baseText
-        ? baseText + " " + transcript
+      // With continuous=false, there's only one result (index 0)
+      const result = event.results[0];
+      const transcript = result[0].transcript;
+      const display = committed
+        ? committed + " " + transcript
         : transcript;
-      setInput(newValue);
+      setInput(display);
       // Auto-expand textarea
       if (inputRef.current) {
         inputRef.current.style.height = "auto";
         inputRef.current.style.height =
           Math.min(inputRef.current.scrollHeight, 160) + "px";
+      }
+      // When this result is final, commit it and restart for more input
+      if (result.isFinal) {
+        committed = display;
       }
     };
 
@@ -290,7 +295,14 @@ export default function ChatUI({
     };
 
     recognition.onend = () => {
-      setRecording(false);
+      // Auto-restart if still recording (user hasn't pressed stop)
+      if (recognitionRef.current === recognition) {
+        try {
+          recognition.start();
+        } catch {
+          setRecording(false);
+        }
+      }
     };
 
     recognition.start();
@@ -485,7 +497,9 @@ export default function ChatUI({
 
     // Stop recording if active
     if (recording) {
-      recognitionRef.current?.stop();
+      const rec = recognitionRef.current;
+      recognitionRef.current = null; // prevent auto-restart
+      rec?.stop();
       setRecording(false);
     }
 
