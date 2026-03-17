@@ -212,6 +212,28 @@ export async function GET() {
       ? new Date(activePlan.raceDate) < now
       : false;
 
+    // Weekly tasks for current week
+    let weeklyTasks: Array<{ id: string; description: string; category: string; status: string }> = [];
+    if (activePlan) {
+      // Determine current week number from planned workouts
+      const todayStr = format(now, "yyyy-MM-dd");
+      const currentWeekWorkout = await prisma.plannedWorkout.findFirst({
+        where: {
+          planId: activePlan.id,
+          date: { gte: weekStart, lte: weekEnd },
+        },
+        select: { weekNumber: true },
+      });
+      if (currentWeekWorkout) {
+        const tasks = await prisma.weeklyTask.findMany({
+          where: { planId: activePlan.id, weekNumber: currentWeekWorkout.weekNumber },
+          orderBy: { category: "asc" },
+          select: { id: true, description: true, category: true, status: true },
+        });
+        weeklyTasks = tasks;
+      }
+    }
+
     // Active health notes
     const healthNotes = await prisma.healthLog.findMany({
       where: { userId, status: "active" },
@@ -249,6 +271,7 @@ export async function GET() {
         source: a.source,
       })),
       healthNotes,
+      weeklyTasks,
       hasActivePlan,
       planExpired,
       activePlanName: activePlan?.name || null,

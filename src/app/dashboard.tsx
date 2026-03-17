@@ -86,6 +86,13 @@ interface PlanAdjustment {
   createdAt: string;
 }
 
+interface WeeklyTaskItem {
+  id: string;
+  description: string;
+  category: string;
+  status: string;
+}
+
 interface DashboardData {
   userName: string;
   goalRace: string | null;
@@ -98,6 +105,7 @@ interface DashboardData {
   weeklyData: WeeklyBar[];
   recentActivities: ActivityItem[];
   healthNotes: HealthNote[];
+  weeklyTasks: WeeklyTaskItem[];
   hasActivePlan: boolean;
   planExpired: boolean;
   activePlanName: string | null;
@@ -583,6 +591,21 @@ export default function Dashboard() {
     }
   }
 
+  async function handleToggleTask(id: string, status: string) {
+    if (!data) return;
+    setData({
+      ...data,
+      weeklyTasks: data.weeklyTasks.map((t) =>
+        t.id === id ? { ...t, status } : t
+      ),
+    });
+    await fetch("/api/plan/tasks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status }),
+    });
+  }
+
   async function handleUndoAdjustment(id: string) {
     const res = await fetch("/api/plan/adjustments", {
       method: "POST",
@@ -681,6 +704,27 @@ export default function Dashboard() {
           This Week
         </h2>
         <WeekGrid days={data.weekDays} />
+        {data.weeklyTasks.length > 0 && (
+          <div className="mt-3 space-y-1">
+            {data.weeklyTasks.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => handleToggleTask(t.id, t.status === "done" ? "pending" : "done")}
+                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 transition-colors text-left"
+              >
+                <span className={`text-xs ${t.status === "done" ? "text-green-400" : "text-gray-600"}`}>
+                  {t.status === "done" ? "\u2611" : "\u2610"}
+                </span>
+                <span className="text-xs">
+                  {({ strength: "\ud83d\udcaa", mobility: "\ud83e\uddd8", nutrition: "\ud83e\udd66", recovery: "\ud83d\udca4" } as Record<string, string>)[t.category] || "\u2705"}
+                </span>
+                <span className={`text-xs flex-1 ${t.status === "done" ? "text-gray-500 line-through" : "text-gray-300"}`}>
+                  {t.description}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Mileage chart */}
