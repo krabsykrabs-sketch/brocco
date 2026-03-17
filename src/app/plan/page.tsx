@@ -179,12 +179,14 @@ function WeekRow({
   workouts,
   tasks,
   isCurrentWeek,
+  isNextWeek,
   onToggleTask,
 }: {
   weekData: PlanWeekData;
   workouts: Workout[];
   tasks: WeeklyTask[];
   isCurrentWeek: boolean;
+  isNextWeek: boolean;
   onToggleTask: (id: string, status: string) => void;
 }) {
   const isDetailed = weekData.detailLevel === "detailed";
@@ -192,8 +194,8 @@ function WeekRow({
   const isTarget = weekData.detailLevel === "target";
   const isPast = new Date(weekData.startDate) < new Date(new Date().toDateString());
 
-  // Detailed and current weeks start expanded, others collapsed
-  const [expanded, setExpanded] = useState(isDetailed || isCurrentWeek);
+  // Only current and next week expanded by default
+  const [expanded, setExpanded] = useState(isCurrentWeek || isNextWeek);
 
   const hasWorkouts = workouts.length > 0;
   const canExpand = hasWorkouts;
@@ -495,6 +497,7 @@ function PlanPageContent() {
           workouts={workoutsByWeek.get(weekData.weekNumber) || []}
           tasks={tasksByWeek.get(weekData.weekNumber) || []}
           isCurrentWeek={weekData.weekNumber === currentWeekNum}
+          isNextWeek={currentWeekNum !== undefined && weekData.weekNumber === currentWeekNum + 1}
           onToggleTask={handleToggleTask}
         />
       ))}

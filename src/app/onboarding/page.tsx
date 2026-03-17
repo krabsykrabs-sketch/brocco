@@ -10,19 +10,12 @@ interface Message {
   role: "user" | "assistant";
   displayText: string | null;
   toolNotifications?: ToolNotification[];
-  pendingChange?: PendingChange;
 }
 
 interface ToolNotification {
   type: string;
   message: string;
   data?: Record<string, unknown>;
-}
-
-interface PendingChange {
-  id: string;
-  summary: string;
-  status: "pending" | "approved" | "rejected" | "expired";
 }
 
 // ---- Step Indicator ----
@@ -189,7 +182,8 @@ function ToolNotificationBadge({
     profile_updated: "✅",
     health_logged: "❤️",
     activity_logged: "🏃",
-    plan_change_proposed: "📋",
+    plan_created: "📋",
+    plan_modified: "🔧",
   };
 
   return (
@@ -200,59 +194,7 @@ function ToolNotificationBadge({
   );
 }
 
-function PendingChangeCard({
-  change,
-  onAction,
-}: {
-  change: PendingChange;
-  onAction: (id: string, action: "approve" | "reject") => void;
-}) {
-  if (change.status !== "pending") {
-    const statusColors: Record<string, string> = {
-      approved: "text-green-400",
-      rejected: "text-red-400",
-      expired: "text-gray-500",
-    };
-    return (
-      <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2">
-        <p className="text-gray-300">{change.summary}</p>
-        <p
-          className={`text-xs mt-1 ${statusColors[change.status] || "text-gray-500"}`}
-        >
-          {change.status.charAt(0).toUpperCase() + change.status.slice(1)}
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-gray-800 border border-yellow-700/50 rounded-lg px-3 py-2.5 mb-2">
-      <p className="text-sm text-gray-200 mb-2">{change.summary}</p>
-      <div className="flex gap-2">
-        <button
-          onClick={() => onAction(change.id, "approve")}
-          className="px-3 py-1 text-xs bg-green-700 hover:bg-green-600 text-white rounded-md transition-colors"
-        >
-          Approve
-        </button>
-        <button
-          onClick={() => onAction(change.id, "reject")}
-          className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md transition-colors"
-        >
-          Reject
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function MessageBubble({
-  msg,
-  onPlanAction,
-}: {
-  msg: Message;
-  onPlanAction?: (id: string, action: "approve" | "reject") => void;
-}) {
+function MessageBubble({ msg }: { msg: Message }) {
   if (msg.role === "user") {
     return (
       <div className="flex justify-end mb-3">
@@ -281,9 +223,6 @@ function MessageBubble({
             </p>
           </div>
         )}
-        {msg.pendingChange && onPlanAction && (
-          <PendingChangeCard change={msg.pendingChange} onAction={onPlanAction} />
-        )}
       </div>
     </div>
   );
@@ -305,7 +244,6 @@ function PlanCreationChat({
     ToolNotification[]
   >([]);
   const [interviewStarted, setInterviewStarted] = useState(false);
-  const [planApproved, setPlanApproved] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -363,40 +301,6 @@ function PlanCreationChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handlePlanAction(
-    changeId: string,
-    action: "approve" | "reject"
-  ) {
-    try {
-      const res = await fetch("/api/plan/changes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: changeId, action }),
-      });
-      if (res.ok) {
-        setMessages((prev) =>
-          prev.map((m) => {
-            if (m.pendingChange?.id === changeId) {
-              return {
-                ...m,
-                pendingChange: {
-                  ...m.pendingChange,
-                  status: action === "approve" ? "approved" : "rejected",
-                },
-              };
-            }
-            return m;
-          })
-        );
-        if (action === "approve") {
-          setPlanApproved(true);
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }
-
   async function sendMessage(sid: string, text: string) {
     setSending(true);
     setStreamingText("");
@@ -424,7 +328,6 @@ function PlanCreationChat({
       const decoder = new TextDecoder();
       let accumulated = "";
       const notifications: ToolNotification[] = [];
-      let pendingChange: PendingChange | undefined;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -442,20 +345,8 @@ function PlanCreationChat({
               setStreamingText(accumulated);
             }
             if (data.tool) {
-              const notif = data.tool as ToolNotification;
-              notifications.push(notif);
+              notifications.push(data.tool as ToolNotification);
               setStreamingNotifications([...notifications]);
-
-              if (
-                notif.type === "plan_change_proposed" &&
-                notif.data?.pendingChangeId
-              ) {
-                pendingChange = {
-                  id: notif.data.pendingChangeId as string,
-                  summary: notif.data.summary as string,
-                  status: "pending",
-                };
-              }
             }
             if (data.done) {
               setMessages((prev) => [
@@ -466,7 +357,6 @@ function PlanCreationChat({
                   displayText: accumulated || null,
                   toolNotifications:
                     notifications.length > 0 ? notifications : undefined,
-                  pendingChange,
                 },
               ]);
               setStreamingText("");
@@ -520,7 +410,7 @@ function PlanCreationChat({
     }
   }
 
-  const canFinish = planApproved && !sending && !streamingText;
+  const canFinish = !sending && !streamingText;
 
   return (
     <div className="flex flex-col h-full">
@@ -552,7 +442,6 @@ function PlanCreationChat({
           <MessageBubble
             key={msg.id}
             msg={msg}
-            onPlanAction={handlePlanAction}
           />
         ))}
 

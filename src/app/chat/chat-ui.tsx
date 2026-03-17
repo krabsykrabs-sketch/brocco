@@ -4,45 +4,17 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-// Web Speech API type shim
-interface SpeechRecognitionEvent extends Event {
-  results: SpeechRecognitionResultList;
-}
-interface SpeechRecognitionInstance extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start(): void;
-  stop(): void;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-  onerror: ((event: Event) => void) | null;
-  onend: (() => void) | null;
-}
-declare global {
-  interface Window {
-    SpeechRecognition?: new () => SpeechRecognitionInstance;
-    webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
-  }
-}
-
 interface Message {
   id: string;
   role: "user" | "assistant";
   displayText: string | null;
   toolNotifications?: ToolNotification[];
-  pendingChange?: PendingChange;
 }
 
 interface ToolNotification {
   type: string;
   message: string;
   data?: Record<string, unknown>;
-}
-
-interface PendingChange {
-  id: string;
-  summary: string;
-  status: "pending" | "approved" | "rejected" | "expired";
 }
 
 interface SessionItem {
@@ -64,7 +36,8 @@ function ToolNotificationBadge({ notification }: { notification: ToolNotificatio
     health_logged: "\u2764\ufe0f",
     activity_logged: "\ud83c\udfc3",
     plan_adjusted: "\ud83d\udd27",
-    plan_change_proposed: "\ud83d\udcdd",
+    plan_created: "\ud83d\udcdd",
+    plan_modified: "\ud83d\udd27",
   };
 
   return (
@@ -75,57 +48,7 @@ function ToolNotificationBadge({ notification }: { notification: ToolNotificatio
   );
 }
 
-function PendingChangeCard({
-  change,
-  onAction,
-}: {
-  change: PendingChange;
-  onAction: (id: string, action: "approve" | "reject") => void;
-}) {
-  if (change.status !== "pending") {
-    const statusColors: Record<string, string> = {
-      approved: "text-green-400",
-      rejected: "text-red-400",
-      expired: "text-gray-500",
-    };
-    return (
-      <div className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm mb-2">
-        <p className="text-gray-300">{change.summary}</p>
-        <p className={`text-xs mt-1 ${statusColors[change.status] || "text-gray-500"}`}>
-          {change.status.charAt(0).toUpperCase() + change.status.slice(1)}
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-gray-800 border border-yellow-700/50 rounded-lg px-3 py-2.5 mb-2">
-      <p className="text-sm text-gray-200 mb-2">{change.summary}</p>
-      <div className="flex gap-2">
-        <button
-          onClick={() => onAction(change.id, "approve")}
-          className="px-3 py-1 text-xs bg-green-700 hover:bg-green-600 text-white rounded-md transition-colors"
-        >
-          Approve
-        </button>
-        <button
-          onClick={() => onAction(change.id, "reject")}
-          className="px-3 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md transition-colors"
-        >
-          Reject
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function MessageBubble({
-  msg,
-  onPlanAction,
-}: {
-  msg: Message;
-  onPlanAction: (id: string, action: "approve" | "reject") => void;
-}) {
+function MessageBubble({ msg }: { msg: Message }) {
   if (msg.role === "user") {
     return (
       <div className="flex justify-end mb-3">
@@ -149,9 +72,6 @@ function MessageBubble({
           <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5">
             <p className="text-sm text-gray-200 whitespace-pre-wrap">{msg.displayText}</p>
           </div>
-        )}
-        {msg.pendingChange && (
-          <PendingChangeCard change={msg.pendingChange} onAction={onPlanAction} />
         )}
       </div>
     </div>
@@ -235,78 +155,77 @@ export default function ChatUI({
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [recording, setRecording] = useState(false);
-  const [speechSupported, setSpeechSupported] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [micSupported, setMicSupported] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
-  // Detect Web Speech API support
+  // Detect MediaRecorder support
   useEffect(() => {
-    setSpeechSupported(
-      typeof window !== "undefined" &&
-        !!(window.SpeechRecognition || window.webkitSpeechRecognition)
-    );
+    setMicSupported(typeof window !== "undefined" && !!window.MediaRecorder);
   }, []);
 
-  function toggleRecording() {
+  async function toggleRecording() {
     if (recording) {
-      const rec = recognitionRef.current;
-      recognitionRef.current = null; // prevent auto-restart in onend
-      rec?.stop();
-      setRecording(false);
+      // Stop recording — MediaRecorder.onstop will handle transcription
+      mediaRecorderRef.current?.stop();
       return;
     }
 
-    const SpeechRecognition =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4",
+      });
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
 
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = navigator.language || "en-US";
-    recognitionRef.current = recognition;
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
 
-    // We accumulate finalized text across restarts in a ref-like variable
-    let committed = input; // text committed so far (base + previous final results)
+      recorder.onstop = async () => {
+        // Stop all tracks to release mic
+        stream.getTracks().forEach((t) => t.stop());
+        setRecording(false);
 
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      // With continuous=false, there's only one result (index 0)
-      const result = event.results[0];
-      const transcript = result[0].transcript;
-      const display = committed
-        ? committed + " " + transcript
-        : transcript;
-      setInput(display);
-      // Auto-expand textarea
-      if (inputRef.current) {
-        inputRef.current.style.height = "auto";
-        inputRef.current.style.height =
-          Math.min(inputRef.current.scrollHeight, 160) + "px";
-      }
-      // When this result is final, commit it and restart for more input
-      if (result.isFinal) {
-        committed = display;
-      }
-    };
+        const chunks = audioChunksRef.current;
+        if (chunks.length === 0) return;
 
-    recognition.onerror = () => {
-      setRecording(false);
-    };
+        const blob = new Blob(chunks, { type: recorder.mimeType });
+        setTranscribing(true);
 
-    recognition.onend = () => {
-      // Auto-restart if still recording (user hasn't pressed stop)
-      if (recognitionRef.current === recognition) {
         try {
-          recognition.start();
-        } catch {
-          setRecording(false);
-        }
-      }
-    };
+          const form = new FormData();
+          form.append("audio", blob, `recording.${recorder.mimeType.includes("webm") ? "webm" : "mp4"}`);
 
-    recognition.start();
-    setRecording(true);
+          const res = await fetch("/api/voice/transcribe", { method: "POST", body: form });
+          if (res.ok) {
+            const { text } = await res.json();
+            if (text) {
+              const newValue = input ? input + " " + text : text;
+              setInput(newValue);
+              if (inputRef.current) {
+                inputRef.current.style.height = "auto";
+                inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 160) + "px";
+              }
+            }
+          }
+        } catch {
+          // Transcription failed silently
+        } finally {
+          setTranscribing(false);
+          inputRef.current?.focus();
+        }
+      };
+
+      recorder.start();
+      setRecording(true);
+    } catch {
+      // Mic permission denied or unavailable
+    }
   }
 
   const scrollToBottom = useCallback(() => {
@@ -365,7 +284,6 @@ export default function ChatUI({
           const decoder = new TextDecoder();
           let accumulated = "";
           const notifications: ToolNotification[] = [];
-          let pendingChange: PendingChange | undefined;
 
           // Add user message
           setMessages([{
@@ -387,12 +305,8 @@ export default function ChatUI({
                   setStreamingText(accumulated);
                 }
                 if (d.tool) {
-                  const notif = d.tool as ToolNotification;
-                  notifications.push(notif);
+                  notifications.push(d.tool as ToolNotification);
                   setStreamingNotifications([...notifications]);
-                  if (notif.type === "plan_change_proposed" && notif.data?.pendingChangeId) {
-                    pendingChange = { id: notif.data.pendingChangeId as string, summary: notif.data.summary as string, status: "pending" };
-                  }
                 }
                 if (d.done) {
                   setMessages(prev => [...prev, {
@@ -400,7 +314,6 @@ export default function ChatUI({
                     role: "assistant",
                     displayText: accumulated || null,
                     toolNotifications: notifications.length > 0 ? notifications : undefined,
-                    pendingChange,
                   }]);
                   setStreamingText("");
                   setStreamingNotifications([]);
@@ -462,45 +375,13 @@ export default function ChatUI({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handlePlanAction(changeId: string, action: "approve" | "reject") {
-    try {
-      const res = await fetch("/api/plan/changes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: changeId, action }),
-      });
-      if (res.ok) {
-        // Update the message in state
-        setMessages((prev) =>
-          prev.map((m) => {
-            if (m.pendingChange?.id === changeId) {
-              return {
-                ...m,
-                pendingChange: {
-                  ...m.pendingChange,
-                  status: action === "approve" ? "approved" : "rejected",
-                },
-              };
-            }
-            return m;
-          })
-        );
-      }
-    } catch {
-      // ignore
-    }
-  }
-
   async function handleSend() {
     const text = input.trim();
     if (!text || sending) return;
 
     // Stop recording if active
     if (recording) {
-      const rec = recognitionRef.current;
-      recognitionRef.current = null; // prevent auto-restart
-      rec?.stop();
-      setRecording(false);
+      mediaRecorderRef.current?.stop();
     }
 
     setInput("");
@@ -537,7 +418,6 @@ export default function ChatUI({
       const decoder = new TextDecoder();
       let accumulated = "";
       const notifications: ToolNotification[] = [];
-      let pendingChange: PendingChange | undefined;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -556,18 +436,8 @@ export default function ChatUI({
               setStreamingText(accumulated);
             }
             if (data.tool) {
-              const notif = data.tool as ToolNotification;
-              notifications.push(notif);
+              notifications.push(data.tool as ToolNotification);
               setStreamingNotifications([...notifications]);
-
-              // Check for pending plan change
-              if (notif.type === "plan_change_proposed" && notif.data?.pendingChangeId) {
-                pendingChange = {
-                  id: notif.data.pendingChangeId as string,
-                  summary: notif.data.summary as string,
-                  status: "pending",
-                };
-              }
             }
             if (data.done) {
               setMessages((prev) => [
@@ -577,7 +447,6 @@ export default function ChatUI({
                   role: "assistant",
                   displayText: accumulated || null,
                   toolNotifications: notifications.length > 0 ? notifications : undefined,
-                  pendingChange,
                 },
               ]);
               setStreamingText("");
@@ -627,7 +496,7 @@ export default function ChatUI({
   return (
     <div className="flex flex-col h-screen max-w-2xl mx-auto">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-gray-800 flex-shrink-0">
+      <header className="flex items-center justify-between px-4 py-3 border-b border-gray-800 flex-shrink-0 bg-gray-950/95 backdrop-blur-sm">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(true)}
@@ -638,15 +507,15 @@ export default function ChatUI({
           </button>
           <div className="flex items-center gap-2">
             <span className="text-xl">&#x1F966;</span>
-            <span className="font-semibold">Brocco</span>
+            <span className="font-bold text-lg">brocco.run</span>
           </div>
         </div>
-        <Link
-          href="/"
-          className="text-sm text-gray-400 hover:text-white transition-colors"
-        >
-          Dashboard
-        </Link>
+        <div className="flex items-center gap-4 text-sm text-gray-400">
+          <Link href="/" className="hover:text-white transition-colors">Dashboard</Link>
+          <Link href="/plan" className="hover:text-white transition-colors">Plan</Link>
+          <Link href="/history" className="hover:text-white transition-colors">History</Link>
+          <Link href="/settings" className="hover:text-white transition-colors">Settings</Link>
+        </div>
       </header>
 
       {/* Sidebar */}
@@ -667,7 +536,7 @@ export default function ChatUI({
         )}
 
         {messages.map((msg) => (
-          <MessageBubble key={msg.id} msg={msg} onPlanAction={handlePlanAction} />
+          <MessageBubble key={msg.id} msg={msg} />
         ))}
 
         {/* Streaming indicator */}
@@ -712,20 +581,26 @@ export default function ChatUI({
             style={{ height: "auto", maxHeight: "160px", overflow: "auto" }}
             disabled={sending}
           />
-          {speechSupported && (
+          {micSupported && (
             <button
               onClick={toggleRecording}
-              disabled={sending}
+              disabled={sending || transcribing}
               className={`p-2.5 rounded-xl transition-colors flex-shrink-0 ${
                 recording
                   ? "bg-red-600 hover:bg-red-700 text-white animate-pulse"
+                  : transcribing
+                  ? "bg-yellow-600/50 text-yellow-300"
                   : "bg-gray-800 hover:bg-gray-700 text-gray-400"
               } disabled:opacity-40 disabled:cursor-not-allowed`}
-              title={recording ? "Stop recording" : "Voice input"}
+              title={recording ? "Stop recording" : transcribing ? "Transcribing..." : "Voice input"}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m-4 0h8M12 3a3 3 0 00-3 3v4a3 3 0 006 0V6a3 3 0 00-3-3z" />
-              </svg>
+              {transcribing ? (
+                <span className="inline-block w-5 h-5 border-2 border-yellow-300/30 border-t-yellow-300 rounded-full animate-spin" />
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m-4 0h8M12 3a3 3 0 00-3 3v4a3 3 0 006 0V6a3 3 0 00-3-3z" />
+                </svg>
+              )}
             </button>
           )}
           <button

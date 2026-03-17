@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { startOfWeek, endOfWeek, subWeeks, format, subDays } from "date-fns";
 import type Anthropic from "@anthropic-ai/sdk";
 import { autoMatchActivity } from "@/lib/auto-match";
+import { applyPlanGeneration, applyPlanModifications } from "@/lib/apply-plan";
 
 // --- Tool definitions for the Anthropic API ---
 
@@ -784,43 +785,28 @@ async function handleModifyPlan(
   userId: string,
   chatMessageId?: string
 ): Promise<ToolResult> {
-  const changes = (input.changes || []) as Array<Record<string, unknown>>;
-  const summary = String(input.summary || "Plan changes proposed by Brocco");
+  const changes = (input.changes || []) as Array<{
+    action: string;
+    workout_id?: string;
+    date?: string;
+    updates?: Record<string, unknown>;
+    reason?: string;
+  }>;
+  const summary = String(input.summary || "Plan changes applied by Brocco");
 
   if (!Array.isArray(changes) || changes.length === 0) {
     return { success: false, error: "No changes provided" };
   }
 
-  if (!chatMessageId) {
-    return { success: false, error: "Chat message ID required for plan modifications" };
-  }
-
-  const pendingChange = await prisma.pendingPlanChange.create({
-    data: {
-      userId,
-      chatMessageId,
-      changes: changes as unknown as object,
-      summary,
-      status: "pending",
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24h
-    },
-  });
+  // Apply changes directly (Brocco should have asked for verbal confirmation first)
+  const results = await applyPlanModifications(userId, changes);
 
   return {
     success: true,
-    data: {
-      pendingChangeId: pendingChange.id,
-      summary,
-      expiresAt: pendingChange.expiresAt.toISOString(),
-    },
+    data: { modifications: results, summary },
     notification: {
-      type: "plan_change_proposed",
+      type: "plan_modified",
       message: summary,
-      data: {
-        pendingChangeId: pendingChange.id,
-        summary,
-        changes,
-      },
     },
   };
 }
@@ -885,9 +871,8 @@ async function handleGeneratePlan(
     };
   }
 
-  // Store as pending change with plan generation data
-  const changePayload = {
-    type: "generate_plan",
+  // Apply plan directly (Brocco should have asked for verbal confirmation first)
+  const payload = {
     plan_name: planName,
     goal,
     race_date: raceDate,
@@ -897,47 +882,21 @@ async function handleGeneratePlan(
     workouts,
   };
 
-  // We need a chatMessageId to link the pending change
-  // If not available, create a placeholder
-  if (!chatMessageId) {
-    return {
-      success: false,
-      error: "Chat message ID required for plan generation",
-    };
-  }
-
-  const pendingChange = await prisma.pendingPlanChange.create({
-    data: {
-      userId,
-      chatMessageId,
-      changes: changePayload as unknown as object,
-      summary,
-      status: "pending",
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-    },
-  });
+  const result = await applyPlanGeneration(userId, payload);
 
   return {
     success: true,
     data: {
-      pendingChangeId: pendingChange.id,
+      planId: result.planId,
       summary,
-      planName,
+      planName: result.planName,
       totalWorkouts: workouts.length,
       totalPhases: phases.length,
-      weeksCount: phases.length > 0 ? phases[phases.length - 1].end_week : 0,
-      expiresAt: pendingChange.expiresAt.toISOString(),
+      totalWeeks: planWeeks.length,
     },
     notification: {
-      type: "plan_change_proposed",
-      message: `New plan: ${planName} — ${summary}`,
-      data: {
-        pendingChangeId: pendingChange.id,
-        summary,
-        planName,
-        totalWorkouts: workouts.length,
-        totalPhases: phases.length,
-      },
+      type: "plan_created",
+      message: `Plan created: ${result.planName}`,
     },
   };
 }

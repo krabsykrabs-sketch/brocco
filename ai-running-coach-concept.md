@@ -6,7 +6,7 @@ A web app that acts as a personal AI running coach. It pulls training data autom
 
 **Domain:** brocco.run — "Run like a broccoli."
 **Hosted on:** Hetzner server via Coolify (EU-based)
-**Tech stack:** Next.js 15, PostgreSQL, Strava API, Anthropic API (Claude), Web Speech API
+**Tech stack:** Next.js 15, PostgreSQL, Strava API, Anthropic API (Claude), Groq API (Whisper for voice input)
 **Users:** Invite-only — the creator and friends. Not commercial (yet).
 
 ---
@@ -104,23 +104,21 @@ These are conservative, short-horizon, reversible, and stay within the week's st
 - Any change to the plan more than 7 days out
 - Plan generation or regeneration
 
-These change the shape of the training block and are shown as pending changes in the chat UI for the user to approve or reject.
+These change the shape of the training block. Brocco proposes them conversationally in chat ("Here's what I'm thinking — want me to go ahead?") and applies them after the user confirms in the conversation (e.g., "yes", "go for it", "actually swap Thursday and Friday first"). No button-based approve/reject UI — confirmation happens naturally through chat.
 
-### 3. Voice Interface
+### 3. Voice Interface (input only — Brocco does not speak)
 
-**Speech-to-text (your input):**
-- Uses the Web Speech API (built into Chrome/Safari, free)
-- Press a microphone button or use a keyboard shortcut to start listening
-- Your speech is transcribed to text and sent as a chat message
-- Works well for simple coaching questions, especially on mobile
+**Speech-to-text via Groq Whisper API:**
+- User taps microphone button → browser records audio
+- User taps again (or releases) → recording stops
+- Audio is sent to server → server sends to Groq's Whisper API → text returned in ~1 second
+- Transcribed text fills the input box — user can review and edit before sending
+- Groq runs Whisper Large v3 Turbo: handles accents, background noise, German/English, mixed languages
+- Free tier: no credit card required, rate limits sufficient for small user base
+- If free tier exceeded: $0.04/hour (Turbo) or $0.111/hour (Large v3) — effectively free at our scale
+- No text-to-speech — Brocco's responses are read, not spoken
 
-**Text-to-speech (AI response):**
-- Option 1: Browser's built-in SpeechSynthesis API (free, sounds robotic but works)
-- Option 2: ElevenLabs API (much more natural, small cost per request)
-- Toggle: you can choose voice on/off per message or globally
-- Ideal for post-run when you're stretching and don't want to read a screen
-
-**Practical consideration:** Voice is a nice-to-have layer on top of text chat. The app should work perfectly as text-only. Voice is the convenience feature, not the core.
+**Practical consideration:** Voice is a nice-to-have layer on top of text chat. The app should work perfectly as text-only. Voice is the convenience feature, not the core. Ideal for post-run when you're stretching and don't want to type on your phone.
 
 ### 4. Training Plan
 
@@ -189,8 +187,8 @@ Week 14-26 — TARGETS ONLY:
 **Auto-adjustment flow:**
 When Brocco auto-applies a micro-adjustment, it is logged in `plan_adjustment_log` with a reason and the before/after state. The dashboard shows a notification with an undo button. No chat interaction required — this happens automatically when activities are imported.
 
-**Pending changes flow (structural):**
-When Brocco proposes structural modifications (via chat), they are stored as pending changes linked to the chat message. The user sees a confirmation card in the chat UI. Pending changes expire after 24 hours if not acted on.
+**Structural changes flow (conversational confirmation):**
+When Brocco proposes structural modifications (via chat), it describes the changes and asks for confirmation conversationally. The user confirms in natural language ("yes", "go for it", "sounds good"). Brocco then applies the changes directly. No button-based approve/reject UI, no pending_plan_changes table — confirmation is part of the conversation flow. If the user wants adjustments ("actually, move the long run to Saturday"), Brocco modifies the proposal and asks again.
 
 **Plan storage:**
 - Plans are stored as structured data (phases, weeks, workouts) in PostgreSQL
@@ -611,18 +609,7 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 | undone | boolean | default false — set true if user clicks undo |
 | created_at | timestamp | |
 
-**pending_plan_changes** (structural changes — require user confirmation)
-| Column | Type | Notes |
-|--------|------|-------|
-| id | uuid | PK |
-| user_id | uuid | FK → users |
-| chat_message_id | uuid | FK → chat_messages — which message proposed this |
-| changes | jsonb | the full modify_plan tool call payload |
-| summary | text | human-readable summary of all changes |
-| status | enum | 'pending', 'approved', 'rejected', 'expired' |
-| created_at | timestamp | |
-| resolved_at | timestamp | nullable |
-| expires_at | timestamp | default: created_at + 24 hours |
+**Note:** The `pending_plan_changes` table has been removed. Plan modifications are confirmed conversationally in chat — Brocco proposes changes, the user confirms in natural language, and Brocco applies them directly via tool calls. No button-based approval flow.
 
 **invite_codes**
 | Column | Type | Notes |
@@ -892,32 +879,45 @@ Six tools available to Claude during chat:
 
 ## Voice Interface — Technical Details
 
-### Speech-to-Text (Input)
-- Use the Web Speech API (`SpeechRecognition` interface)
-- Supported in Chrome, Edge, Safari (not Firefox)
-- Free, runs in the browser, no API costs
-- Language: English (or German, configurable per user in ai_preferences)
-- UI: microphone button that toggles recording, with visual feedback (pulsing dot)
+### Speech-to-Text via Groq Whisper API (input only)
 
-### Text-to-Speech (Output)
-**Option A: Browser SpeechSynthesis (free, basic)**
-- Built into all modern browsers
-- Sounds robotic but functional
-- Zero cost, zero latency
-- Good enough for v1
+**Why Groq Whisper instead of Web Speech API:**
+The browser's built-in Web Speech API has poor accuracy with accents, background noise, and non-native English. Groq hosts OpenAI's open-source Whisper model on their fast inference hardware, delivering dramatically better transcription quality with a generous free tier.
 
-**Option B: ElevenLabs API (natural, paid)**
-- Very natural-sounding voices
-- ~$5/month for personal use tier
-- Could give Brocco a distinctive voice (stretch goal)
-- Add as optional upgrade later
+**Flow:**
+1. User taps microphone button in chat UI
+2. Browser records audio using MediaRecorder API (works in all modern browsers, including Firefox)
+3. User taps mic again to stop (or it auto-stops after a silence threshold)
+4. Audio blob is sent to server endpoint `/api/voice/transcribe`
+5. Server sends audio to Groq API: `POST https://api.groq.com/openai/v1/audio/transcriptions`
+6. Groq returns transcribed text in ~1 second
+7. Text appears in the chat input box for user to review/edit before sending
+8. User presses Enter to send (or edits first)
 
-**Implementation:**
-- Default: text-only
-- Toggle button to enable voice output
-- Auto-play voice response when voice mode is on
-- Stop button to interrupt playback
-- Voice mode preference stored per user
+**Model:** `whisper-large-v3-turbo` — best balance of speed and accuracy. 216x real-time speed. Supports 50+ languages including English, German, Spanish.
+
+**Groq API setup:**
+- Sign up at console.groq.com (free, no credit card)
+- Get API key, add as `GROQ_API_KEY` env variable
+- Free tier: sufficient for small user base (rate-limited but generous)
+- Paid tier if needed: $0.04/hour (Turbo) — a 30-second message = $0.0003
+
+**UI:**
+- Microphone button next to chat input (comfortable touch target on mobile)
+- Pulsing red indicator while recording
+- If browser doesn't support MediaRecorder, hide the mic button
+- Language auto-detected by Whisper (no manual language selection needed)
+
+**No text-to-speech:** Brocco does not speak. Users read responses. This keeps the app simple and avoids the uncanny valley of robotic AI voices.
+
+**Server endpoint:**
+```
+POST /api/voice/transcribe
+- Accepts: audio file (webm, mp4, wav, mp3)
+- Sends to Groq Whisper API
+- Returns: { text: "transcribed text" }
+- Max file size: 25MB (Groq free tier limit)
+```
 
 ---
 
@@ -979,20 +979,19 @@ The app needs a `/legal` page accessible from the footer (next to "Powered by St
 6. AI chat: text-based conversation with training context + Brocco personality
 7. Health log: quick-add form + AI can log via tool use
 8. AI tool use: adjust_plan, modify_plan, log_health, log_activity, query_data, save_profile
-9. Pending changes: store, display, confirm/reject UI
+9. Plan changes confirmed conversationally (Brocco proposes, user confirms in chat, Brocco applies directly)
 
 **Estimated scope:** 3-4 weekends with Claude Code.
 
 ### Phase 2 — Training Plan + Voice
-**Goal:** Full plan lifecycle and hands-free interaction.
+**Goal:** Full plan lifecycle and voice input.
 
 1. AI plan generation via chat ("generate me a marathon plan")
 2. Plan view page: calendar layout with phases and color-coded workouts
 3. Auto-matching: link activities to planned workouts (timezone-aware)
 4. Planned vs. actual comparison on dashboard
-5. Speech-to-text input (Web Speech API)
-6. Text-to-speech output (browser built-in)
-7. Voice recording indicator + auto-play toggle
+5. Voice input via Groq Whisper API (replace Web Speech API): mic button → record → send to Groq → transcribe → text in input box
+6. Server endpoint: POST /api/voice/transcribe
 
 **Estimated scope:** 2-3 weekends.
 
@@ -1090,8 +1089,7 @@ The context builder includes `activity_analysis` for recent quality sessions (la
 | Frontend | Next.js 15 + TypeScript + Tailwind | Same stack as previous projects, reuse knowledge |
 | Database | PostgreSQL (via Coolify) | Relational data, free on your server |
 | AI | Anthropic API (Claude Opus 4.6) | Best reasoning, tool use support |
-| Voice Input | Web Speech API | Free, browser-native, good enough |
-| Voice Output | Browser SpeechSynthesis (v1) | Free, upgrade to ElevenLabs later |
+| Voice Input | Groq Whisper API (whisper-large-v3-turbo) | Best accuracy, free tier, handles accents/multilingual |
 | Strava | Direct API integration | Free, well-documented |
 | Auth | Email + password, invite codes | Multi-user without complexity |
 | Hosting | Coolify on Hetzner | EU data, same server, already set up |
