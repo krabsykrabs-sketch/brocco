@@ -124,7 +124,8 @@ export async function POST(request: NextRequest) {
           assistantMsg.id,
           controller,
           encoder,
-          model
+          model,
+          chatSession.type as string
         );
 
         // Update assistant message with final text
@@ -183,19 +184,29 @@ async function runWithTools(
   controller: ReadableStreamDefaultController,
   encoder: TextEncoder,
   model: string,
+  sessionType: string,
   maxIterations = 5
 ): Promise<ToolUseResult> {
   let fullText = "";
   let currentMessages = [...messages];
 
+  // Plan creation needs much higher max_tokens because generate_plan
+  // outputs 70+ workouts as JSON in a single tool call (~12k+ tokens)
+  const maxTokens = sessionType === "plan_creation" ? 16384 : 8192;
+
   for (let i = 0; i < maxIterations; i++) {
     const response = await anthropic.messages.create({
       model,
-      max_tokens: 4096,
+      max_tokens: maxTokens,
       system: systemPrompt,
       messages: currentMessages,
       tools: toolDefinitions,
     });
+
+    // Detect truncation — if response was cut off, the tool call may be incomplete
+    if (response.stop_reason === "max_tokens") {
+      console.warn(`[chat] Response truncated (max_tokens=${maxTokens}, session=${sessionId}, type=${sessionType})`);
+    }
 
     // Process response content blocks
     const toolUseBlocks: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
@@ -228,6 +239,17 @@ async function runWithTools(
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
     for (const toolUse of toolUseBlocks) {
+      // Log generate_plan input for debugging
+      if (toolUse.name === "generate_plan") {
+        const inp = toolUse.input;
+        const workouts = (inp.workouts as unknown[]) || [];
+        const phases = (inp.phases as unknown[]) || [];
+        console.log(`[generate_plan] plan="${inp.plan_name}", phases=${phases.length}, workouts=${workouts.length}`);
+        if (workouts.length === 0) {
+          console.warn(`[generate_plan] WARNING: workouts array is empty! Full input keys: ${Object.keys(inp).join(", ")}`);
+        }
+      }
+
       const result = await handleToolCall(
         toolUse.name,
         toolUse.input,
@@ -263,7 +285,7 @@ async function runWithTools(
       // Execute one final turn to let Claude respond to tool results, then stop
       const finalResponse = await anthropic.messages.create({
         model,
-        max_tokens: 4096,
+        max_tokens: maxTokens,
         system: systemPrompt,
         messages: currentMessages,
         tools: toolDefinitions,

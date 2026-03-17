@@ -783,6 +783,20 @@ async function handleGeneratePlan(
   }>;
   const summary = String(input.summary || `New plan: ${planName || "Training plan"}`);
 
+  if (!Array.isArray(workouts) || workouts.length === 0) {
+    return {
+      success: false,
+      error: "The workouts array is empty. You must include all individual workouts with dates, types, and targets. Try generating the plan again, making sure to include the full workouts array.",
+    };
+  }
+
+  if (!Array.isArray(phases) || phases.length === 0) {
+    return {
+      success: false,
+      error: "The phases array is empty. You must include at least one phase (e.g., base, build, peak, taper). Try again.",
+    };
+  }
+
   // Store as pending change with plan generation data
   const changePayload = {
     type: "generate_plan",
