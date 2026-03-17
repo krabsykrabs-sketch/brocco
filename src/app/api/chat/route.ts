@@ -192,7 +192,7 @@ async function runWithTools(
 
   // Plan creation needs much higher max_tokens because generate_plan
   // outputs 70+ workouts as JSON in a single tool call (~12k+ tokens)
-  const maxTokens = sessionType === "plan_creation" ? 16384 : 8192;
+  const maxTokens = sessionType === "plan_creation" ? 32000 : 8192;
 
   for (let i = 0; i < maxIterations; i++) {
     const response = await anthropic.messages.create({
