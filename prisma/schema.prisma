@@ -65,6 +65,7 @@ model Plan {
 
   user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   phases      PlanPhase[]
+  weeks       PlanWeek[]
   workouts    PlannedWorkout[]
   weeklyTasks WeeklyTask[]
 
@@ -87,9 +88,42 @@ model PlanPhase {
   endWeek     Int     @map("end_week")
 
   plan     Plan             @relation(fields: [planId], references: [id], onDelete: Cascade)
+  weeks    PlanWeek[]
   workouts PlannedWorkout[]
 
   @@map("plan_phases")
+}
+
+model PlanWeek {
+  id              String          @id @default(uuid()) @db.Uuid
+  planId          String          @map("plan_id") @db.Uuid
+  phaseId         String?         @map("phase_id") @db.Uuid
+  weekNumber      Int             @map("week_number")
+  startDate       DateTime        @map("start_date") @db.Date
+  detailLevel     WeekDetailLevel @map("detail_level")
+  targetKm        Decimal?        @map("target_km") @db.Decimal(6, 1)
+  targetSessions  Int?            @map("target_sessions")
+  sessionTypes    Json?           @map("session_types") @db.JsonB
+  notes           String?
+  actualKm        Decimal?        @map("actual_km") @db.Decimal(6, 1)
+  createdAt       DateTime        @default(now()) @map("created_at")
+
+  plan  Plan       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  phase PlanPhase? @relation(fields: [phaseId], references: [id], onDelete: SetNull)
+
+  @@unique([planId, weekNumber])
+  @@map("plan_weeks")
+}
+
+enum WeekDetailLevel {
+  detailed
+  outline
+  target
+}
+
+enum WorkoutDetailLevel {
+  detailed
+  outline
 }
 
 model PlannedWorkout {
@@ -106,6 +140,7 @@ model PlannedWorkout {
   targetPaceSecs    Int?          @map("target_pace_secs")
   targetDurationMin Int?          @map("target_duration_min")
   description       String?
+  detailLevel       WorkoutDetailLevel @default(detailed) @map("detail_level")
   status            WorkoutStatus @default(planned)
   matchedActivityId String?       @map("matched_activity_id") @db.Uuid
   createdAt         DateTime      @default(now()) @map("created_at")

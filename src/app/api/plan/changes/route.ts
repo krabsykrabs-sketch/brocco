@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
-import type { WorkoutType, ActivityKind } from "@prisma/client";
+import type { WorkoutType, ActivityKind, WeekDetailLevel, WorkoutDetailLevel } from "@prisma/client";
 
 // POST /api/plan/changes — Approve or reject a pending plan change
 export async function POST(request: NextRequest) {
@@ -89,11 +89,20 @@ async function applyPlanGeneration(
     start_week: number;
     end_week: number;
   }>;
-  const workouts = payload.workouts as Array<{
+  const planWeeks = (payload.plan_weeks || []) as Array<{
+    week_number: number;
+    start_date: string;
+    detail_level: string;
+    target_km: number;
+    target_sessions: number;
+    session_types?: string[];
+  }>;
+  const workouts = (payload.workouts || []) as Array<{
     date: string;
     week_number: number;
     title: string;
     workout_type: string;
+    detail_level?: string;
     activity_type?: string;
     target_distance_km?: number;
     target_pace?: string;
@@ -101,10 +110,13 @@ async function applyPlanGeneration(
     description?: string;
   }>;
 
-  // Compute end date from last workout or race date
-  const lastWorkoutDate = workouts.length > 0
-    ? workouts.reduce((latest, w) => w.date > latest ? w.date : latest, workouts[0].date)
-    : raceDate;
+  // Compute end date from plan_weeks or race date
+  const lastWeek = planWeeks.length > 0
+    ? planWeeks.reduce((latest, w) => w.start_date > latest ? w.start_date : latest, planWeeks[0].start_date)
+    : raceDate || startDate;
+  // Add 6 days to get the Sunday of the last week
+  const endDateObj = new Date(lastWeek);
+  endDateObj.setDate(endDateObj.getDate() + 6);
 
   // Create the plan
   const plan = await prisma.plan.create({
@@ -112,9 +124,9 @@ async function applyPlanGeneration(
       userId,
       name: planName,
       goal,
-      raceDate: new Date(raceDate),
+      raceDate: raceDate ? new Date(raceDate) : endDateObj,
       startDate: new Date(startDate),
-      endDate: new Date(lastWorkoutDate),
+      endDate: endDateObj,
       status: "active",
     },
   });
@@ -133,13 +145,30 @@ async function applyPlanGeneration(
         endWeek: p.end_week,
       },
     });
-    // Map week ranges to phase IDs
     for (let w = p.start_week; w <= p.end_week; w++) {
       phaseMap[String(w)] = phase.id;
     }
   }
 
-  // Create workouts in batches
+  // Create plan_weeks for every week
+  if (planWeeks.length > 0) {
+    const validDetailLevels: WeekDetailLevel[] = ["detailed", "outline", "target"];
+    await prisma.planWeek.createMany({
+      data: planWeeks.map((pw) => ({
+        planId: plan.id,
+        phaseId: phaseMap[String(pw.week_number)] || null,
+        weekNumber: pw.week_number,
+        startDate: new Date(pw.start_date),
+        detailLevel: (validDetailLevels.includes(pw.detail_level as WeekDetailLevel) ? pw.detail_level : "target") as WeekDetailLevel,
+        targetKm: pw.target_km ?? null,
+        targetSessions: pw.target_sessions ?? null,
+        sessionTypes: pw.session_types || undefined,
+      })),
+    });
+  }
+
+  // Create workouts (only for detailed + outline weeks)
+  const validWorkoutDetail: WorkoutDetailLevel[] = ["detailed", "outline"];
   const workoutData = workouts.map((w) => ({
     planId: plan.id,
     phaseId: phaseMap[String(w.week_number)] || null,
@@ -148,6 +177,7 @@ async function applyPlanGeneration(
     title: w.title,
     workoutType: (w.workout_type || "easy") as WorkoutType,
     activityType: (w.activity_type || "run") as ActivityKind,
+    detailLevel: (validWorkoutDetail.includes(w.detail_level as WorkoutDetailLevel) ? w.detail_level : "detailed") as WorkoutDetailLevel,
     targetDistanceKm: w.target_distance_km ?? null,
     targetPace: w.target_pace || null,
     targetDurationMin: w.target_duration_min ?? null,
@@ -155,20 +185,21 @@ async function applyPlanGeneration(
     status: "planned" as const,
   }));
 
-  // Use createMany for efficiency
   await prisma.plannedWorkout.createMany({
     data: workoutData,
   });
 
-  // Also update user profile goal if applicable
-  await prisma.userProfile.update({
-    where: { userId },
-    data: {
-      goalRace: planName,
-      goalRaceDate: new Date(raceDate),
-      goalTime: goal,
-    },
-  });
+  // Update user profile goal if applicable
+  if (raceDate) {
+    await prisma.userProfile.update({
+      where: { userId },
+      data: {
+        goalRace: planName,
+        goalRaceDate: new Date(raceDate),
+        goalTime: goal,
+      },
+    });
+  }
 }
 
 async function applyPlanModifications(

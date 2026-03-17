@@ -564,6 +564,15 @@ export default function Dashboard() {
       .catch(() => {})
       .finally(() => setLoading(false));
 
+    // Trigger weekly promotion if needed (fire-and-forget)
+    const lastPromo = localStorage.getItem("brocco_last_promo");
+    const thisWeek = new Date().toISOString().slice(0, 10);
+    if (!lastPromo || lastPromo < thisWeek) {
+      fetch("/api/plan/promote", { method: "POST" })
+        .then(() => localStorage.setItem("brocco_last_promo", thisWeek))
+        .catch(() => {});
+    }
+
     fetch("/api/plan/adjustments")
       .then((r) => r.json())
       .then((d) => setAdjustments(d.adjustments || []))

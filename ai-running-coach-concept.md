@@ -132,22 +132,50 @@ A structured training plan that Brocco generates through the Plan Creation Inter
 - **Race-specific:** Periodized plan (base → build → peak → taper) targeting a specific race and goal time.
 - **General fitness:** Progressive blocks with periodic benchmark workouts. For base building, speed development, off-season maintenance, or injury comeback. No taper, no race date required.
 
+**Rolling planning horizon — this is key:**
+
+Brocco does NOT generate all workouts for the entire plan upfront. Instead it works with a rolling window:
+
+- **This week + next week (detailed):** Fully specified workouts — date, type, distance, pace, description. This is what Brocco generates, adjusts, and what the runner follows.
+- **Weeks 3-4 (outline):** Light outline — workout types and approximate volume (e.g., "Easy, Intervals, Easy, Long — ~42km"). Generated but flexible, gives the runner a preview.
+- **Week 5+ (targets only):** Phase-level weekly targets — km target, number of sessions, phase name. No individual workouts. Just the shape of the plan.
+
+**Why:** A real coach doesn't plan 37 weeks of workouts in advance. Things change — injuries, life, fitness developing differently than expected. Planning 2 weeks in detail keeps Brocco's adjustments cheap (regenerate 14 workouts, not 250), fast, and contextually accurate.
+
+**Auto-rolling:** When a new week starts (Monday), the app automatically promotes the outline into detailed workouts — the next week's outline becomes this week's detail. This can be triggered on the user's first visit of the week or as a background cron. Brocco uses current fitness data (recent activities, coaching_notes) to detail the workouts appropriately.
+
+**What this means for changes:** If a user tells Brocco "I can't train on Wednesday in 3 weeks", Brocco notes it in the plan metadata or coaching_notes, but does NOT regenerate the entire plan. When that week enters the 2-week detail window, Brocco accounts for the conflict when generating the detailed workouts.
+
 **Plan structure (race example):**
 ```
 Goal: Barcelona Marathon, October 2026, Sub-3:30
-  └── Phase: Base Building (Weeks 1-8)
-       └── Week 1: 45km target
-            └── Mon: Rest
-            └── Tue: Easy 8km @ 5:45-6:00/km
-            └── Wed: Intervals 10km (6x800m @ 3:50)
-            └── Thu: Easy 6km @ 5:45-6:00/km
-            └── Fri: Rest
-            └── Sat: Easy 10km @ 5:30-5:45/km
-            └── Sun: Long 18km @ 5:30-5:45/km
+
+Week 10 (this week) — DETAILED:
+  Mon: Rest
+  Tue: Easy 8km @ 5:45-6:00/km
+  Wed: Intervals 10km (6x800m @ 3:50)
+  Thu: Easy 6km @ 5:45-6:00/km
+  Fri: Rest
+  Sat: Easy 10km @ 5:30-5:45/km
+  Sun: Long 18km @ 5:30-5:45/km
+  Weekly tasks: 3x ankle strengthening, foam roll daily
+
+Week 11 (next week) — DETAILED:
+  [full workouts generated]
+
+Week 12-13 — OUTLINE:
+  Week 12: Build Phase · ~45km · 5 sessions (E, I, E, T, L)
+  Week 13: Build Phase · ~47km · 5 sessions (E, I, E, T, L)
+
+Week 14-26 — TARGETS ONLY:
+  Week 14-18: Build Phase · 48-55km/week · 5-6 sessions
+  Week 19-24: Peak Phase · 55-65km/week · 5-6 sessions
+  Week 25-26: Taper · 40-25km/week · 4-3 sessions
 ```
 
 **How plans are created:**
 - Always through a Plan Creation Interview (section 8) — a dedicated Brocco conversation using Opus 4.6
+- Brocco generates: phase structure for the whole plan + detailed workouts for weeks 1-2 + outline for weeks 3-4 + weekly targets for the rest
 - First plan is typically created during onboarding, but can be deferred
 - Subsequent plans via user request or Brocco prompt when the current plan ends
 
@@ -156,6 +184,7 @@ Goal: Barcelona Marathon, October 2026, Sub-3:30
 - If your paces are improving, Brocco can suggest updating targets (requires confirmation)
 - If you report an injury, Brocco suggests modified training (requires confirmation for structural changes, auto-applies conservative reductions within the week)
 - Weekly mileage targets and phase structure are guardrails — Brocco works within them for auto-adjustments but asks before changing them
+- Changes only affect the 2-week detail window — Brocco never regenerates the full plan
 
 **Auto-adjustment flow:**
 When Brocco auto-applies a micro-adjustment, it is logged in `plan_adjustment_log` with a reason and the before/after state. The dashboard shows a notification with an undo button. No chat interaction required — this happens automatically when activities are imported.
@@ -165,7 +194,8 @@ When Brocco proposes structural modifications (via chat), they are stored as pen
 
 **Plan storage:**
 - Plans are stored as structured data (phases, weeks, workouts) in PostgreSQL
-- Each workout has: date, type, target distance, target pace, target duration, description, status (planned/completed/skipped/modified)
+- Each workout has: date, type, target distance, target pace, target duration, description, status (planned/completed/skipped/modified), detail_level ('detailed', 'outline', 'target')
+- **Week metadata:** Each week in a plan has metadata stored on `plan_weeks` table: week_number, phase_id, target_km, target_sessions, session_types (jsonb, e.g., ["E","I","E","T","L"]), detail_level ('detailed', 'outline', 'target'), notes (for known conflicts like "birthday party Wednesday")
 - **Weekly tasks:** In addition to daily workouts, each week can have flexible tasks without a specific date — e.g., "3 sessions of 10min ankle strengthening", "Increase protein intake this week", "Foam roll daily". Stored in a `weekly_tasks` table (plan_id, week_number, description, category, status). Displayed as a separate section in the weekly view on /plan and dashboard. Brocco can assign these during plan creation or add them via chat.
 - Strava activities are auto-matched to planned workouts (same day, similar activity type)
 - Manual activities (logged via chat) are also matched
@@ -299,9 +329,14 @@ Uses **Opus 4.6** for higher reasoning quality.
 
 - **Preferences for this plan:** Long run day preference, how many quality sessions per week, any specific workouts to include or avoid, cross-training preferences.
 
-- **Block-first approach:** For plans longer than 8 weeks, Brocco strongly suggests building the first phase/block in full detail (4-8 weeks) with a rough outline for later phases. This is both better coaching (plans always change) and produces better output (avoids token limits). If the runner insists on a full detailed plan, Brocco generates it in multiple tool calls (one per phase).
+- **Rolling horizon generation:** Brocco generates the plan in layers:
+  1. **Phase structure** for the entire plan (phase names, week ranges, weekly km targets, session counts)
+  2. **Detailed workouts** for weeks 1-2 only (full specs: date, type, distance, pace, description)
+  3. **Outline** for weeks 3-4 (workout types + approximate volume)
+  4. **Targets only** for week 5+ (weekly km, session count, phase label)
+  This is both better coaching (plans always change) and much cheaper/faster than generating 200+ workouts upfront. The runner sees the full shape of their plan but only commits to the next 2 weeks.
 
-- **Plan generation:** Brocco generates the plan using `modify_plan` tool. User reviews and can discuss adjustments before confirming.
+- **Plan generation:** Brocco generates the plan using `modify_plan` tool. Creates `plan_weeks` metadata for every week and `planned_workouts` only for the detailed/outline windows. User reviews and can discuss adjustments before confirming.
 
 **Plan Lifecycle:**
 
@@ -452,6 +487,22 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 | start_week | int | week number within plan |
 | end_week | int | |
 
+**plan_weeks** (metadata for each week in a plan — rolling horizon)
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid | PK |
+| plan_id | uuid | FK → plans |
+| phase_id | uuid | FK → plan_phases |
+| week_number | int | plan-global week number |
+| start_date | date | Monday of this week |
+| detail_level | enum | 'detailed', 'outline', 'target' |
+| target_km | decimal | weekly km target |
+| target_sessions | int | number of sessions planned |
+| session_types | jsonb | e.g., ["E","I","E","T","L"] — outline of session types |
+| notes | text | nullable, known conflicts like "birthday Wednesday", travel notes |
+| actual_km | decimal | nullable, computed from matched activities |
+| created_at | timestamp | |
+
 **planned_workouts**
 | Column | Type | Notes |
 |--------|------|-------|
@@ -468,6 +519,7 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 | target_pace_secs | int | nullable, pace in seconds/km for sorting/filtering |
 | target_duration_min | int | nullable |
 | description | text | detailed workout description |
+| detail_level | enum | 'detailed', 'outline' — outline workouts only have type + approximate distance |
 | status | enum | 'planned', 'completed', 'skipped', 'modified' |
 | matched_activity_id | uuid | nullable, FK → activities, auto-linked |
 | created_at | timestamp | |
@@ -506,6 +558,7 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 | start_date | timestamp | |
 | start_date_local | timestamp | in user's timezone — used for date matching |
 | splits | jsonb | per-km split data, nullable |
+| activity_analysis | jsonb | nullable. Processed streams data for quality sessions: HR zones, cardiac drift, pace analysis, cadence analysis, intervals detected, key insights. See Phase 3 docs. |
 | raw_data | jsonb | full Strava API response, nullable. Pruned after 90 days. |
 | created_at | timestamp | |
 
@@ -604,7 +657,8 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 7. Auto-match to planned_workouts (same local date, compatible activity type)
 8. Update planned workout status to 'completed' if matched
 9. Trigger Brocco micro-adjustment: compare actual vs planned, auto-adjust remaining workouts this week if needed (via `adjust_plan` logic server-side), log to `plan_adjustment_log`
-10. Rate-limit the webhook endpoint (reject if > 100 requests/minute)
+10. (Phase 3) If matched workout is a quality session (tempo/interval/long/race/race_pace): fetch activity streams (time, heartrate, velocity_smooth, cadence, distance), process into `activity_analysis` jsonb, store on activity record, discard raw streams
+11. Rate-limit the webhook endpoint (reject if > 100 requests/minute)
 
 ### Token Refresh
 - Before each Strava API call, check if token is expired
@@ -652,6 +706,9 @@ CURRENT PLAN (next 2 weeks):
 
 RECENT TRAINING (last 14 days):
 {summary of activities: date, type, distance, pace, HR — not raw JSON}
+
+QUALITY SESSION ANALYSIS (Phase 3 — last 14 days, quality sessions only):
+{activity_analysis data for tempo/interval/long/race sessions: cardiac drift, pace fade, HR zones, cadence, interval splits, key insights}
 
 TRAINING LOAD (last 8 weeks):
 {weekly km totals: planned vs actual, as compact table}
@@ -939,12 +996,85 @@ The app needs a `/legal` page accessible from the footer (next to "Powered by St
 
 **Estimated scope:** 2-3 weekends.
 
-### Phase 3 — Smart Features
-**Goal:** The AI becomes genuinely insightful.
+### Phase 3 — Smart Features + Activity Streams Analysis
+**Goal:** The AI becomes genuinely insightful by analyzing deep workout data.
 
+**Activity Streams Integration (the big one):**
+
+Strava provides second-by-second time-series data ("streams") for each activity: heart rate, pace, cadence, distance, altitude — one data point per second. This unlocks coaching insights that summary data can't provide.
+
+**Which activities get streams:**
+- **Fetch streams for:** tempo, interval, race_pace, long, race — quality sessions where details matter
+- **Skip streams for:** easy, recovery, rest, cross_training — summary data is sufficient
+- **Also fetch if:** activity looks like a quality session without plan match (high HR variance, very fast pace)
+- Result: streams for ~2-3 runs/week per user instead of 5-6
+
+**Which stream types to fetch:**
+- `time` — backbone, everything indexes against this
+- `heartrate` — cardiac drift, HR zones, recovery between intervals
+- `velocity_smooth` — pace consistency, fade, interval splits
+- `cadence` — form breakdown under fatigue
+- `distance` — mapping pace/HR to distance markers
+- `altitude` — only if elevation gain > 50m
+- Skip: `latlng` (not useful for coaching), `watts`, `temp`, `grade_smooth`
+
+**Processing pipeline:**
+```
+Activity arrives via webhook
+  → Match to planned workout
+  → Quality session? (tempo/interval/long/race/race_pace)
+    → YES: fetch streams from Strava API
+           → Process into activity_analysis jsonb
+           → Optional: quick Claude call to generate key_insights
+           → Store analysis on the activity record
+           → Discard raw streams (don't store long-term)
+    → NO: skip streams, store activity summary only
+```
+
+**`activity_analysis` structure (stored on activity record as jsonb):**
+```json
+{
+  "hr_zones": {
+    "zone1_pct": 5, "zone2_pct": 62, "zone3_pct": 25, "zone4_pct": 8, "zone5_pct": 0
+  },
+  "cardiac_drift": {
+    "first_half_avg_hr": 148, "second_half_avg_hr": 158,
+    "drift_pct": 6.8, "flag": "moderate"
+  },
+  "pace_analysis": {
+    "first_half_avg_pace_secs": 285, "second_half_avg_pace_secs": 298,
+    "fade_pct": 4.6,
+    "most_consistent_km": 3, "least_consistent_km": 9
+  },
+  "cadence_analysis": {
+    "avg": 176, "first_half_avg": 178, "second_half_avg": 173,
+    "drop_under_fatigue": true
+  },
+  "intervals_detected": [
+    {"rep": 1, "distance_m": 800, "time_secs": 192, "avg_hr": 172, "avg_pace_secs": 240},
+    {"rep": 2, "distance_m": 800, "time_secs": 195, "avg_hr": 175, "avg_pace_secs": 244},
+    {"rep": 3, "distance_m": 800, "time_secs": 201, "avg_hr": 178, "avg_pace_secs": 251}
+  ],
+  "recovery_between_intervals": [
+    {"rest_num": 1, "duration_secs": 90, "hr_at_start": 175, "hr_at_end": 142, "recovery_pct": 19}
+  ],
+  "key_insights": [
+    "Cardiac drift of 6.8% suggests aerobic endurance developing but not yet strong",
+    "Pace faded 4.6% in second half — consider more even pacing",
+    "Interval reps slowed progressively — target may be too ambitious or rest too short"
+  ]
+}
+```
+
+**How Brocco uses it:**
+The context builder includes `activity_analysis` for recent quality sessions (last 14 days). Instead of just seeing "10km at 4:55/km", Brocco sees cardiac drift, pace fade, cadence drop, and pre-generated insights. Enables coaching like: "Your tempo pace faded 4.6% while HR climbed from 148 to 158. That 6.8% cardiac drift tells me your aerobic engine is rebuilding — let's keep tempo at 8km for another week before pushing to 10."
+
+**Cost:** One extra Strava API call per quality session (~2-3/week/user, well within rate limits). Storage: ~1-2KB per activity_analysis. AI cost for insight generation: ~$0.005 per activity if using a quick Claude call, or zero if Brocco analyzes in real-time during chat.
+
+**Other Phase 3 features:**
 1. Training load analysis: acute/chronic workload ratio
 2. Pace trend detection: "your easy pace has improved 10s/km over 8 weeks"
-3. Race predictions: based on recent training data
+3. Race predictions: based on recent training data + activity analysis
 4. Weekly auto-summary: AI generates a weekly review you can listen to
 5. Plan auto-adjustment suggestions: proactive, not just reactive
 6. Mobile PWA: add-to-homescreen for phone access

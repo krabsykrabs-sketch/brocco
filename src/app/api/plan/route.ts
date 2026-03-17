@@ -15,6 +15,10 @@ export async function GET() {
       phases: {
         orderBy: { orderIndex: "asc" },
       },
+      weeks: {
+        orderBy: { weekNumber: "asc" },
+        include: { phase: { select: { name: true } } },
+      },
       weeklyTasks: {
         orderBy: [{ weekNumber: "asc" }, { category: "asc" }],
       },
@@ -69,6 +73,18 @@ export async function GET() {
         description: p.description,
         startWeek: p.startWeek,
         endWeek: p.endWeek,
+      })),
+      weeks: plan.weeks.map((w) => ({
+        id: w.id,
+        weekNumber: w.weekNumber,
+        startDate: w.startDate,
+        detailLevel: w.detailLevel,
+        targetKm: w.targetKm ? Number(w.targetKm) : null,
+        targetSessions: w.targetSessions,
+        sessionTypes: w.sessionTypes,
+        notes: w.notes,
+        actualKm: w.actualKm ? Number(w.actualKm) : null,
+        phaseName: w.phase?.name || null,
       })),
       weeklyTasks: plan.weeklyTasks.map((t) => ({
         id: t.id,

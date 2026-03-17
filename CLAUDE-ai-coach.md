@@ -27,6 +27,7 @@ A personal AI running coach web app — **brocco.run** — with invite-only mult
 - **Invite-only multi-user** — email + password auth, invite codes for onboarding friends. No public signup. Every data table is scoped by `user_id`.
 - **Strava is the primary data source** for activity data. Manual activities can be logged via AI chat (using the `log_activity` tool).
 - **Two-tier plan changes** — Brocco auto-applies reactive micro-adjustments within the current week (distance/pace tweaks, rest day shifts) with a dashboard notification + undo. Structural changes (adding/deleting workouts, type changes, anything beyond 7 days out, phase/mileage target changes) require explicit user confirmation. See tool definitions for `adjust_plan` vs `modify_plan`.
+- **Rolling planning horizon** — Brocco only generates detailed workouts for the current week + next week. Weeks 3-4 get an outline (types + volume). Week 5+ get phase-level targets only. Auto-rolling promotes outlines to detailed workouts each Monday. Changes and adjustments only touch the 2-week detail window — never regenerate the full plan. This saves tokens, is faster, and is better coaching.
 - **Mobile-first design** — primary use case is checking the app on your phone after a run or asking the AI a question via voice.
 - **Brocco is the coach** — the app has a single AI coach identity: Brocco 🥦, a broccoli with exercise physiology expertise. Personality is baked into the system prompt. No coach selection UI needed.
 - **Context window strategy** — each AI call includes: profile, Brocco's personality, current plan (2 weeks), recent activities (14 days), training load (8 weeks), health notes. This is ~1500-2000 tokens. The AI can use `query_data` to fetch additional historical data on demand.
@@ -41,7 +42,8 @@ Key tables:
 - `user_profiles` (one per user: goals, Strava tokens, timezone, coaching_notes, AI preferences)
 - `plans` (training plan metadata: name, goal, race_date, status — scoped by user_id)
 - `plan_phases` (periodization phases within a plan: base, build, peak, taper)
-- `planned_workouts` (individual sessions: date, type, targets, status, matched_activity_id)
+- `plan_weeks` (week metadata: detail_level, target_km, target_sessions, session_types, notes — rolling horizon)
+- `planned_workouts` (individual sessions: date, type, targets, status, matched_activity_id, detail_level)
 - `weekly_tasks` (flexible tasks per week without specific date: strength, mobility, nutrition, recovery. User can check off.)
 - `activities` (unified table for Strava + manual: source field distinguishes origin)
 - `health_log` (injuries, notes, race results: type, severity, status, body_part)
@@ -58,6 +60,7 @@ Important details:
 - `activities.start_date_local` stores the timestamp in the user's timezone — used for date matching
 - `activities.pace_seconds_per_km` is an integer column for sorting/filtering (alongside the display string)
 - `activities.raw_data` stores the full Strava API response. Prune after 90 days to save space.
+- `activities.activity_analysis` (Phase 3) — nullable jsonb. For quality sessions (tempo, interval, long, race), stores processed streams data: HR zones, cardiac drift, pace fade, cadence analysis, interval detection, key insights. See concept doc Phase 3 for full spec.
 - `planned_workouts.matched_activity_id` is nullable FK to activities — null means not yet matched
 - `planned_workouts.status` enum: planned, completed, skipped, modified
 - `user_profiles.strava_token_expires_at` is checked before every Strava API call
@@ -101,7 +104,7 @@ A dedicated conversation for building a new training plan. Triggered:
 - Supports both race-specific goals (periodized: base → build → peak → taper) and general fitness goals (progressive blocks with benchmarks, no taper). Brocco can suggest goals if user is unsure.
 - Uses `chat_sessions.type = 'plan_creation'`
 
-**Interview covers:** Goal type (race or general) → target details → training philosophy (Brocco asks preference-revealing questions, selects best-fit approach: polarized/80-20, Jack Daniels, Pfitzinger, Norwegian, time-crunched — names and explains the choice) → current fitness assessment (references Strava + coaching_notes) → schedule for this block → preferences → known conflicts → block-first suggestion (for plans >8 weeks, suggest detailing first block only) → plan generation via `modify_plan` → user review and confirmation.
+**Interview covers:** Goal type (race or general) → target details → training philosophy (Brocco asks preference-revealing questions, selects best-fit approach: polarized/80-20, Jack Daniels, Pfitzinger, Norwegian, time-crunched — names and explains the choice) → current fitness assessment (references Strava + coaching_notes) → schedule for this block → preferences → known conflicts → rolling horizon plan generation (phase structure for full plan + detailed workouts for weeks 1-2 + outline for weeks 3-4 + targets for rest) via `modify_plan` → user review and confirmation.
 
 **Plan lifecycle:**
 - No plan → dashboard prompt encourages building one
@@ -433,7 +436,9 @@ Build in this sequence:
 ### Step 7: Training plan + Plan Creation Interview
 - Plan data model: plans, phases, planned_workouts (already migrated in step 1)
 - Plan view page: calendar layout with phases, color-coded workout types
-- **Plan Creation Interview:** dedicated chat session (`type: 'plan_creation'`, Opus 4.6) with custom system prompt. Covers: goal type (race or general fitness) → target details → current fitness assessment → schedule for this block → preferences → conflicts → plan generation via `modify_plan` → user review and confirm
+- **Plan Creation Interview:** dedicated chat session (`type: 'plan_creation'`, Opus 4.6) with custom system prompt. Covers: goal type (race or general fitness) → target details → training philosophy → current fitness assessment → schedule for this block → preferences → conflicts → rolling horizon plan generation (phases + detailed weeks 1-2 + outline weeks 3-4 + targets for rest) via `modify_plan` → user review and confirm
+- **Rolling horizon:** Brocco only generates detailed workouts for weeks 1-2. Weeks 3-4 get outlines. Week 5+ get targets only. Auto-rolling: when a new week starts, promote outline to detailed using current fitness data. Changes (e.g., "can't train Wednesday in 3 weeks") are noted in plan_weeks.notes and applied when that week enters the detail window.
+- New `plan_weeks` table: week metadata (detail_level, target_km, target_sessions, session_types, notes, actual_km)
 - Support both race-specific plans (periodized with taper) and general fitness plans (progressive blocks with benchmarks, no taper). Brocco can suggest goals if user is unsure.
 - Only one active plan at a time. If active plan exists, warn user and archive old plan when new one is confirmed.
 - "New Plan" button on /plan page triggers Plan Creation Interview
@@ -496,6 +501,7 @@ BASE_URL=https://brocco.run    # production URL for OAuth callbacks
 - All date matching uses the user's configured timezone (user_profiles.timezone). Use `date-fns-tz`.
 - Store both `start_date` (UTC) and `start_date_local` (user TZ) on activities.
 - `activities.raw_data` stores full Strava response — prune records older than 90 days.
+- **Phase 3 — Activity Streams Analysis:** For quality sessions, fetch second-by-second streams from Strava (heartrate, velocity, cadence, distance), process into `activity_analysis` jsonb on the activity record (HR zones, cardiac drift, pace fade, interval detection, key insights). Discard raw streams after processing. Include `activity_analysis` in AI context for recent quality sessions. See concept doc Phase 3 for full spec.
 - Chat messages store content as jsonb (raw Anthropic format) + display_text (human-readable).
 - The app should work perfectly as text-only chat. Voice is an enhancement layer.
 - Register the Strava app at https://www.strava.com/settings/api — callback URL must match BASE_URL.

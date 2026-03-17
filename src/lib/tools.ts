@@ -198,7 +198,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: "generate_plan",
     description:
-      "Generate a complete periodized training plan. Use when the user asks to create a new plan from scratch. Creates phases (base, build, peak, taper) and individual workouts for each day. Requires user confirmation before activation. Plan dates should start from next Monday. Each workout needs a date, type, distance/pace targets, and description. Use workout_type values: easy, long, tempo, interval, race_pace, recovery, rest, cross_training, strength, race. Use activity_type values: run, cycle, swim, hike, strength, rest, other.",
+      "Generate a training plan using the rolling horizon approach. Creates phases for the full plan, plan_weeks metadata for every week, and individual workouts ONLY for weeks with detail_level 'detailed' (weeks 1-2) and 'outline' (weeks 3-4). Do NOT generate workouts for 'target' weeks (week 5+). This dramatically reduces output size. Plan dates should start from next Monday.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -212,7 +212,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
         },
         race_date: {
           type: "string",
-          description: "ISO date of the race",
+          description: "ISO date of the race (or end date for general plans)",
         },
         start_date: {
           type: "string",
@@ -231,9 +231,33 @@ export const toolDefinitions: Anthropic.Tool[] = [
             required: ["name", "start_week", "end_week"],
           },
         },
+        plan_weeks: {
+          type: "array",
+          description: "Metadata for EVERY week of the plan. Required for all weeks.",
+          items: {
+            type: "object",
+            properties: {
+              week_number: { type: "integer" },
+              start_date: { type: "string", description: "ISO date, Monday of this week" },
+              detail_level: {
+                type: "string",
+                enum: ["detailed", "outline", "target"],
+                description: "Weeks 1-2: detailed, weeks 3-4: outline, week 5+: target",
+              },
+              target_km: { type: "number", description: "Target running km for the week" },
+              target_sessions: { type: "integer", description: "Number of sessions planned" },
+              session_types: {
+                type: "array",
+                items: { type: "string" },
+                description: "Session type codes, e.g. ['E','E','I','E','T','L','R'] for easy/interval/tempo/long/rest",
+              },
+            },
+            required: ["week_number", "start_date", "detail_level", "target_km", "target_sessions"],
+          },
+        },
         workouts: {
           type: "array",
-          description: "All workouts in the plan. Include rest days.",
+          description: "Individual workouts ONLY for 'detailed' weeks (1-2, full specs) and 'outline' weeks (3-4, type + approximate distance only). Do NOT include workouts for 'target' weeks.",
           items: {
             type: "object",
             properties: {
@@ -244,15 +268,20 @@ export const toolDefinitions: Anthropic.Tool[] = [
                 type: "string",
                 enum: ["easy", "long", "tempo", "interval", "race_pace", "recovery", "rest", "cross_training", "strength", "race"],
               },
+              detail_level: {
+                type: "string",
+                enum: ["detailed", "outline"],
+                description: "detailed = full specs (pace, description). outline = type + approx distance only.",
+              },
               activity_type: {
                 type: "string",
                 enum: ["run", "cycle", "swim", "hike", "strength", "rest", "other"],
                 description: "Defaults to 'run'",
               },
               target_distance_km: { type: "number" },
-              target_pace: { type: "string", description: "e.g., '4:15-4:30/km'" },
+              target_pace: { type: "string", description: "For detailed workouts only, e.g., '4:15-4:30/km'" },
               target_duration_min: { type: "integer" },
-              description: { type: "string" },
+              description: { type: "string", description: "For detailed workouts only" },
             },
             required: ["date", "week_number", "title", "workout_type"],
           },
@@ -262,7 +291,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
           description: "Human-readable summary of the plan",
         },
       },
-      required: ["plan_name", "goal", "race_date", "start_date", "phases", "workouts", "summary"],
+      required: ["plan_name", "goal", "start_date", "phases", "plan_weeks", "workouts", "summary"],
     },
   },
   {
@@ -813,11 +842,20 @@ async function handleGeneratePlan(
     start_week: number;
     end_week: number;
   }>;
+  const planWeeks = (input.plan_weeks || []) as Array<{
+    week_number: number;
+    start_date: string;
+    detail_level: string;
+    target_km: number;
+    target_sessions: number;
+    session_types?: string[];
+  }>;
   const workouts = (input.workouts || []) as Array<{
     date: string;
     week_number: number;
     title: string;
     workout_type: string;
+    detail_level?: string;
     activity_type?: string;
     target_distance_km?: number;
     target_pace?: string;
@@ -829,14 +867,21 @@ async function handleGeneratePlan(
   if (!Array.isArray(workouts) || workouts.length === 0) {
     return {
       success: false,
-      error: "The workouts array is empty. You must include all individual workouts with dates, types, and targets. Try generating the plan again, making sure to include the full workouts array.",
+      error: "The workouts array is empty. Include workouts for detailed weeks (1-2) and outline weeks (3-4). Do NOT include workouts for target weeks (5+).",
     };
   }
 
   if (!Array.isArray(phases) || phases.length === 0) {
     return {
       success: false,
-      error: "The phases array is empty. You must include at least one phase (e.g., base, build, peak, taper). Try again.",
+      error: "The phases array is empty. You must include at least one phase.",
+    };
+  }
+
+  if (!Array.isArray(planWeeks) || planWeeks.length === 0) {
+    return {
+      success: false,
+      error: "The plan_weeks array is empty. You must include metadata for every week of the plan with detail_level, target_km, and target_sessions.",
     };
   }
 
@@ -848,6 +893,7 @@ async function handleGeneratePlan(
     race_date: raceDate,
     start_date: startDate,
     phases,
+    plan_weeks: planWeeks,
     workouts,
   };
 
