@@ -4,6 +4,27 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+// Web Speech API type shim
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+}
+interface SpeechRecognitionInstance extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: Event) => void) | null;
+  onend: (() => void) | null;
+}
+declare global {
+  interface Window {
+    SpeechRecognition?: new () => SpeechRecognitionInstance;
+    webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
+  }
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
@@ -213,8 +234,68 @@ export default function ChatUI({
   const [streamingNotifications, setStreamingNotifications] = useState<ToolNotification[]>([]);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+
+  // Detect Web Speech API support
+  useEffect(() => {
+    setSpeechSupported(
+      typeof window !== "undefined" &&
+        !!(window.SpeechRecognition || window.webkitSpeechRecognition)
+    );
+  }, []);
+
+  function toggleRecording() {
+    if (recording) {
+      recognitionRef.current?.stop();
+      setRecording(false);
+      return;
+    }
+
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = navigator.language || "en-US";
+    recognitionRef.current = recognition;
+
+    // Track the text that was in the input before recording started
+    const baseText = input;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      const newValue = baseText
+        ? baseText + " " + transcript
+        : transcript;
+      setInput(newValue);
+      // Auto-expand textarea
+      if (inputRef.current) {
+        inputRef.current.style.height = "auto";
+        inputRef.current.style.height =
+          Math.min(inputRef.current.scrollHeight, 160) + "px";
+      }
+    };
+
+    recognition.onerror = () => {
+      setRecording(false);
+    };
+
+    recognition.onend = () => {
+      setRecording(false);
+    };
+
+    recognition.start();
+    setRecording(true);
+  }
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -401,6 +482,12 @@ export default function ChatUI({
   async function handleSend() {
     const text = input.trim();
     if (!text || sending) return;
+
+    // Stop recording if active
+    if (recording) {
+      recognitionRef.current?.stop();
+      setRecording(false);
+    }
 
     setInput("");
     // Reset textarea height after clearing
@@ -611,6 +698,22 @@ export default function ChatUI({
             style={{ height: "auto", maxHeight: "160px", overflow: "auto" }}
             disabled={sending}
           />
+          {speechSupported && (
+            <button
+              onClick={toggleRecording}
+              disabled={sending}
+              className={`p-2.5 rounded-xl transition-colors flex-shrink-0 ${
+                recording
+                  ? "bg-red-600 hover:bg-red-700 text-white animate-pulse"
+                  : "bg-gray-800 hover:bg-gray-700 text-gray-400"
+              } disabled:opacity-40 disabled:cursor-not-allowed`}
+              title={recording ? "Stop recording" : "Voice input"}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m-4 0h8M12 3a3 3 0 00-3 3v4a3 3 0 006 0V6a3 3 0 00-3-3z" />
+              </svg>
+            </button>
+          )}
           <button
             onClick={handleSend}
             disabled={sending || !input.trim()}
