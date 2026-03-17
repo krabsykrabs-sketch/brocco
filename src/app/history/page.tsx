@@ -37,7 +37,7 @@ function formatDate(iso: string): string {
 
 function ActivityCard({ activity }: { activity: Activity }) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+    <Link href={`/activity/${activity.id}`} className="block bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-gray-700 transition-colors">
       <div className="flex items-start justify-between mb-2">
         <div>
           <h3 className="font-medium text-white">{activity.name}</h3>
@@ -49,14 +49,9 @@ function ActivityCard({ activity }: { activity: Activity }) {
           </p>
         </div>
         {activity.stravaId && (
-          <a
-            href={`https://www.strava.com/activities/${activity.stravaId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-[#FC4C02] hover:underline flex-shrink-0"
-          >
-            View on Strava
-          </a>
+          <span className="text-xs text-[#FC4C02] flex-shrink-0">
+            Strava
+          </span>
         )}
       </div>
 
@@ -96,7 +91,7 @@ function ActivityCard({ activity }: { activity: Activity }) {
           </div>
         )}
       </div>
-    </div>
+    </Link>
   );
 }
 

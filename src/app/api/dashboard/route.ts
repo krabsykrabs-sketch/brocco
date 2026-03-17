@@ -62,6 +62,7 @@ export async function GET() {
         targetPace: true,
         status: true,
         date: true,
+        matchedActivityId: true,
       },
     });
 
@@ -96,6 +97,7 @@ export async function GET() {
           targetDistanceKm: w.targetDistanceKm ? Number(w.targetDistanceKm) : null,
           targetPace: w.targetPace,
           status: w.status,
+          matchedActivityId: w.matchedActivityId,
         })),
       });
     }

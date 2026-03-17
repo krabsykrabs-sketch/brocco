@@ -291,6 +291,19 @@ export const toolDefinitions: Anthropic.Tool[] = [
       required: ["tasks"],
     },
   },
+  {
+    name: "match_activity",
+    description:
+      "Manually link an activity to a planned workout. Use when the user says an activity corresponds to a specific planned session (e.g., 'that treadmill run was my tempo session'). Requires the activity_id and workout_id.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        activity_id: { type: "string", description: "The activity ID to match" },
+        workout_id: { type: "string", description: "The planned workout ID to match it to" },
+      },
+      required: ["activity_id", "workout_id"],
+    },
+  },
 ];
 
 // --- Tool handlers ---
@@ -330,6 +343,8 @@ export async function handleToolCall(
       return handleGeneratePlan(input, userId, chatMessageId);
     case "add_weekly_tasks":
       return handleAddWeeklyTasks(input, userId);
+    case "match_activity":
+      return handleMatchActivity(input, userId);
     default:
       return { success: false, error: `Unknown tool: ${toolName}` };
   }
@@ -877,6 +892,60 @@ async function handleGeneratePlan(
         totalWorkouts: workouts.length,
         totalPhases: phases.length,
       },
+    },
+  };
+}
+
+// --- match_activity ---
+
+async function handleMatchActivity(
+  input: Record<string, unknown>,
+  userId: string
+): Promise<ToolResult> {
+  const activityId = input.activity_id as string;
+  const workoutId = input.workout_id as string;
+
+  if (!activityId || !workoutId) {
+    return { success: false, error: "activity_id and workout_id are required" };
+  }
+
+  // Verify activity belongs to user
+  const activity = await prisma.activity.findFirst({
+    where: { id: activityId, userId },
+    select: { id: true, name: true },
+  });
+  if (!activity) {
+    return { success: false, error: "Activity not found" };
+  }
+
+  // Verify workout belongs to user's active plan
+  const workout = await prisma.plannedWorkout.findFirst({
+    where: { id: workoutId, plan: { userId, status: "active" } },
+    select: { id: true, title: true, matchedActivityId: true },
+  });
+  if (!workout) {
+    return { success: false, error: "Planned workout not found" };
+  }
+
+  // Unlink old match if this workout was already matched
+  if (workout.matchedActivityId && workout.matchedActivityId !== activityId) {
+    // Just overwrite — old activity becomes unmatched
+  }
+
+  await prisma.plannedWorkout.update({
+    where: { id: workoutId },
+    data: {
+      matchedActivityId: activityId,
+      status: "completed",
+    },
+  });
+
+  return {
+    success: true,
+    data: { activityId, workoutId, activityName: activity.name, workoutTitle: workout.title },
+    notification: {
+      type: "activity_matched",
+      message: `Matched "${activity.name}" to "${workout.title}"`,
     },
   };
 }

@@ -32,6 +32,7 @@ interface PlannedWorkout {
   targetDistanceKm: number | null;
   targetPace: string | null;
   status: string;
+  matchedActivityId: string | null;
 }
 
 interface DayData {
@@ -151,11 +152,25 @@ function getWorkoutTypeColor(type: string): string {
 // --- Sub-components ---
 
 function WeekGrid({ days }: { days: DayData[] }) {
+  const today = new Date().toISOString().split("T")[0];
+
   return (
     <div className="grid grid-cols-7 gap-1.5">
       {days.map((day) => {
         const hasPlanned = day.planned && day.planned.length > 0;
         const hasActivities = day.activities.length > 0;
+        const isPast = day.date < today;
+
+        // Determine day status for border color
+        const isRest = hasPlanned && day.planned!.every((w) => w.workoutType === "rest");
+        const isCompleted = hasPlanned && day.planned!.some((w) => w.matchedActivityId);
+        const isMissed = isPast && hasPlanned && !isRest && !isCompleted;
+
+        let borderClass = "";
+        if (isCompleted) borderClass = "border border-green-800/60";
+        else if (isMissed) borderClass = "border border-red-900/50";
+        else if (isRest) borderClass = "border border-gray-800/40";
+
         return (
           <div
             key={day.date}
@@ -163,7 +178,7 @@ function WeekGrid({ days }: { days: DayData[] }) {
               day.isToday
                 ? "bg-gray-800 ring-1 ring-green-500/50"
                 : "bg-gray-900"
-            }`}
+            } ${borderClass}`}
           >
             <div className="flex items-baseline justify-between mb-1">
               <span className="text-[11px] text-gray-500 uppercase">{day.dayName}</span>
@@ -179,11 +194,13 @@ function WeekGrid({ days }: { days: DayData[] }) {
                     className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                     style={{ backgroundColor: getWorkoutTypeColor(w.workoutType) }}
                   />
-                  <span className="text-[10px] text-gray-500 truncate">{w.title}</span>
+                  <span className={`text-[10px] truncate ${w.matchedActivityId ? "text-green-400" : "text-gray-500"}`}>
+                    {w.title}
+                  </span>
                 </div>
                 {w.targetDistanceKm && (
                   <div className="text-[10px] text-gray-600 ml-2.5">
-                    {w.targetDistanceKm.toFixed(0)}km plan
+                    {w.targetDistanceKm.toFixed(0)}km {w.targetPace || ""}
                   </div>
                 )}
               </div>
@@ -191,22 +208,19 @@ function WeekGrid({ days }: { days: DayData[] }) {
             {/* Actual activities */}
             {hasActivities ? (
               day.activities.map((a) => (
-                <div key={a.id} className="mt-1">
-                  <div
-                    className="text-[10px] font-medium truncate"
-                    style={{ color: getActivityColor(a.activityType) }}
-                  >
-                    {a.activityType}
-                  </div>
+                <Link key={a.id} href={`/activity/${a.id}`} className="block mt-1 hover:opacity-80">
                   {a.distanceKm && (
-                    <div className="text-[11px] text-gray-300">
+                    <div className="text-[11px] text-green-300 font-medium">
                       {a.distanceKm.toFixed(1)} km
                     </div>
                   )}
                   {a.avgPacePerKm && (
-                    <div className="text-[10px] text-gray-500">{a.avgPacePerKm}</div>
+                    <div className="text-[10px] text-gray-400">{a.avgPacePerKm}</div>
                   )}
-                </div>
+                  {a.avgHeartRate && (
+                    <div className="text-[10px] text-gray-500">HR {a.avgHeartRate}</div>
+                  )}
+                </Link>
               ))
             ) : !hasPlanned ? (
               <div className="text-[10px] text-gray-700 mt-2">-</div>
@@ -346,7 +360,7 @@ function ActivityFeed({ activities }: { activities: ActivityItem[] }) {
   return (
     <div className="space-y-2">
       {activities.map((a) => (
-        <div key={a.id} className="bg-gray-900 rounded-lg px-3 py-2.5 flex items-center gap-3">
+        <Link key={a.id} href={`/activity/${a.id}`} className="block bg-gray-900 rounded-lg px-3 py-2.5 flex items-center gap-3 hover:bg-gray-800 transition-colors">
           <div
             className="w-1 h-10 rounded-full flex-shrink-0"
             style={{ backgroundColor: getActivityColor(a.activityType) }}
@@ -371,17 +385,10 @@ function ActivityFeed({ activities }: { activities: ActivityItem[] }) {
               )}
             </div>
             {a.stravaId && (
-              <a
-                href={`https://www.strava.com/activities/${a.stravaId}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[11px] text-[#FC4C02] hover:underline"
-              >
-                View on Strava
-              </a>
+              <span className="text-[11px] text-[#FC4C02]">Strava</span>
             )}
           </div>
-        </div>
+        </Link>
       ))}
     </div>
   );
@@ -704,6 +711,11 @@ export default function Dashboard() {
           This Week
         </h2>
         <WeekGrid days={data.weekDays} />
+        {data.currentWeekPlannedKm > 0 && (
+          <p className="text-xs text-gray-500 mt-2">
+            This week: <span className="text-gray-300">{data.currentWeekKm.toFixed(1)} km</span> of {data.currentWeekPlannedKm.toFixed(0)} km planned
+          </p>
+        )}
         {data.weeklyTasks.length > 0 && (
           <div className="mt-3 space-y-1">
             {data.weeklyTasks.map((t) => (
