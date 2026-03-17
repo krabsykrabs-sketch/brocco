@@ -198,9 +198,11 @@ function SessionSidebar({
 export default function ChatUI({
   sessionId: initialSessionId,
   initialMessages,
+  startPlanCreation,
 }: {
   sessionId: string | null;
   initialMessages: Message[];
+  startPlanCreation?: boolean;
 }) {
   const router = useRouter();
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
@@ -237,8 +239,114 @@ export default function ChatUI({
     const data = await res.json();
     setSessionId(data.id);
     window.history.replaceState(null, "", `/chat/${data.id}`);
+    // Opener is already fetched in the effect below
     return data.id;
   }
+
+  // Auto-send Brocco opener for new general sessions
+  // Or start plan creation if startPlanCreation is set
+  useEffect(() => {
+    if (initialSessionId || initialMessages.length > 0) return;
+
+    let cancelled = false;
+    async function initSession() {
+      try {
+        if (startPlanCreation) {
+          // Create a plan_creation session and send first message
+          const res = await fetch("/api/plan/new-plan-session", { method: "POST" });
+          const data = await res.json();
+          if (cancelled) return;
+          setSessionId(data.id);
+          window.history.replaceState(null, "", `/chat/${data.id}`);
+
+          // Send the first message to kick off the plan interview
+          const chatRes = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: "I'd like to build a training plan.", sessionId: data.id }),
+          });
+          if (cancelled || !chatRes.ok) return;
+
+          const reader = chatRes.body?.getReader();
+          if (!reader) return;
+          const decoder = new TextDecoder();
+          let accumulated = "";
+          const notifications: ToolNotification[] = [];
+          let pendingChange: PendingChange | undefined;
+
+          // Add user message
+          setMessages([{
+            id: `user-${Date.now()}`,
+            role: "user",
+            displayText: "I'd like to build a training plan.",
+          }]);
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            for (const line of chunk.split("\n")) {
+              if (!line.startsWith("data: ")) continue;
+              try {
+                const d = JSON.parse(line.slice(6));
+                if (d.text) {
+                  accumulated += d.text;
+                  setStreamingText(accumulated);
+                }
+                if (d.tool) {
+                  const notif = d.tool as ToolNotification;
+                  notifications.push(notif);
+                  setStreamingNotifications([...notifications]);
+                  if (notif.type === "plan_change_proposed" && notif.data?.pendingChangeId) {
+                    pendingChange = { id: notif.data.pendingChangeId as string, summary: notif.data.summary as string, status: "pending" };
+                  }
+                }
+                if (d.done) {
+                  setMessages(prev => [...prev, {
+                    id: `assistant-${Date.now()}`,
+                    role: "assistant",
+                    displayText: accumulated || null,
+                    toolNotifications: notifications.length > 0 ? notifications : undefined,
+                    pendingChange,
+                  }]);
+                  setStreamingText("");
+                  setStreamingNotifications([]);
+                }
+              } catch { /* skip */ }
+            }
+          }
+        } else {
+          // Normal new session — create it and fetch an opener
+          const res = await fetch("/api/chat/sessions", { method: "POST" });
+          const data = await res.json();
+          if (cancelled) return;
+          setSessionId(data.id);
+          window.history.replaceState(null, "", `/chat/${data.id}`);
+
+          // Request contextual opener
+          const openerRes = await fetch("/api/chat/opener", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId: data.id }),
+          });
+          if (cancelled) return;
+          if (openerRes.ok) {
+            const { opener } = await openerRes.json();
+            setMessages([{
+              id: `opener-${Date.now()}`,
+              role: "assistant",
+              displayText: opener,
+            }]);
+          }
+        }
+      } catch {
+        // Non-critical, user can still type
+      }
+    }
+    initSession();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handlePlanAction(changeId: string, action: "approve" | "reject") {
     try {
@@ -430,10 +538,7 @@ export default function ChatUI({
         {messages.length === 0 && !streamingText && (
           <div className="text-center py-16">
             <p className="text-5xl mb-4">&#x1F966;</p>
-            <p className="text-gray-400 text-lg font-medium">Hey! I&apos;m Brocco.</p>
-            <p className="text-gray-500 text-sm mt-1">
-              Ask me about your training, races, or how your week went.
-            </p>
+            <span className="inline-block w-6 h-6 border-2 border-green-400/30 border-t-green-400 rounded-full animate-spin" />
           </div>
         )}
 

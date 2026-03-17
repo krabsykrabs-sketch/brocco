@@ -9,25 +9,13 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const [profile, user, activePlan] = await Promise.all([
-      prisma.userProfile.findUnique({
-        where: { userId: session.userId },
-      }),
-      prisma.user.findUnique({
-        where: { id: session.userId },
-        select: { name: true },
-      }),
-      prisma.plan.findFirst({
-        where: { userId: session.userId, status: "active" },
-        select: { id: true },
-      }),
-    ]);
+    const profile = await prisma.userProfile.findUnique({
+      where: { userId: session.userId },
+    });
 
     return NextResponse.json({
-      name: user?.name || "",
       onboardingCompleted: profile?.onboardingCompleted || false,
       stravaConnected: !!profile?.stravaAccessToken,
-      hasActivePlan: !!activePlan,
     });
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

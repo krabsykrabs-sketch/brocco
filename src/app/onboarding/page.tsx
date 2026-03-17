@@ -28,7 +28,7 @@ interface PendingChange {
 // ---- Step Indicator ----
 
 function StepIndicator({ current }: { current: number }) {
-  const labels = ["Strava", "Quick Intro", "Training Plan", "Done"];
+  const labels = ["Strava", "Welcome", "Done"];
   return (
     <div className="flex items-center gap-2 mb-6">
       {labels.map((label, i) => (
@@ -55,7 +55,7 @@ function StepIndicator({ current }: { current: number }) {
   );
 }
 
-// ---- Step 1: Strava Connect ----
+// ---- Step 0: Strava Connect ----
 
 function StepStrava({
   onSkip,
@@ -153,8 +153,8 @@ function StepStrava({
       <p className="text-5xl mb-4">🥦</p>
       <h2 className="text-2xl font-bold mb-2">Hey, I&apos;m Brocco.</h2>
       <p className="text-gray-400 mb-2 leading-relaxed">
-        Your running coach. Before we get to know each other, want to connect
-        your Strava? It&apos;ll save us a lot of questions.
+        Your running coach. Before we get started, want to connect your Strava?
+        It&apos;ll save us a lot of questions.
       </p>
       <p className="text-gray-500 text-sm mb-8">
         I&apos;ll use your activity data to give you better, more specific
@@ -289,24 +289,12 @@ function MessageBubble({
   );
 }
 
-// ---- Reusable Chat Interview Component ----
+// ---- Plan Creation Chat (used during onboarding) ----
 
-function ChatInterview({
-  sessionType,
-  sessionEndpoint,
-  subtitle,
-  firstMessage,
+function PlanCreationChat({
   onComplete,
-  showCompleteButton,
-  completeButtonLabel,
 }: {
-  sessionType: "onboarding" | "plan_creation";
-  sessionEndpoint: string;
-  subtitle: string;
-  firstMessage: string;
   onComplete: () => void;
-  showCompleteButton: boolean;
-  completeButtonLabel: string;
 }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -317,7 +305,6 @@ function ChatInterview({
     ToolNotification[]
   >([]);
   const [interviewStarted, setInterviewStarted] = useState(false);
-  const [messageCount, setMessageCount] = useState(0);
   const [planApproved, setPlanApproved] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -334,7 +321,7 @@ function ChatInterview({
   useEffect(() => {
     async function init() {
       try {
-        const res = await fetch(sessionEndpoint, { method: "POST" });
+        const res = await fetch("/api/plan/new-plan-session", { method: "POST" });
         const data = await res.json();
         setSessionId(data.id);
 
@@ -361,14 +348,13 @@ function ChatInterview({
                   })
                 )
             );
-            setMessageCount(sessData.messages.length);
             setInterviewStarted(true);
             return;
           }
         }
 
         setInterviewStarted(true);
-        await sendMessage(data.id, firstMessage);
+        await sendMessage(data.id, "I'm ready to build my first training plan!");
       } catch (err) {
         console.error("Failed to init session:", err);
       }
@@ -422,7 +408,6 @@ function ChatInterview({
       displayText: text,
     };
     setMessages((prev) => [...prev, userMsg]);
-    setMessageCount((c) => c + 1);
 
     try {
       const res = await fetch("/api/chat", {
@@ -484,7 +469,6 @@ function ChatInterview({
                   pendingChange,
                 },
               ]);
-              setMessageCount((c) => c + 1);
               setStreamingText("");
               setStreamingNotifications([]);
             }
@@ -536,19 +520,22 @@ function ChatInterview({
     }
   }
 
-  // For onboarding: show "next" button after enough back-and-forth
-  // For plan_creation: show only after a plan has been approved
-  const canComplete =
-    sessionType === "onboarding"
-      ? showCompleteButton && messageCount >= 6 && !sending && !streamingText
-      : showCompleteButton && planApproved && !sending && !streamingText;
+  const canFinish = planApproved && !sending && !streamingText;
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-800 flex-shrink-0">
-        <span className="text-xl">🥦</span>
-        <span className="font-semibold">Brocco</span>
-        <span className="text-xs text-gray-500 ml-1">{subtitle}</span>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">🥦</span>
+          <span className="font-semibold">Brocco</span>
+          <span className="text-xs text-gray-500 ml-1">Building your plan</span>
+        </div>
+        <button
+          onClick={onComplete}
+          className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+        >
+          Skip to dashboard →
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
@@ -616,13 +603,13 @@ function ChatInterview({
         <div ref={messagesEndRef} />
       </div>
 
-      {canComplete && (
+      {canFinish && (
         <div className="px-4 py-2 flex-shrink-0">
           <button
             onClick={onComplete}
             className="w-full py-2.5 px-4 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors text-sm"
           >
-            {completeButtonLabel}
+            Go to dashboard →
           </button>
         </div>
       )}
@@ -721,17 +708,9 @@ function OnboardingContent() {
   }, [router, searchParams]);
 
   async function handleFinish() {
+    if (finishing) return;
     setFinishing(true);
     try {
-      // Verify there's an active plan before completing
-      const checkRes = await fetch("/api/onboarding");
-      const checkData = await checkRes.json();
-
-      if (!checkData.hasActivePlan) {
-        setFinishing(false);
-        return;
-      }
-
       await fetch("/api/onboarding", { method: "POST" });
       router.push("/");
       router.refresh();
@@ -748,45 +727,47 @@ function OnboardingContent() {
     );
   }
 
-  // Step 1: Quick intro chat
-  if (step === 1) {
+  // Step 2: Plan creation chat (optional, interruptible)
+  if (step === 2) {
     return (
       <main className="h-screen flex flex-col max-w-2xl mx-auto">
-        <div className="px-4 pt-4 flex-shrink-0">
-          <StepIndicator current={1} />
-        </div>
         <div className="flex-1 flex flex-col min-h-0">
-          <ChatInterview
-            sessionType="onboarding"
-            sessionEndpoint="/api/onboarding/session"
-            subtitle="Getting to know you"
-            firstMessage="Hi! I just signed up."
-            onComplete={() => setStep(2)}
-            showCompleteButton={true}
-            completeButtonLabel="Next: Build your training plan →"
-          />
+          <PlanCreationChat onComplete={handleFinish} />
         </div>
       </main>
     );
   }
 
-  // Step 2: Plan creation chat
-  if (step === 2) {
+  // Step 1: Welcome screen with choice
+  if (step === 1) {
     return (
-      <main className="h-screen flex flex-col max-w-2xl mx-auto">
-        <div className="px-4 pt-4 flex-shrink-0">
-          <StepIndicator current={2} />
-        </div>
-        <div className="flex-1 flex flex-col min-h-0">
-          <ChatInterview
-            sessionType="plan_creation"
-            sessionEndpoint="/api/plan/new-plan-session"
-            subtitle="Building your training plan"
-            firstMessage="I'm ready to build my first training plan!"
-            onComplete={handleFinish}
-            showCompleteButton={true}
-            completeButtonLabel="Finish onboarding →"
-          />
+      <main className="min-h-screen flex items-center justify-center px-4">
+        <div className="w-full max-w-sm py-12">
+          <StepIndicator current={1} />
+          <div className="text-center py-8">
+            <p className="text-5xl mb-4">🥦</p>
+            <h2 className="text-2xl font-bold mb-3">
+              Hey, I&apos;m Brocco.
+            </h2>
+            <p className="text-gray-400 mb-8 leading-relaxed">
+              I can build you a training plan, or you can explore first.
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={() => setStep(2)}
+                className="w-full py-3 px-4 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition-colors"
+              >
+                Build my plan
+              </button>
+              <button
+                onClick={handleFinish}
+                disabled={finishing}
+                className="w-full py-3 px-4 border border-gray-700 text-gray-300 hover:bg-gray-800 font-medium rounded-lg transition-colors disabled:opacity-50"
+              >
+                {finishing ? "Setting up..." : "Let me look around first"}
+              </button>
+            </div>
+          </div>
         </div>
       </main>
     );

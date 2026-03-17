@@ -630,21 +630,20 @@ export default function Dashboard() {
 
       {/* No plan prompt */}
       {(!data.hasActivePlan || data.planExpired) && (
-        <div className="mb-6 bg-green-900/20 border border-green-800/40 rounded-lg p-4 text-center">
-          <p className="text-lg mb-1">🥦</p>
-          <p className="text-sm text-gray-200 font-medium">
-            {data.planExpired
-              ? `${data.activePlanName || "Your plan"} is done! Ready for what's next?`
-              : "No active training plan."}
-          </p>
-          <p className="text-xs text-gray-400 mt-1 mb-3">
-            Let Brocco build you a personalized plan.
-          </p>
+        <div className="mb-6 bg-green-900/20 border border-green-800/40 rounded-lg p-4 flex items-center gap-3">
+          <span className="text-2xl flex-shrink-0">🥦</span>
+          <div className="flex-1">
+            <p className="text-sm text-gray-200 font-medium">
+              {data.planExpired
+                ? `${data.activePlanName || "Your plan"} is done! Ready for what's next?`
+                : "No active plan yet. Chat with Brocco to build one whenever you're ready."}
+            </p>
+          </div>
           <Link
-            href="/plan?new=1"
-            className="inline-block px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors"
+            href="/chat?startPlan=1"
+            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors flex-shrink-0"
           >
-            Build a new plan
+            Build a plan
           </Link>
         </div>
       )}

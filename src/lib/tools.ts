@@ -713,7 +713,7 @@ async function handleModifyPlan(
   chatMessageId?: string
 ): Promise<ToolResult> {
   const changes = (input.changes || []) as Array<Record<string, unknown>>;
-  const summary = (input.summary as string) || "Plan changes proposed by Brocco";
+  const summary = String(input.summary || "Plan changes proposed by Brocco");
 
   if (!Array.isArray(changes) || changes.length === 0) {
     return { success: false, error: "No changes provided" };
@@ -781,7 +781,7 @@ async function handleGeneratePlan(
     target_duration_min?: number;
     description?: string;
   }>;
-  const summary = (input.summary as string) || `New plan: ${planName || "Training plan"}`;
+  const summary = String(input.summary || `New plan: ${planName || "Training plan"}`);
 
   // Store as pending change with plan generation data
   const changePayload = {

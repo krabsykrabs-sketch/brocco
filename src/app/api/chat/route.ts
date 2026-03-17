@@ -38,10 +38,7 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Select model based on session type
-  const model = (chatSession.type === "onboarding" || chatSession.type === "plan_creation")
-    ? "claude-opus-4-6"
-    : "claude-sonnet-4-20250514";
+  const model = "claude-opus-4-6";
 
   // Build context and system prompt
   const user = await prisma.user.findUnique({
@@ -290,7 +287,7 @@ async function runWithTools(
 async function generateTitle(sessionId: string, userMessage: string, assistantResponse: string) {
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-opus-4-6",
       max_tokens: 30,
       messages: [
         {

@@ -193,9 +193,12 @@ export async function storeStravaActivity(userId: string, stravaActivity: Record
     rawData: stravaActivity as object,
   };
 
-  // Upsert by stravaId for deduplication
+  // Upsert by userId+stravaId composite unique for deduplication
+  // This allows multiple users to have the same Strava activity
   const result = await prisma.activity.upsert({
-    where: { stravaId },
+    where: {
+      userId_stravaId: { userId, stravaId },
+    },
     update: {
       name: data.name,
       activityType: data.activityType,
