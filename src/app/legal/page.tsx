@@ -3,7 +3,7 @@ import Link from "next/link";
 export default function LegalPage() {
   return (
     <main className="min-h-screen max-w-2xl mx-auto px-4 py-8 pb-20">
-      <nav className="sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm flex items-center justify-between py-3 -mx-4 px-4 mb-8">
+      <nav className="sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm flex items-center justify-between py-6 -mx-4 px-4 mb-8">
         <Link href="/" className="flex items-center gap-2">
           <span className="text-2xl">&#x1F966;</span>
           <span className="font-bold text-lg">brocco.run</span>

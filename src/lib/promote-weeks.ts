@@ -60,10 +60,11 @@ export async function promoteWeekDetails(userId: string): Promise<{ promoted: nu
 
     // Use Opus to generate detailed workouts for this week
     try {
-      const response = await anthropic.messages.create({
-        model: "claude-opus-4-6",
-        max_tokens: 4096,
-        system: `You are Brocco, a running coach. Generate detailed workouts for one week of a training plan. Return ONLY a JSON array of workout objects. No other text.
+      const response = await anthropic.messages
+        .stream({
+          model: "claude-opus-4-6",
+          max_tokens: 4096,
+          system: `You are Brocco, a running coach. Generate detailed workouts for one week of a training plan. Return ONLY a JSON array of workout objects. No other text.
 
 Plan: ${plan.name} (${plan.goal})
 Phase: ${phaseName}
@@ -77,8 +78,9 @@ ${context}
 Each workout object must have: date (ISO), title, workout_type (easy/long/tempo/interval/race_pace/recovery/rest/cross_training/strength/race), target_distance_km (number), target_pace (string like "5:00-5:15/km"), description (string with warm-up, main set, cool-down details).
 
 Generate one workout per day (Mon-Sun). Include rest days.`,
-        messages: [{ role: "user", content: "Generate the detailed workouts for this week as a JSON array." }],
-      });
+          messages: [{ role: "user", content: "Generate the detailed workouts for this week as a JSON array." }],
+        })
+        .finalMessage();
 
       const text = response.content[0].type === "text" ? response.content[0].text : "";
       // Extract JSON array from response

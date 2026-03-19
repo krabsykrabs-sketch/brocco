@@ -195,13 +195,22 @@ async function runWithTools(
   const maxTokens = sessionType === "plan_creation" ? 32000 : 8192;
 
   for (let i = 0; i < maxIterations; i++) {
-    const response = await anthropic.messages.create({
+    const stream = anthropic.messages.stream({
       model,
       max_tokens: maxTokens,
       system: systemPrompt,
       messages: currentMessages,
       tools: toolDefinitions,
     });
+
+    // Stream text chunks to client as they arrive
+    stream.on("text", (text) => {
+      controller.enqueue(
+        encoder.encode(`data: ${JSON.stringify({ text })}\n\n`)
+      );
+    });
+
+    const response = await stream.finalMessage();
 
     // Detect truncation — if response was cut off, the tool call may be incomplete
     if (response.stop_reason === "max_tokens") {
@@ -215,10 +224,6 @@ async function runWithTools(
     for (const block of response.content) {
       if (block.type === "text") {
         textInThisTurn += block.text;
-        // Stream each text block to client
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ text: block.text })}\n\n`)
-        );
       } else if (block.type === "tool_use") {
         toolUseBlocks.push({
           id: block.id,
@@ -283,7 +288,7 @@ async function runWithTools(
     // so it can produce a final text response after seeing tool results
     if (response.stop_reason === "end_turn") {
       // Execute one final turn to let Claude respond to tool results, then stop
-      const finalResponse = await anthropic.messages.create({
+      const finalStream = anthropic.messages.stream({
         model,
         max_tokens: maxTokens,
         system: systemPrompt,
@@ -291,12 +296,17 @@ async function runWithTools(
         tools: toolDefinitions,
       });
 
+      finalStream.on("text", (text) => {
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ text })}\n\n`)
+        );
+      });
+
+      const finalResponse = await finalStream.finalMessage();
+
       for (const block of finalResponse.content) {
         if (block.type === "text") {
           fullText += block.text;
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ text: block.text })}\n\n`)
-          );
         }
       }
       break;
@@ -308,16 +318,18 @@ async function runWithTools(
 
 async function generateTitle(sessionId: string, userMessage: string, assistantResponse: string) {
   try {
-    const response = await anthropic.messages.create({
-      model: "claude-opus-4-6",
-      max_tokens: 30,
-      messages: [
-        {
-          role: "user",
-          content: `Summarize this conversation in 3-5 words for a sidebar title. No quotes, no punctuation. Just the title.\n\nUser: ${userMessage}\nAssistant: ${assistantResponse.slice(0, 200)}`,
-        },
-      ],
-    });
+    const response = await anthropic.messages
+      .stream({
+        model: "claude-opus-4-6",
+        max_tokens: 30,
+        messages: [
+          {
+            role: "user",
+            content: `Summarize this conversation in 3-5 words for a sidebar title. No quotes, no punctuation. Just the title.\n\nUser: ${userMessage}\nAssistant: ${assistantResponse.slice(0, 200)}`,
+          },
+        ],
+      })
+      .finalMessage();
 
     const title =
       response.content[0].type === "text"

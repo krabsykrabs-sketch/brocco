@@ -103,17 +103,19 @@ export async function POST(request: NextRequest) {
   const hasCoachingNotes = profile?.coachingNotes && typeof profile.coachingNotes === "object" && Object.keys(profile.coachingNotes as object).length > 0;
 
   try {
-    const response = await anthropic.messages.create({
-      model: "claude-opus-4-6",
-      max_tokens: 200,
-      system: `You are Brocco, a broccoli running coach. Write a brief, warm opening message for ${userName}. 1-3 sentences max. End with a question or prompt. Don't use greetings like "Hello!" — be casual. Today is ${format(now, "EEEE, MMMM d, yyyy")}.${!hasCoachingNotes ? " You don't know much about this runner yet." : ""}`,
-      messages: [
-        {
-          role: "user",
-          content: `Generate an opening message. Context: ${contextHint}`,
-        },
-      ],
-    });
+    const response = await anthropic.messages
+      .stream({
+        model: "claude-opus-4-6",
+        max_tokens: 200,
+        system: `You are Brocco, a broccoli running coach. Write a brief, warm opening message for ${userName}. 1-3 sentences max. End with a question or prompt. Don't use greetings like "Hello!" — be casual. Today is ${format(now, "EEEE, MMMM d, yyyy")}.${!hasCoachingNotes ? " You don't know much about this runner yet." : ""}`,
+        messages: [
+          {
+            role: "user",
+            content: `Generate an opening message. Context: ${contextHint}`,
+          },
+        ],
+      })
+      .finalMessage();
 
     const openerText =
       response.content[0].type === "text"
