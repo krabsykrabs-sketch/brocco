@@ -163,6 +163,20 @@ export async function GET() {
       .filter((w) => w.workoutType !== "rest")
       .reduce((sum, w) => sum + (w.targetDistanceKm ? Number(w.targetDistanceKm) : 0), 0);
 
+    // Cross-training summary: group non-running activities by type
+    const crossActivities = currentWeekActivities.filter((a) => !runTypes.includes(a.activityType));
+    const crossSummary: { activityType: string; count: number; totalKm: number }[] = [];
+    const crossMap = new Map<string, { count: number; totalKm: number }>();
+    for (const a of crossActivities) {
+      const entry = crossMap.get(a.activityType) || { count: 0, totalKm: 0 };
+      entry.count++;
+      entry.totalKm += a.distanceKm ? Number(a.distanceKm) : 0;
+      crossMap.set(a.activityType, entry);
+    }
+    for (const [activityType, { count, totalKm }] of crossMap) {
+      crossSummary.push({ activityType, count, totalKm: Math.round(totalKm * 10) / 10 });
+    }
+
     // Days until race
     const daysUntilRace = profile.goalRaceDate
       ? differenceInDays(new Date(profile.goalRaceDate), now)
@@ -262,6 +276,7 @@ export async function GET() {
       daysUntilRace,
       currentWeekKm: Math.round(currentWeekRunKm * 10) / 10,
       currentWeekAllKm: Math.round(currentWeekAllKm * 10) / 10,
+      crossTrainingSummary: crossSummary,
       currentWeekPlannedKm: Math.round(currentWeekPlannedKm * 10) / 10,
       avgEasyPace,
       weekDays,

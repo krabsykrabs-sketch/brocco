@@ -11,7 +11,8 @@ interface MatchedActivity { id: string; name: string; distanceKm: number | null;
 interface Workout { id: string; phaseId: string | null; weekNumber: number; date: string; title: string; workoutType: string; activityType: string; targetDistanceKm: number | null; targetPace: string | null; targetDurationMin: number | null; description: string | null; status: string; matchedActivity: MatchedActivity | null; }
 interface PlanWeekData { id: string; weekNumber: number; startDate: string; detailLevel: string; targetKm: number | null; targetSessions: number | null; sessionTypes: string[] | null; notes: string | null; actualKm: number | null; phaseName: string | null; }
 interface WeeklyTask { id: string; weekNumber: number; description: string; category: string; status: string; }
-interface Plan { id: string; name: string; goal: string | null; raceDate: string | null; startDate: string; endDate: string; status: string; phases: Phase[]; weeks: PlanWeekData[]; workouts: Workout[]; weeklyTasks: WeeklyTask[]; }
+interface UnmatchedActivity { id: string; name: string; activityType: string; distanceKm: number | null; durationMin: number | null; avgPacePerKm: string | null; source: string; }
+interface Plan { id: string; name: string; goal: string | null; raceDate: string | null; startDate: string; endDate: string; status: string; phases: Phase[]; weeks: PlanWeekData[]; workouts: Workout[]; weeklyTasks: WeeklyTask[]; unmatchedActivities: Record<string, UnmatchedActivity[]>; }
 
 // --- Shared Utilities ---
 
@@ -87,14 +88,35 @@ function TaskChecklist({ tasks, onToggle }: { tasks: WeeklyTask[]; onToggle: (id
 // MOBILE VIEW — Swipeable Cards
 // ============================
 
+function ExtraActivities({ activities }: { activities: UnmatchedActivity[] }) {
+  if (activities.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      {activities.map((a) => (
+        <Link key={a.id} href={`/activity/${a.id}`} className="block bg-gray-800/40 rounded-lg px-3 py-1.5 hover:bg-gray-800/60 transition-colors">
+          <div className="flex items-center gap-2 text-xs text-gray-400">
+            <span className="text-gray-500">Also:</span>
+            <span className="text-gray-300">{a.name}</span>
+            {a.distanceKm && <span>{a.distanceKm.toFixed(1)}km</span>}
+            {a.avgPacePerKm && <span>{a.avgPacePerKm}</span>}
+            {a.source === "manual" && <span className="text-gray-600">(manual)</span>}
+          </div>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
 function MobileDayRow({
   workout,
   isExpanded,
   onTap,
+  extraActivities,
 }: {
   workout: Workout;
   isExpanded: boolean;
   onTap: () => void;
+  extraActivities: UnmatchedActivity[];
 }) {
   const day = getDayLabel(workout.date);
   const isTodayRow = isToday(workout.date);
@@ -102,6 +124,7 @@ function MobileDayRow({
   const isRest = workout.workoutType === "rest";
   const isCompleted = workout.status === "completed";
   const isMissed = isPast && !isCompleted && !isRest;
+  const hasExtras = extraActivities.length > 0;
 
   const details = [
     workout.targetDistanceKm ? `${workout.targetDistanceKm}km` : null,
@@ -118,7 +141,7 @@ function MobileDayRow({
           : isMissed
           ? "border-l-2 border-l-red-800/60"
           : "border-l-2 border-l-transparent"
-      } ${isPast && !isCompleted && !isRest ? "opacity-60" : ""}`}
+      } ${isPast && !isCompleted && !isRest && !hasExtras ? "opacity-60" : ""}`}
     >
       {/* Main row */}
       <div className="flex items-center px-4 py-3 gap-3">
@@ -144,19 +167,19 @@ function MobileDayRow({
         </div>
 
         {/* Expand indicator */}
-        {!isRest && (
+        {(!isRest || hasExtras) && (
           <span className="text-xs text-gray-600 flex-shrink-0">{isExpanded ? "\u25B2" : "\u25BC"}</span>
         )}
       </div>
 
       {/* Expanded content */}
-      {isExpanded && !isRest && (
-        <div className="px-4 pb-3 pl-16">
-          {workout.description && (
-            <p className="text-xs text-gray-400 leading-relaxed mb-2">{workout.description}</p>
+      {isExpanded && (!isRest || hasExtras) && (
+        <div className="px-4 pb-3 pl-16 space-y-1.5">
+          {!isRest && workout.description && (
+            <p className="text-xs text-gray-400 leading-relaxed">{workout.description}</p>
           )}
           {workout.matchedActivity && (
-            <div className="bg-green-900/20 border border-green-800/30 rounded-lg px-3 py-2 mb-1">
+            <div className="bg-green-900/20 border border-green-800/30 rounded-lg px-3 py-2">
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-green-400">{"\u2705"}</span>
                 <span className="text-green-300 font-medium">Actual: {workout.matchedActivity.distanceKm?.toFixed(1)}km</span>
@@ -168,8 +191,8 @@ function MobileDayRow({
               </Link>
             </div>
           )}
-          {!workout.matchedActivity && isPast && (
-            <div className="bg-red-900/15 border border-red-800/20 rounded-lg px-3 py-2 mb-1">
+          {!isRest && !workout.matchedActivity && isPast && (
+            <div className="bg-red-900/15 border border-red-800/20 rounded-lg px-3 py-2">
               <div className="flex items-center gap-2 text-xs text-red-400/80">
                 <span>{"\u2717"}</span>
                 <span>Missed</span>
@@ -177,12 +200,13 @@ function MobileDayRow({
               </div>
             </div>
           )}
-          {!workout.matchedActivity && !isPast && (
+          {!isRest && !workout.matchedActivity && !isPast && (
             <div className="text-xs text-gray-500">
               {workout.targetDistanceKm && <span>{workout.targetDistanceKm}km</span>}
               {workout.targetPace && <span> @ {workout.targetPace}</span>}
             </div>
           )}
+          <ExtraActivities activities={extraActivities} />
         </div>
       )}
 
@@ -196,11 +220,13 @@ function MobileWeekCard({
   workouts,
   tasks,
   onToggleTask,
+  unmatchedActivities,
 }: {
   weekData: PlanWeekData;
   workouts: Workout[];
   tasks: WeeklyTask[];
   onToggleTask: (id: string, status: string) => void;
+  unmatchedActivities: Record<string, UnmatchedActivity[]>;
 }) {
   const isOutline = weekData.detailLevel === "outline";
   const isTarget = weekData.detailLevel === "target";
@@ -275,6 +301,7 @@ function MobileWeekCard({
                 workout={w}
                 isExpanded={expandedIdx === i}
                 onTap={() => setExpandedIdx(expandedIdx === i ? -1 : i)}
+                extraActivities={unmatchedActivities[w.date.split("T")[0]] || []}
               />
             ))}
           </>
@@ -297,12 +324,14 @@ function MobilePlanView({
   tasksByWeek,
   currentWeekIdx,
   onToggleTask,
+  unmatchedActivities,
 }: {
   weekList: PlanWeekData[];
   workoutsByWeek: Map<number, Workout[]>;
   tasksByWeek: Map<number, WeeklyTask[]>;
   currentWeekIdx: number;
   onToggleTask: (id: string, status: string) => void;
+  unmatchedActivities: Record<string, UnmatchedActivity[]>;
 }) {
   const [activeIdx, setActiveIdx] = useState(Math.max(0, currentWeekIdx));
   const touchStartX = useRef(0);
@@ -382,6 +411,7 @@ function MobilePlanView({
             workouts={workoutsByWeek.get(week.weekNumber) || []}
             tasks={tasksByWeek.get(week.weekNumber) || []}
             onToggleTask={onToggleTask}
+            unmatchedActivities={unmatchedActivities}
           />
         </div>
       </div>
@@ -393,14 +423,15 @@ function MobilePlanView({
 // DESKTOP VIEW — Collapsible Weeks (existing)
 // ============================
 
-function DesktopWorkoutCard({ workout }: { workout: Workout }) {
+function DesktopWorkoutCard({ workout, extraActivities }: { workout: Workout; extraActivities: UnmatchedActivity[] }) {
   const isRest = workout.workoutType === "rest";
   const isPast = isPastDate(workout.date);
   const isCompleted = workout.status === "completed";
   const isMissed = isPast && !isCompleted && !isRest;
+  const hasExtras = extraActivities.length > 0;
 
   return (
-    <div className={`border rounded-lg px-3 py-2 ${getWorkoutTypeBg(workout.workoutType)} ${isMissed ? "opacity-50" : ""}`}>
+    <div className={`border rounded-lg px-3 py-2 ${getWorkoutTypeBg(workout.workoutType)} ${isMissed && !hasExtras ? "opacity-50" : ""}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
@@ -432,16 +463,22 @@ function DesktopWorkoutCard({ workout }: { workout: Workout }) {
           </div>
         </div>
       )}
+      {hasExtras && (
+        <div className="mt-1.5 ml-4">
+          <ExtraActivities activities={extraActivities} />
+        </div>
+      )}
     </div>
   );
 }
 
 function DesktopWeekRow({
-  weekData, workouts, tasks, isCurrentWeek, isNextWeek, onToggleTask,
+  weekData, workouts, tasks, isCurrentWeek, isNextWeek, onToggleTask, unmatchedActivities,
 }: {
   weekData: PlanWeekData; workouts: Workout[]; tasks: WeeklyTask[];
   isCurrentWeek: boolean; isNextWeek: boolean;
   onToggleTask: (id: string, status: string) => void;
+  unmatchedActivities: Record<string, UnmatchedActivity[]>;
 }) {
   const isOutline = weekData.detailLevel === "outline";
   const isTarget = weekData.detailLevel === "target";
@@ -482,7 +519,7 @@ function DesktopWeekRow({
       {weekData.notes && <p className="text-xs text-yellow-400/70 mt-1 px-3">{weekData.notes}</p>}
       {expanded && hasWorkouts && (
         <div className="mt-2 space-y-1.5 px-1">
-          {workouts.map((w) => <DesktopWorkoutCard key={w.id} workout={w} />)}
+          {workouts.map((w) => <DesktopWorkoutCard key={w.id} workout={w} extraActivities={unmatchedActivities[w.date.split("T")[0]] || []} />)}
           <TaskChecklist tasks={tasks} onToggle={onToggleTask} />
         </div>
       )}
@@ -639,6 +676,7 @@ function PlanPageContent() {
           tasksByWeek={tasksByWeek}
           currentWeekIdx={currentWeekIdx >= 0 ? currentWeekIdx : 0}
           onToggleTask={handleToggleTask}
+          unmatchedActivities={plan.unmatchedActivities || {}}
         />
       </div>
 
@@ -690,6 +728,7 @@ function PlanPageContent() {
             isCurrentWeek={wd.weekNumber === currentWeekNum}
             isNextWeek={currentWeekNum !== undefined && wd.weekNumber === currentWeekNum + 1}
             onToggleTask={handleToggleTask}
+            unmatchedActivities={plan.unmatchedActivities || {}}
           />
         ))}
       </main>

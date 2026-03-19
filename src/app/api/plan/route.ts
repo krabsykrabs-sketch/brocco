@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
+import { format } from "date-fns";
 
 // GET /api/plan — Get active plan for current user
 export async function GET() {
@@ -55,6 +56,40 @@ export async function GET() {
 
   if (!plan) {
     return NextResponse.json({ plan: null });
+  }
+
+  // Fetch all activities in the plan's date range for cross-training display
+  // Only include activities NOT already matched to a workout
+  const matchedActivityIds = new Set(
+    plan.workouts.filter((w) => w.matchedActivityId).map((w) => w.matchedActivityId!)
+  );
+
+  const planActivities = await prisma.activity.findMany({
+    where: {
+      userId: session.userId,
+      startDateLocal: { gte: plan.startDate, lte: plan.endDate },
+    },
+    orderBy: { startDateLocal: "asc" },
+    select: {
+      id: true,
+      name: true,
+      activityType: true,
+      distanceKm: true,
+      durationMin: true,
+      avgPacePerKm: true,
+      avgHeartRate: true,
+      startDateLocal: true,
+      source: true,
+    },
+  });
+
+  // Group unmatched activities by date
+  const unmatchedByDate: Record<string, typeof planActivities> = {};
+  for (const a of planActivities) {
+    if (matchedActivityIds.has(a.id)) continue;
+    const dateStr = format(new Date(a.startDateLocal), "yyyy-MM-dd");
+    if (!unmatchedByDate[dateStr]) unmatchedByDate[dateStr] = [];
+    unmatchedByDate[dateStr].push(a);
   }
 
   return NextResponse.json({
@@ -117,6 +152,20 @@ export async function GET() {
             }
           : null,
       })),
+      unmatchedActivities: Object.fromEntries(
+        Object.entries(unmatchedByDate).map(([date, acts]) => [
+          date,
+          acts.map((a) => ({
+            id: a.id,
+            name: a.name,
+            activityType: a.activityType,
+            distanceKm: a.distanceKm ? Number(a.distanceKm) : null,
+            durationMin: a.durationMin ? Number(a.durationMin) : null,
+            avgPacePerKm: a.avgPacePerKm,
+            source: a.source,
+          })),
+        ])
+      ),
     },
   });
 }

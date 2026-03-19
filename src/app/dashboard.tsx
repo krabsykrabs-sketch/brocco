@@ -94,6 +94,12 @@ interface WeeklyTaskItem {
   status: string;
 }
 
+interface CrossTrainingSummary {
+  activityType: string;
+  count: number;
+  totalKm: number;
+}
+
 interface DashboardData {
   userName: string;
   goalRace: string | null;
@@ -102,6 +108,7 @@ interface DashboardData {
   currentWeekKm: number;
   currentWeekAllKm: number;
   currentWeekPlannedKm: number;
+  crossTrainingSummary: CrossTrainingSummary[];
   avgEasyPace: string | null;
   weekDays: DayData[];
   weeklyData: WeeklyBar[];
@@ -154,16 +161,16 @@ function getWorkoutTypeColor(type: string): string {
 
 function getWorkoutTypeBg(type: string): string {
   switch (type) {
-    case "easy": case "recovery": return "bg-green-900/25 border-green-800/40";
-    case "tempo": return "bg-orange-900/25 border-orange-800/40";
-    case "interval": return "bg-red-900/25 border-red-800/40";
-    case "race_pace": return "bg-orange-900/30 border-orange-700/40";
-    case "long": return "bg-blue-900/25 border-blue-800/40";
-    case "cross_training": return "bg-teal-900/25 border-teal-800/40";
-    case "strength": return "bg-purple-900/25 border-purple-800/40";
-    case "rest": return "bg-gray-900/50 border-gray-800/40";
-    case "race": return "bg-yellow-900/25 border-yellow-800/40";
-    default: return "bg-gray-900/50 border-gray-800/40";
+    case "easy": case "recovery": return "bg-green-900/40 border-green-700/50";
+    case "tempo": return "bg-orange-900/40 border-orange-700/50";
+    case "interval": return "bg-red-900/40 border-red-700/50";
+    case "race_pace": return "bg-orange-900/45 border-orange-600/50";
+    case "long": return "bg-blue-900/40 border-blue-700/50";
+    case "cross_training": return "bg-teal-900/40 border-teal-700/50";
+    case "strength": return "bg-purple-900/40 border-purple-700/50";
+    case "rest": return "bg-gray-800/60 border-gray-700/50";
+    case "race": return "bg-yellow-900/40 border-yellow-700/50";
+    default: return "bg-gray-800/60 border-gray-700/50";
   }
 }
 
@@ -177,7 +184,7 @@ function TodayCard({ day }: { day: DayData }) {
   const hasActivities = day.activities.length > 0;
   const planned = hasPlanned ? day.planned![0] : null;
   const isRest = planned?.workoutType === "rest";
-  const workoutBg = planned ? getWorkoutTypeBg(planned.workoutType) : "bg-gray-900/50 border-gray-800/40";
+  const workoutBg = planned ? getWorkoutTypeBg(planned.workoutType) : "bg-gray-800/60 border-gray-700/50";
 
   return (
     <div className={`rounded-xl border p-4 ${workoutBg}`}>
@@ -248,7 +255,7 @@ function TomorrowCard({ day }: { day: DayData }) {
   const isRest = planned?.workoutType === "rest";
 
   return (
-    <div className="rounded-xl border bg-gray-900/50 border-gray-800/40 px-4 py-3">
+    <div className="rounded-xl border bg-gray-800/40 border-gray-700/50 px-4 py-3">
       <div className="flex items-center gap-2 mb-2">
         <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tomorrow</span>
         <span className="text-[10px] text-gray-600 uppercase tracking-wider">{"\u00b7"} {formatDayHeader(day.date)}</span>
@@ -275,58 +282,62 @@ function TomorrowCard({ day }: { day: DayData }) {
   );
 }
 
+function formatActivityType(type: string): string {
+  const map: Record<string, string> = {
+    Ride: "cycling", VirtualRide: "cycling", EBikeRide: "e-bike",
+    MountainBikeRide: "MTB", Swim: "swimming", Hike: "hiking",
+    Walk: "walking", WeightTraining: "weights", Workout: "workout",
+    Yoga: "yoga", Padel: "padel", Tennis: "tennis",
+  };
+  return map[type] || type.toLowerCase();
+}
+
 function WeekProgressBar({
-  runKm, allKm, plannedKm,
+  runKm, plannedKm, crossSummary,
 }: {
-  runKm: number; allKm: number; plannedKm: number;
+  runKm: number; plannedKm: number; crossSummary: CrossTrainingSummary[];
 }) {
-  const hasCross = allKm > runKm + 0.1;
-  const pct = plannedKm > 0 ? Math.min((allKm / plannedKm) * 100, 150) : 0;
   const runPct = plannedKm > 0 ? Math.min((runKm / plannedKm) * 100, 150) : 0;
 
   return (
-    <div className="rounded-xl border bg-gray-900/50 border-gray-800/40 px-4 py-3">
+    <div className="rounded-xl border bg-gray-800/40 border-gray-700/50 px-4 py-3">
       <div className="flex items-baseline justify-between mb-2">
         <p className="text-sm text-gray-300">
-          <span className="font-semibold text-white">{allKm.toFixed(1)}km</span>
+          Running: <span className="font-semibold text-white">{runKm.toFixed(1)}km</span>
           {plannedKm > 0 && <span className="text-gray-500"> of {plannedKm.toFixed(0)}km planned</span>}
         </p>
         {plannedKm > 0 && (
-          <span className={`text-xs font-medium ${pct >= 100 ? "text-green-400" : "text-gray-500"}`}>
-            {Math.round(pct)}%
+          <span className={`text-xs font-medium ${runPct >= 100 ? "text-green-400" : "text-gray-500"}`}>
+            {Math.round(runPct)}%
           </span>
         )}
       </div>
       {plannedKm > 0 && (
-        <div className="h-2.5 bg-gray-800 rounded-full overflow-hidden relative">
-          {/* Running portion */}
+        <div className="h-2.5 bg-gray-900 rounded-full overflow-hidden relative">
           <div
             className="absolute top-0 left-0 h-full bg-green-500 rounded-full transition-all duration-500"
             style={{ width: `${Math.min(runPct, 100)}%` }}
           />
-          {/* Cross-training portion (stacked on top of running) */}
-          {hasCross && (
-            <div
-              className="absolute top-0 left-0 h-full bg-teal-500/60 rounded-full transition-all duration-500"
-              style={{ width: `${Math.min(pct, 100)}%` }}
-            />
-          )}
-          {/* Running on top so it's visible */}
-          <div
-            className="absolute top-0 left-0 h-full bg-green-500 rounded-full transition-all duration-500"
-            style={{ width: `${Math.min(runPct, 100)}%` }}
-          />
-          {/* Over 100% marker */}
-          {plannedKm > 0 && (
-            <div className="absolute top-0 h-full w-px bg-gray-600" style={{ left: `${Math.min(100, (100 / Math.max(pct, 100)) * 100)}%` }} />
-          )}
+          {/* 100% target marker */}
+          <div className="absolute top-0 h-full w-px bg-gray-600" style={{ left: `${Math.min(100, (100 / Math.max(runPct, 100)) * 100)}%` }} />
         </div>
       )}
-      {hasCross && (
-        <div className="flex items-center gap-3 mt-1.5 text-[11px] text-gray-500">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />{runKm.toFixed(1)}km running</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-teal-500/60 inline-block" />{(allKm - runKm).toFixed(1)}km cross</span>
-        </div>
+      {crossSummary.length > 0 && (
+        <p className="text-[11px] text-gray-500 mt-2">
+          Cross-training:{" "}
+          {crossSummary.map((c, i) => {
+            const label = formatActivityType(c.activityType);
+            const detail = c.totalKm > 0
+              ? `${c.totalKm.toFixed(1)}km ${label}`
+              : `${c.count} ${label} ${c.count === 1 ? "session" : "sessions"}`;
+            return (
+              <span key={c.activityType}>
+                {i > 0 && " \u00b7 "}
+                {detail}
+              </span>
+            );
+          })}
+        </p>
       )}
     </div>
   );
@@ -844,8 +855,8 @@ export default function Dashboard() {
               {tomorrowDay && <TomorrowCard day={tomorrowDay} />}
               <WeekProgressBar
                 runKm={data.currentWeekKm}
-                allKm={data.currentWeekAllKm}
                 plannedKm={data.currentWeekPlannedKm}
+                crossSummary={data.crossTrainingSummary}
               />
               {data.weeklyTasks.length > 0 && (
                 <div className="space-y-1">
@@ -878,8 +889,8 @@ export default function Dashboard() {
               </div>
               <WeekProgressBar
                 runKm={data.currentWeekKm}
-                allKm={data.currentWeekAllKm}
                 plannedKm={data.currentWeekPlannedKm}
+                crossSummary={data.crossTrainingSummary}
               />
               <DesktopWeekRow days={data.weekDays} />
               {data.weeklyTasks.length > 0 && (
