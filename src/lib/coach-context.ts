@@ -130,34 +130,79 @@ async function buildPlanContext(userId: string, now: Date): Promise<string> {
     return "CURRENT PLAN:\nNo active training plan. The user hasn't generated a plan yet. Suggest using generate_plan if they ask.";
   }
 
-  // Get all plan weeks to determine current position
-  const allWeeks = await prisma.planWeek.findMany({
+  // Determine current week position. Use plan_weeks if available, fall back to planned_workouts.
+  const allPlanWeeks = await prisma.planWeek.findMany({
     where: { planId: plan.id },
     orderBy: { weekNumber: "asc" },
     include: { phase: { select: { name: true } } },
   });
 
-  const thisMonday = startOfWeek(now, { weekStartsOn: 1 });
-  const thisMondayStr = format(thisMonday, "yyyy-MM-dd");
+  const todayStr = format(now, "yyyy-MM-dd");
+  let currentWeekNum: number | null = null;
+  let currentWeekStart: string | null = null;
+  let currentWeekEnd: string | null = null;
+  let currentPhaseName: string | null = null;
+  let totalWeeks = 0;
+  let completedWeeks = 0;
 
-  // Find current week
-  const currentWeek = allWeeks.find((w) => {
-    const ws = format(new Date(w.startDate), "yyyy-MM-dd");
-    const we = format(new Date(new Date(w.startDate).getTime() + 6 * 86400000), "yyyy-MM-dd");
-    return thisMondayStr >= ws && thisMondayStr <= we;
-  });
+  if (allPlanWeeks.length > 0) {
+    // Use plan_weeks as source of truth
+    totalWeeks = allPlanWeeks.length;
+    for (const pw of allPlanWeeks) {
+      const ws = format(new Date(pw.startDate), "yyyy-MM-dd");
+      const weDate = new Date(new Date(pw.startDate).getTime() + 6 * 86400000);
+      const we = format(weDate, "yyyy-MM-dd");
+      if (todayStr >= ws && todayStr <= we) {
+        currentWeekNum = pw.weekNumber;
+        currentWeekStart = format(new Date(pw.startDate), "MMM d");
+        currentWeekEnd = format(weDate, "MMM d");
+        currentPhaseName = pw.phase?.name || null;
+      }
+    }
+    if (currentWeekNum !== null) {
+      completedWeeks = allPlanWeeks.filter((w) => w.weekNumber < currentWeekNum!).length;
+    }
+  } else {
+    // Fall back: derive week info from planned_workouts.week_number
+    const weekWorkouts = await prisma.plannedWorkout.findMany({
+      where: { planId: plan.id },
+      orderBy: { date: "asc" },
+      select: { weekNumber: true, date: true },
+    });
 
-  const totalWeeks = allWeeks.length;
-  const completedWeeks = currentWeek
-    ? allWeeks.filter((w) => w.weekNumber < currentWeek.weekNumber).length
-    : 0;
+    // Group by week_number to find date ranges
+    const weekMap = new Map<number, { minDate: Date; maxDate: Date }>();
+    for (const w of weekWorkouts) {
+      const d = new Date(w.date);
+      const existing = weekMap.get(w.weekNumber);
+      if (!existing) {
+        weekMap.set(w.weekNumber, { minDate: d, maxDate: d });
+      } else {
+        if (d < existing.minDate) existing.minDate = d;
+        if (d > existing.maxDate) existing.maxDate = d;
+      }
+    }
+
+    totalWeeks = weekMap.size;
+    for (const [wn, { minDate, maxDate }] of weekMap) {
+      const ws = format(minDate, "yyyy-MM-dd");
+      const we = format(maxDate, "yyyy-MM-dd");
+      if (todayStr >= ws && todayStr <= we) {
+        currentWeekNum = wn;
+        currentWeekStart = format(minDate, "MMM d");
+        currentWeekEnd = format(maxDate, "MMM d");
+      }
+    }
+    if (currentWeekNum !== null) {
+      completedWeeks = Array.from(weekMap.keys()).filter((wn) => wn < currentWeekNum!).length;
+    }
+  }
 
   // Build the explicit week position line
   let block = "CURRENT PLAN:\n";
-  if (currentWeek) {
-    const weekEnd = new Date(new Date(currentWeek.startDate).getTime() + 6 * 86400000);
-    const phaseName = currentWeek.phase?.name || "Training";
-    block += `CURRENT WEEK: Week ${currentWeek.weekNumber} of ${totalWeeks} (${format(new Date(currentWeek.startDate), "MMM d")}-${format(weekEnd, "MMM d")}). Phase: ${phaseName}. ${completedWeeks} week${completedWeeks !== 1 ? "s" : ""} completed.\n\n`;
+  if (currentWeekNum !== null) {
+    const phaseStr = currentPhaseName ? ` Phase: ${currentPhaseName}.` : "";
+    block += `CURRENT WEEK: Week ${currentWeekNum} of ${totalWeeks} (${currentWeekStart}-${currentWeekEnd}).${phaseStr} ${completedWeeks} week${completedWeeks !== 1 ? "s" : ""} completed.\n\n`;
   }
 
   // Get workouts for next 2 weeks
