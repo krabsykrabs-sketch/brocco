@@ -121,12 +121,52 @@ export async function buildCoachContext(userId: string): Promise<string> {
 }
 
 async function buildPlanContext(userId: string, now: Date): Promise<string> {
+  const plan = await prisma.plan.findFirst({
+    where: { userId, status: "active" },
+    select: { id: true, name: true },
+  });
+
+  if (!plan) {
+    return "CURRENT PLAN:\nNo active training plan. The user hasn't generated a plan yet. Suggest using generate_plan if they ask.";
+  }
+
+  // Get all plan weeks to determine current position
+  const allWeeks = await prisma.planWeek.findMany({
+    where: { planId: plan.id },
+    orderBy: { weekNumber: "asc" },
+    include: { phase: { select: { name: true } } },
+  });
+
+  const thisMonday = startOfWeek(now, { weekStartsOn: 1 });
+  const thisMondayStr = format(thisMonday, "yyyy-MM-dd");
+
+  // Find current week
+  const currentWeek = allWeeks.find((w) => {
+    const ws = format(new Date(w.startDate), "yyyy-MM-dd");
+    const we = format(new Date(new Date(w.startDate).getTime() + 6 * 86400000), "yyyy-MM-dd");
+    return thisMondayStr >= ws && thisMondayStr <= we;
+  });
+
+  const totalWeeks = allWeeks.length;
+  const completedWeeks = currentWeek
+    ? allWeeks.filter((w) => w.weekNumber < currentWeek.weekNumber).length
+    : 0;
+
+  // Build the explicit week position line
+  let block = "CURRENT PLAN:\n";
+  if (currentWeek) {
+    const weekEnd = new Date(new Date(currentWeek.startDate).getTime() + 6 * 86400000);
+    const phaseName = currentWeek.phase?.name || "Training";
+    block += `CURRENT WEEK: Week ${currentWeek.weekNumber} of ${totalWeeks} (${format(new Date(currentWeek.startDate), "MMM d")}-${format(weekEnd, "MMM d")}). Phase: ${phaseName}. ${completedWeeks} week${completedWeeks !== 1 ? "s" : ""} completed.\n\n`;
+  }
+
+  // Get workouts for next 2 weeks
   const twoWeeksOut = new Date(now);
   twoWeeksOut.setDate(twoWeeksOut.getDate() + 14);
 
   const workouts = await prisma.plannedWorkout.findMany({
     where: {
-      plan: { userId, status: "active" },
+      planId: plan.id,
       date: { gte: now, lte: twoWeeksOut },
     },
     orderBy: { date: "asc" },
@@ -143,9 +183,9 @@ async function buildPlanContext(userId: string, now: Date): Promise<string> {
     },
   });
 
-  let block = "CURRENT PLAN (next 2 weeks):\n";
+  block += "Upcoming workouts (next 2 weeks):\n";
   if (workouts.length === 0) {
-    block += "No active training plan. The user hasn't generated a plan yet. Suggest using generate_plan if they ask.";
+    block += "No workouts scheduled in the next 2 weeks.";
   } else {
     block += workouts
       .map((w) => {

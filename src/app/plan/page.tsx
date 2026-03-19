@@ -184,8 +184,8 @@ function MobileDayRow({
               {workout.targetPace && <span> @ {workout.targetPace}</span>}
             </div>
           )}
-          {/* Other activities — muted "also done" style */}
-          {otherActivities.length > 0 && (
+          {/* Other activities — muted "also done" style (non-rest days only) */}
+          {!isRest && otherActivities.length > 0 && (
             <div className="space-y-1">
               {otherActivities.map((a) => (
                 <Link key={a.id} href={`/activity/${a.id}`} className="block bg-gray-800/40 rounded-lg px-3 py-1.5 hover:bg-gray-800/60 transition-colors">
@@ -518,7 +518,7 @@ function DesktopWorkoutCard({ workout, dayActivities }: { workout: Workout; dayA
           </div>
         </div>
       ))}
-      {otherActivities.map((a) => (
+      {!isRest && otherActivities.map((a) => (
         <div key={a.id} className="mt-1 ml-4 text-[11px] text-gray-500">Also: {a.name}{a.distanceKm ? ` ${a.distanceKm.toFixed(1)}km` : ""}</div>
       ))}
       {isRest && dayActivities.map((a) => (
