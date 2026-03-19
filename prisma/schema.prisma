@@ -142,12 +142,10 @@ model PlannedWorkout {
   description       String?
   detailLevel       WorkoutDetailLevel @default(detailed) @map("detail_level")
   status            WorkoutStatus @default(planned)
-  matchedActivityId String?       @map("matched_activity_id") @db.Uuid
   createdAt         DateTime      @default(now()) @map("created_at")
 
   plan            Plan               @relation(fields: [planId], references: [id], onDelete: Cascade)
   phase           PlanPhase?         @relation(fields: [phaseId], references: [id], onDelete: SetNull)
-  matchedActivity Activity?          @relation(fields: [matchedActivityId], references: [id], onDelete: SetNull)
   adjustmentLog   PlanAdjustmentLog[]
 
   @@map("planned_workouts")
@@ -208,7 +206,6 @@ model Activity {
   createdAt         DateTime      @default(now()) @map("created_at")
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plannedWorkouts PlannedWorkout[]
 
   @@unique([userId, stravaId])
   @@map("activities")

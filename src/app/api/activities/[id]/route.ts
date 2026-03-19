@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
+import { format } from "date-fns";
 
 export async function GET(
   _request: NextRequest,
@@ -15,36 +16,45 @@ export async function GET(
 
   const activity = await prisma.activity.findFirst({
     where: { id, userId: session.userId },
-    include: {
-      plannedWorkouts: {
-        select: {
-          id: true,
-          title: true,
-          workoutType: true,
-          targetDistanceKm: true,
-          targetPace: true,
-          targetDurationMin: true,
-          description: true,
-        },
-      },
-    },
   });
 
   if (!activity) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const matchedWorkout = activity.plannedWorkouts.length > 0
+  // Day-based: find planned workout on the same date
+  const localDate = format(new Date(activity.startDateLocal), "yyyy-MM-dd");
+  const dayStart = new Date(localDate + "T00:00:00.000Z");
+  const dayEnd = new Date(localDate + "T23:59:59.999Z");
+
+  const plannedWorkout = await prisma.plannedWorkout.findFirst({
+    where: {
+      plan: { userId: session.userId, status: "active" },
+      date: { gte: dayStart, lte: dayEnd },
+      workoutType: { not: "rest" },
+    },
+    select: {
+      id: true,
+      title: true,
+      workoutType: true,
+      targetDistanceKm: true,
+      targetPace: true,
+      targetDurationMin: true,
+      description: true,
+    },
+  });
+
+  const matchedWorkout = plannedWorkout
     ? {
-        id: activity.plannedWorkouts[0].id,
-        title: activity.plannedWorkouts[0].title,
-        workoutType: activity.plannedWorkouts[0].workoutType,
-        targetDistanceKm: activity.plannedWorkouts[0].targetDistanceKm
-          ? Number(activity.plannedWorkouts[0].targetDistanceKm)
+        id: plannedWorkout.id,
+        title: plannedWorkout.title,
+        workoutType: plannedWorkout.workoutType,
+        targetDistanceKm: plannedWorkout.targetDistanceKm
+          ? Number(plannedWorkout.targetDistanceKm)
           : null,
-        targetPace: activity.plannedWorkouts[0].targetPace,
-        targetDurationMin: activity.plannedWorkouts[0].targetDurationMin,
-        description: activity.plannedWorkouts[0].description,
+        targetPace: plannedWorkout.targetPace,
+        targetDurationMin: plannedWorkout.targetDurationMin,
+        description: plannedWorkout.description,
       }
     : null;
 

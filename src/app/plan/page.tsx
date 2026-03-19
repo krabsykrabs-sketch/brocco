@@ -7,12 +7,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 // --- Types ---
 
 interface Phase { id: string; name: string; orderIndex: number; description: string | null; startWeek: number; endWeek: number; }
-interface MatchedActivity { id: string; name: string; distanceKm: number | null; durationMin: number; avgPacePerKm: string | null; avgHeartRate: number | null; }
-interface Workout { id: string; phaseId: string | null; weekNumber: number; date: string; title: string; workoutType: string; activityType: string; targetDistanceKm: number | null; targetPace: string | null; targetDurationMin: number | null; description: string | null; status: string; matchedActivity: MatchedActivity | null; }
+interface Workout { id: string; phaseId: string | null; weekNumber: number; date: string; title: string; workoutType: string; activityType: string; targetDistanceKm: number | null; targetPace: string | null; targetDurationMin: number | null; description: string | null; status: string; }
 interface PlanWeekData { id: string; weekNumber: number; startDate: string; detailLevel: string; targetKm: number | null; targetSessions: number | null; sessionTypes: string[] | null; notes: string | null; actualKm: number | null; phaseName: string | null; }
 interface WeeklyTask { id: string; weekNumber: number; description: string; category: string; status: string; }
-interface UnmatchedActivity { id: string; name: string; activityType: string; distanceKm: number | null; durationMin: number | null; avgPacePerKm: string | null; source: string; }
-interface Plan { id: string; name: string; goal: string | null; raceDate: string | null; startDate: string; endDate: string; status: string; phases: Phase[]; weeks: PlanWeekData[]; workouts: Workout[]; weeklyTasks: WeeklyTask[]; unmatchedActivities: Record<string, UnmatchedActivity[]>; }
+interface DayActivity { id: string; name: string; activityType: string; distanceKm: number | null; durationMin: number | null; avgPacePerKm: string | null; avgHeartRate: number | null; source: string; }
+interface Plan { id: string; name: string; goal: string | null; raceDate: string | null; startDate: string; endDate: string; status: string; phases: Phase[]; weeks: PlanWeekData[]; workouts: Workout[]; weeklyTasks: WeeklyTask[]; activitiesByDate: Record<string, DayActivity[]>; }
+
+import { isCompatibleType, isRunning } from "@/lib/activity-types";
 
 // --- Shared Utilities ---
 
@@ -88,49 +89,33 @@ function TaskChecklist({ tasks, onToggle }: { tasks: WeeklyTask[]; onToggle: (id
 // MOBILE VIEW — Swipeable Cards
 // ============================
 
-function ExtraActivities({ activities }: { activities: UnmatchedActivity[] }) {
-  if (activities.length === 0) return null;
-  return (
-    <div className="space-y-1">
-      {activities.map((a) => (
-        <Link key={a.id} href={`/activity/${a.id}`} className="block bg-gray-800/40 rounded-lg px-3 py-1.5 hover:bg-gray-800/60 transition-colors">
-          <div className="flex items-center gap-2 text-xs text-gray-400">
-            <span className="text-gray-500">Also:</span>
-            <span className="text-gray-300">{a.name}</span>
-            {a.distanceKm && <span>{a.distanceKm.toFixed(1)}km</span>}
-            {a.avgPacePerKm && <span>{a.avgPacePerKm}</span>}
-            {a.source === "manual" && <span className="text-gray-600">(manual)</span>}
-          </div>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
 function MobileDayRow({
   workout,
   isExpanded,
   onTap,
-  extraActivities,
+  dayActivities,
 }: {
   workout: Workout;
   isExpanded: boolean;
   onTap: () => void;
-  extraActivities: UnmatchedActivity[];
+  dayActivities: DayActivity[];
 }) {
   const day = getDayLabel(workout.date);
   const isTodayRow = isToday(workout.date);
   const isPast = isPastDate(workout.date);
   const isRest = workout.workoutType === "rest";
-  const isCompleted = workout.status === "completed";
+  // Day-based completion: any compatible-type activity on this date
+  const compatibleActivities = dayActivities.filter((a) => isCompatibleType(workout.activityType, a.activityType));
+  const otherActivities = dayActivities.filter((a) => !isCompatibleType(workout.activityType, a.activityType));
+  const isCompleted = !isRest && compatibleActivities.length > 0;
   const isMissed = isPast && !isCompleted && !isRest;
-  const hasExtras = extraActivities.length > 0;
+  const hasAnyActivity = dayActivities.length > 0;
 
   const details = [
     workout.targetDistanceKm ? `${workout.targetDistanceKm}km` : null,
     workout.targetPace,
     workout.targetDurationMin ? `${workout.targetDurationMin}min` : null,
-  ].filter(Boolean).join(" · ");
+  ].filter(Boolean).join(" \u00b7 ");
 
   return (
     <div
@@ -141,17 +126,14 @@ function MobileDayRow({
           : isMissed
           ? "border-l-2 border-l-red-800/60"
           : "border-l-2 border-l-transparent"
-      } ${isPast && !isCompleted && !isRest && !hasExtras ? "opacity-60" : ""}`}
+      } ${isMissed && !hasAnyActivity ? "opacity-60" : ""}`}
     >
       {/* Main row */}
       <div className="flex items-center px-4 py-3 gap-3">
-        {/* Day label */}
         <div className="w-12 flex-shrink-0">
           <div className={`text-xs font-bold ${isTodayRow ? "text-green-400" : "text-gray-400"}`}>{day.abbr}</div>
           <div className={`text-lg font-bold leading-none ${isTodayRow ? "text-white" : "text-gray-300"}`}>{day.num}</div>
         </div>
-
-        {/* Workout info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
@@ -161,37 +143,32 @@ function MobileDayRow({
             {isCompleted && <span className="text-xs">{"\u2705"}</span>}
             {isTodayRow && <span className="text-[9px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded font-semibold">TODAY</span>}
           </div>
-          {!isRest && details && (
-            <p className="text-xs text-gray-500 mt-0.5 truncate">{details}</p>
-          )}
+          {!isRest && details && <p className="text-xs text-gray-500 mt-0.5 truncate">{details}</p>}
         </div>
-
-        {/* Expand indicator */}
-        {(!isRest || hasExtras) && (
+        {(!isRest || hasAnyActivity) && (
           <span className="text-xs text-gray-600 flex-shrink-0">{isExpanded ? "\u25B2" : "\u25BC"}</span>
         )}
       </div>
 
       {/* Expanded content */}
-      {isExpanded && (!isRest || hasExtras) && (
+      {isExpanded && (!isRest || hasAnyActivity) && (
         <div className="px-4 pb-3 pl-16 space-y-1.5">
           {!isRest && workout.description && (
             <p className="text-xs text-gray-400 leading-relaxed">{workout.description}</p>
           )}
-          {workout.matchedActivity && (
-            <div className="bg-green-900/20 border border-green-800/30 rounded-lg px-3 py-2">
+          {/* Compatible activities — green "completed" style */}
+          {compatibleActivities.map((a) => (
+            <Link key={a.id} href={`/activity/${a.id}`} className="block bg-green-900/20 border border-green-800/30 rounded-lg px-3 py-2 hover:bg-green-900/30 transition-colors">
               <div className="flex items-center gap-2 text-xs">
                 <span className="text-green-400">{"\u2705"}</span>
-                <span className="text-green-300 font-medium">Actual: {workout.matchedActivity.distanceKm?.toFixed(1)}km</span>
-                {workout.matchedActivity.avgPacePerKm && <span className="text-gray-400">{"\u00b7"} {workout.matchedActivity.avgPacePerKm}</span>}
-                {workout.matchedActivity.avgHeartRate && <span className="text-gray-400">{"\u00b7"} HR {workout.matchedActivity.avgHeartRate}</span>}
+                <span className="text-green-300 font-medium">{a.distanceKm?.toFixed(1)}km</span>
+                {a.avgPacePerKm && <span className="text-gray-400">{"\u00b7"} {a.avgPacePerKm}</span>}
+                {a.avgHeartRate && <span className="text-gray-400">{"\u00b7"} HR {a.avgHeartRate}</span>}
               </div>
-              <Link href={`/activity/${workout.matchedActivity.id}`} className="text-[11px] text-[#FC4C02] hover:underline mt-1 inline-block">
-                View activity
-              </Link>
-            </div>
-          )}
-          {!isRest && !workout.matchedActivity && isPast && (
+            </Link>
+          ))}
+          {/* Missed indicator */}
+          {!isRest && compatibleActivities.length === 0 && isPast && (
             <div className="bg-red-900/15 border border-red-800/20 rounded-lg px-3 py-2">
               <div className="flex items-center gap-2 text-xs text-red-400/80">
                 <span>{"\u2717"}</span>
@@ -200,13 +177,43 @@ function MobileDayRow({
               </div>
             </div>
           )}
-          {!isRest && !workout.matchedActivity && !isPast && (
+          {/* Future workout targets */}
+          {!isRest && compatibleActivities.length === 0 && !isPast && (
             <div className="text-xs text-gray-500">
               {workout.targetDistanceKm && <span>{workout.targetDistanceKm}km</span>}
               {workout.targetPace && <span> @ {workout.targetPace}</span>}
             </div>
           )}
-          <ExtraActivities activities={extraActivities} />
+          {/* Other activities — muted "also done" style */}
+          {otherActivities.length > 0 && (
+            <div className="space-y-1">
+              {otherActivities.map((a) => (
+                <Link key={a.id} href={`/activity/${a.id}`} className="block bg-gray-800/40 rounded-lg px-3 py-1.5 hover:bg-gray-800/60 transition-colors">
+                  <div className="flex items-center gap-2 text-xs text-gray-400">
+                    <span className="text-gray-500">Also:</span>
+                    <span className="text-gray-300">{a.name}</span>
+                    {a.distanceKm && <span>{a.distanceKm.toFixed(1)}km</span>}
+                    {a.source === "manual" && <span className="text-gray-600">(manual)</span>}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+          {/* Rest day with activities */}
+          {isRest && dayActivities.length > 0 && (
+            <div className="space-y-1">
+              {dayActivities.map((a) => (
+                <Link key={a.id} href={`/activity/${a.id}`} className="block bg-gray-800/40 rounded-lg px-3 py-1.5 hover:bg-gray-800/60 transition-colors">
+                  <div className="flex items-center gap-2 text-xs text-gray-400">
+                    <span className="text-gray-500">Also:</span>
+                    <span className="text-gray-300">{a.name}</span>
+                    {a.distanceKm && <span>{a.distanceKm.toFixed(1)}km</span>}
+                  </div>
+                </Link>
+              ))}
+              <p className="text-[10px] text-gray-600">Bonus work on a rest day.</p>
+            </div>
+          )}
         </div>
       )}
 
@@ -220,18 +227,23 @@ function MobileWeekCard({
   workouts,
   tasks,
   onToggleTask,
-  unmatchedActivities,
+  activitiesByDate,
 }: {
   weekData: PlanWeekData;
   workouts: Workout[];
   tasks: WeeklyTask[];
   onToggleTask: (id: string, status: string) => void;
-  unmatchedActivities: Record<string, UnmatchedActivity[]>;
+  activitiesByDate: Record<string, DayActivity[]>;
 }) {
   const isOutline = weekData.detailLevel === "outline";
   const isTarget = weekData.detailLevel === "target";
   const isPast = new Date(weekData.startDate) < new Date(todayStr);
-  const actualKm = weekData.actualKm ?? workouts.reduce((s, w) => s + (w.matchedActivity?.distanceKm || 0), 0);
+  // Compute actual running km from activities on this week's dates
+  const weekDates = new Set(workouts.map((w) => w.date.split("T")[0]));
+  const weekRunKm = weekData.actualKm ?? Array.from(weekDates).reduce((sum, d) => {
+    const acts = activitiesByDate[d] || [];
+    return sum + acts.filter((a) => isRunning(a.activityType)).reduce((s, a) => s + (a.distanceKm || 0), 0);
+  }, 0);
 
   // Only one day expanded at a time; today auto-expanded
   const todayWorkoutIdx = workouts.findIndex((w) => isToday(w.date));
@@ -252,8 +264,8 @@ function MobileWeekCard({
             <p className="text-xs text-gray-500 mt-0.5">{formatWeekRange(weekData.startDate)}</p>
           </div>
           <div className="text-right">
-            {isPast && actualKm > 0 ? (
-              <p className="text-sm font-medium text-gray-300">{actualKm.toFixed(0)} km actual</p>
+            {isPast && weekRunKm > 0 ? (
+              <p className="text-sm font-medium text-gray-300">{weekRunKm.toFixed(0)} km actual</p>
             ) : weekData.targetKm ? (
               <p className="text-sm font-medium text-gray-400">{weekData.targetKm.toFixed(0)}km target</p>
             ) : null}
@@ -301,7 +313,7 @@ function MobileWeekCard({
                 workout={w}
                 isExpanded={expandedIdx === i}
                 onTap={() => setExpandedIdx(expandedIdx === i ? -1 : i)}
-                extraActivities={unmatchedActivities[w.date.split("T")[0]] || []}
+                dayActivities={activitiesByDate[w.date.split("T")[0]] || []}
               />
             ))}
           </>
@@ -324,56 +336,100 @@ function MobilePlanView({
   tasksByWeek,
   currentWeekIdx,
   onToggleTask,
-  unmatchedActivities,
+  activitiesByDate,
 }: {
   weekList: PlanWeekData[];
   workoutsByWeek: Map<number, Workout[]>;
   tasksByWeek: Map<number, WeeklyTask[]>;
   currentWeekIdx: number;
   onToggleTask: (id: string, status: string) => void;
-  unmatchedActivities: Record<string, UnmatchedActivity[]>;
+  activitiesByDate: Record<string, DayActivity[]>;
 }) {
   const [activeIdx, setActiveIdx] = useState(Math.max(0, currentWeekIdx));
   const touchStartX = useRef(0);
   const touchDeltaX = useRef(0);
   const [swiping, setSwiping] = useState(false);
   const [swipeOffset, setSwipeOffset] = useState(0);
+  const animatingRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  // "idle" | "exit" | "entering"
+  const [phase, setPhase] = useState<"idle" | "exit" | "entering">("idle");
 
-  const goTo = useCallback((idx: number) => {
-    setActiveIdx(Math.max(0, Math.min(weekList.length - 1, idx)));
-  }, [weekList.length]);
+  const slideToWeek = useCallback((targetIdx: number, direction: number) => {
+    if (animatingRef.current) return;
+    const clamped = Math.max(0, Math.min(weekList.length - 1, targetIdx));
+    if (clamped === activeIdx) {
+      // Bounce back
+      setSwipeOffset(0);
+      setSwiping(false);
+      return;
+    }
+    animatingRef.current = true;
+    // Phase 1: slide current card off screen
+    const width = containerRef.current?.offsetWidth || 400;
+    setSwiping(false);
+    setPhase("exit");
+    setSwipeOffset(direction * width);
+
+    // After exit animation completes, swap content and enter from opposite side
+    setTimeout(() => {
+      setActiveIdx(clamped);
+      setPhase("entering");
+      setSwipeOffset(-direction * width);
+      // Force a layout read so the entering position is applied instantly
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setPhase("idle");
+          setSwipeOffset(0);
+          setTimeout(() => { animatingRef.current = false; }, 250);
+        });
+      });
+    }, 220);
+  }, [activeIdx, weekList.length]);
 
   function onTouchStart(e: React.TouchEvent) {
+    if (animatingRef.current) return;
     touchStartX.current = e.touches[0].clientX;
     touchDeltaX.current = 0;
     setSwiping(true);
+    setPhase("idle");
   }
   function onTouchMove(e: React.TouchEvent) {
+    if (animatingRef.current) return;
     touchDeltaX.current = e.touches[0].clientX - touchStartX.current;
-    // Clamp at edges
+    // Rubber band at edges
     if (activeIdx === 0 && touchDeltaX.current > 0) touchDeltaX.current = touchDeltaX.current * 0.3;
     if (activeIdx === weekList.length - 1 && touchDeltaX.current < 0) touchDeltaX.current = touchDeltaX.current * 0.3;
     setSwipeOffset(touchDeltaX.current);
   }
   function onTouchEnd() {
-    setSwiping(false);
-    const threshold = 60;
-    if (touchDeltaX.current < -threshold) goTo(activeIdx + 1);
-    else if (touchDeltaX.current > threshold) goTo(activeIdx - 1);
-    setSwipeOffset(0);
+    if (animatingRef.current) return;
+    const width = containerRef.current?.offsetWidth || 400;
+    const threshold = width * 0.3;
+    if (touchDeltaX.current < -threshold && activeIdx < weekList.length - 1) {
+      slideToWeek(activeIdx + 1, -1);
+    } else if (touchDeltaX.current > threshold && activeIdx > 0) {
+      slideToWeek(activeIdx - 1, 1);
+    } else {
+      // Cancel — spring back
+      setSwiping(false);
+      setSwipeOffset(0);
+    }
   }
 
   const week = weekList[activeIdx];
   if (!week) return null;
+
+  // Transition style: no transition while dragging or when jumping to the entering position
+  const useTransition = !swiping && phase !== "entering";
 
   return (
     <div className="flex flex-col h-[calc(100vh-52px)]">
       {/* Navigation arrows */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800/50 flex-shrink-0">
         <button
-          onClick={() => goTo(activeIdx - 1)}
-          disabled={activeIdx === 0}
+          onClick={() => slideToWeek(activeIdx - 1, 1)}
+          disabled={activeIdx === 0 || animatingRef.current}
           className="p-1.5 text-gray-400 hover:text-white disabled:opacity-20 disabled:cursor-default transition-colors"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
@@ -383,8 +439,8 @@ function MobilePlanView({
           {activeIdx === currentWeekIdx && <span className="text-[9px] text-green-400 ml-2">Current</span>}
         </div>
         <button
-          onClick={() => goTo(activeIdx + 1)}
-          disabled={activeIdx === weekList.length - 1}
+          onClick={() => slideToWeek(activeIdx + 1, -1)}
+          disabled={activeIdx === weekList.length - 1 || animatingRef.current}
           className="p-1.5 text-gray-400 hover:text-white disabled:opacity-20 disabled:cursor-default transition-colors"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
@@ -400,10 +456,10 @@ function MobilePlanView({
         onTouchEnd={onTouchEnd}
       >
         <div
-          className="h-full"
+          className="h-full will-change-transform"
           style={{
             transform: `translateX(${swipeOffset}px)`,
-            transition: swiping ? "none" : "transform 0.25s ease-out",
+            transition: useTransition ? "transform 0.25s ease-out" : "none",
           }}
         >
           <MobileWeekCard
@@ -411,7 +467,7 @@ function MobilePlanView({
             workouts={workoutsByWeek.get(week.weekNumber) || []}
             tasks={tasksByWeek.get(week.weekNumber) || []}
             onToggleTask={onToggleTask}
-            unmatchedActivities={unmatchedActivities}
+            activitiesByDate={activitiesByDate}
           />
         </div>
       </div>
@@ -423,15 +479,16 @@ function MobilePlanView({
 // DESKTOP VIEW — Collapsible Weeks (existing)
 // ============================
 
-function DesktopWorkoutCard({ workout, extraActivities }: { workout: Workout; extraActivities: UnmatchedActivity[] }) {
+function DesktopWorkoutCard({ workout, dayActivities }: { workout: Workout; dayActivities: DayActivity[] }) {
   const isRest = workout.workoutType === "rest";
   const isPast = isPastDate(workout.date);
-  const isCompleted = workout.status === "completed";
+  const compatibleActivities = dayActivities.filter((a) => isCompatibleType(workout.activityType, a.activityType));
+  const otherActivities = dayActivities.filter((a) => !isCompatibleType(workout.activityType, a.activityType));
+  const isCompleted = !isRest && compatibleActivities.length > 0;
   const isMissed = isPast && !isCompleted && !isRest;
-  const hasExtras = extraActivities.length > 0;
 
   return (
-    <div className={`border rounded-lg px-3 py-2 ${getWorkoutTypeBg(workout.workoutType)} ${isMissed && !hasExtras ? "opacity-50" : ""}`}>
+    <div className={`border rounded-lg px-3 py-2 ${getWorkoutTypeBg(workout.workoutType)} ${isMissed && dayActivities.length === 0 ? "opacity-50" : ""}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
@@ -451,34 +508,33 @@ function DesktopWorkoutCard({ workout, extraActivities }: { workout: Workout; ex
       {workout.description && !isRest && (
         <p className="text-[11px] text-gray-500 mt-1 ml-4 line-clamp-2">{workout.description}</p>
       )}
-      {workout.matchedActivity && (
-        <div className="mt-1.5 ml-4 bg-green-900/20 border border-green-800/30 rounded px-2 py-1.5">
-          <div className="flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <span className="text-green-400">{"\u2705"}</span>
-              <span className="text-green-300 font-medium">Actual: {workout.matchedActivity.distanceKm?.toFixed(1)}km</span>
-              {workout.matchedActivity.avgPacePerKm && <span className="text-gray-400">{"\u00b7"} {workout.matchedActivity.avgPacePerKm}</span>}
-              {workout.matchedActivity.avgHeartRate && <span className="text-gray-400">{"\u00b7"} HR {workout.matchedActivity.avgHeartRate}</span>}
-            </div>
+      {compatibleActivities.map((a) => (
+        <div key={a.id} className="mt-1.5 ml-4 bg-green-900/20 border border-green-800/30 rounded px-2 py-1.5">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-green-400">{"\u2705"}</span>
+            <span className="text-green-300 font-medium">{a.distanceKm?.toFixed(1)}km</span>
+            {a.avgPacePerKm && <span className="text-gray-400">{"\u00b7"} {a.avgPacePerKm}</span>}
+            {a.avgHeartRate && <span className="text-gray-400">{"\u00b7"} HR {a.avgHeartRate}</span>}
           </div>
         </div>
-      )}
-      {hasExtras && (
-        <div className="mt-1.5 ml-4">
-          <ExtraActivities activities={extraActivities} />
-        </div>
-      )}
+      ))}
+      {otherActivities.map((a) => (
+        <div key={a.id} className="mt-1 ml-4 text-[11px] text-gray-500">Also: {a.name}{a.distanceKm ? ` ${a.distanceKm.toFixed(1)}km` : ""}</div>
+      ))}
+      {isRest && dayActivities.map((a) => (
+        <div key={a.id} className="mt-1 ml-4 text-[11px] text-gray-500">Also: {a.name}{a.distanceKm ? ` ${a.distanceKm.toFixed(1)}km` : ""}</div>
+      ))}
     </div>
   );
 }
 
 function DesktopWeekRow({
-  weekData, workouts, tasks, isCurrentWeek, isNextWeek, onToggleTask, unmatchedActivities,
+  weekData, workouts, tasks, isCurrentWeek, isNextWeek, onToggleTask, activitiesByDate,
 }: {
   weekData: PlanWeekData; workouts: Workout[]; tasks: WeeklyTask[];
   isCurrentWeek: boolean; isNextWeek: boolean;
   onToggleTask: (id: string, status: string) => void;
-  unmatchedActivities: Record<string, UnmatchedActivity[]>;
+  activitiesByDate: Record<string, DayActivity[]>;
 }) {
   const isOutline = weekData.detailLevel === "outline";
   const isTarget = weekData.detailLevel === "target";
@@ -487,8 +543,16 @@ function DesktopWeekRow({
   const hasWorkouts = workouts.length > 0;
   const canExpand = hasWorkouts;
   const weekKm = workouts.reduce((s, w) => s + (w.targetDistanceKm || 0), 0);
-  const actualKm = weekData.actualKm ?? workouts.reduce((s, w) => s + (w.matchedActivity?.distanceKm || 0), 0);
-  const completedCount = workouts.filter((w) => w.status === "completed").length;
+  const dWeekDates = new Set(workouts.map((w) => w.date.split("T")[0]));
+  const actualKm = weekData.actualKm ?? Array.from(dWeekDates).reduce((sum, d) => {
+    const acts = activitiesByDate[d] || [];
+    return sum + acts.filter((a) => isRunning(a.activityType)).reduce((s, a) => s + (a.distanceKm || 0), 0);
+  }, 0);
+  const completedCount = workouts.filter((w) => {
+    if (w.workoutType === "rest") return false;
+    const acts = activitiesByDate[w.date.split("T")[0]] || [];
+    return acts.some((a) => isCompatibleType(w.activityType, a.activityType));
+  }).length;
   const totalCount = workouts.filter((w) => w.workoutType !== "rest").length;
   const sessionCodes = weekData.sessionTypes as string[] | null;
 
@@ -519,7 +583,7 @@ function DesktopWeekRow({
       {weekData.notes && <p className="text-xs text-yellow-400/70 mt-1 px-3">{weekData.notes}</p>}
       {expanded && hasWorkouts && (
         <div className="mt-2 space-y-1.5 px-1">
-          {workouts.map((w) => <DesktopWorkoutCard key={w.id} workout={w} extraActivities={unmatchedActivities[w.date.split("T")[0]] || []} />)}
+          {workouts.map((w) => <DesktopWorkoutCard key={w.id} workout={w} dayActivities={activitiesByDate[w.date.split("T")[0]] || []} />)}
           <TaskChecklist tasks={tasks} onToggle={onToggleTask} />
         </div>
       )}
@@ -676,7 +740,7 @@ function PlanPageContent() {
           tasksByWeek={tasksByWeek}
           currentWeekIdx={currentWeekIdx >= 0 ? currentWeekIdx : 0}
           onToggleTask={handleToggleTask}
-          unmatchedActivities={plan.unmatchedActivities || {}}
+          activitiesByDate={plan.activitiesByDate || {}}
         />
       </div>
 
@@ -728,7 +792,7 @@ function PlanPageContent() {
             isCurrentWeek={wd.weekNumber === currentWeekNum}
             isNextWeek={currentWeekNum !== undefined && wd.weekNumber === currentWeekNum + 1}
             onToggleTask={handleToggleTask}
-            unmatchedActivities={plan.unmatchedActivities || {}}
+            activitiesByDate={plan.activitiesByDate || {}}
           />
         ))}
       </main>

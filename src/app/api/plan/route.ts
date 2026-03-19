@@ -38,17 +38,6 @@ export async function GET() {
           targetDurationMin: true,
           description: true,
           status: true,
-          matchedActivityId: true,
-          matchedActivity: {
-            select: {
-              id: true,
-              name: true,
-              distanceKm: true,
-              durationMin: true,
-              avgPacePerKm: true,
-              avgHeartRate: true,
-            },
-          },
         },
       },
     },
@@ -58,12 +47,7 @@ export async function GET() {
     return NextResponse.json({ plan: null });
   }
 
-  // Fetch all activities in the plan's date range for cross-training display
-  // Only include activities NOT already matched to a workout
-  const matchedActivityIds = new Set(
-    plan.workouts.filter((w) => w.matchedActivityId).map((w) => w.matchedActivityId!)
-  );
-
+  // Fetch all activities in the plan's date range, grouped by date
   const planActivities = await prisma.activity.findMany({
     where: {
       userId: session.userId,
@@ -83,13 +67,11 @@ export async function GET() {
     },
   });
 
-  // Group unmatched activities by date
-  const unmatchedByDate: Record<string, typeof planActivities> = {};
+  const activitiesByDate: Record<string, typeof planActivities> = {};
   for (const a of planActivities) {
-    if (matchedActivityIds.has(a.id)) continue;
     const dateStr = format(new Date(a.startDateLocal), "yyyy-MM-dd");
-    if (!unmatchedByDate[dateStr]) unmatchedByDate[dateStr] = [];
-    unmatchedByDate[dateStr].push(a);
+    if (!activitiesByDate[dateStr]) activitiesByDate[dateStr] = [];
+    activitiesByDate[dateStr].push(a);
   }
 
   return NextResponse.json({
@@ -141,19 +123,9 @@ export async function GET() {
         targetDurationMin: w.targetDurationMin,
         description: w.description,
         status: w.status,
-        matchedActivity: w.matchedActivity
-          ? {
-              id: w.matchedActivity.id,
-              name: w.matchedActivity.name,
-              distanceKm: w.matchedActivity.distanceKm ? Number(w.matchedActivity.distanceKm) : null,
-              durationMin: Number(w.matchedActivity.durationMin),
-              avgPacePerKm: w.matchedActivity.avgPacePerKm,
-              avgHeartRate: w.matchedActivity.avgHeartRate,
-            }
-          : null,
       })),
-      unmatchedActivities: Object.fromEntries(
-        Object.entries(unmatchedByDate).map(([date, acts]) => [
+      activitiesByDate: Object.fromEntries(
+        Object.entries(activitiesByDate).map(([date, acts]) => [
           date,
           acts.map((a) => ({
             id: a.id,
@@ -162,6 +134,7 @@ export async function GET() {
             distanceKm: a.distanceKm ? Number(a.distanceKm) : null,
             durationMin: a.durationMin ? Number(a.durationMin) : null,
             avgPacePerKm: a.avgPacePerKm,
+            avgHeartRate: a.avgHeartRate,
             source: a.source,
           })),
         ])

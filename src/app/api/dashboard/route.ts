@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
-import { startOfWeek, endOfWeek, subWeeks, format, differenceInDays, addDays } from "date-fns";
+import { startOfWeek, endOfWeek, subWeeks, format, addDays } from "date-fns";
 
 export async function GET() {
   try {
@@ -62,7 +62,7 @@ export async function GET() {
         targetPace: true,
         status: true,
         date: true,
-        matchedActivityId: true,
+        activityType: true,
       },
     });
 
@@ -97,7 +97,7 @@ export async function GET() {
           targetDistanceKm: w.targetDistanceKm ? Number(w.targetDistanceKm) : null,
           targetPace: w.targetPace,
           status: w.status,
-          matchedActivityId: w.matchedActivityId,
+          activityType: w.activityType,
         })),
       });
     }
@@ -177,32 +177,6 @@ export async function GET() {
       crossSummary.push({ activityType, count, totalKm: Math.round(totalKm * 10) / 10 });
     }
 
-    // Days until race
-    const daysUntilRace = profile.goalRaceDate
-      ? differenceInDays(new Date(profile.goalRaceDate), now)
-      : null;
-
-    // Recent easy pace (average of last 5 easy/recovery runs, pace < 7:00/km i.e. > 420 s/km is not easy)
-    const recentRuns = await prisma.activity.findMany({
-      where: {
-        userId,
-        activityType: { in: ["Run", "TrailRun", "VirtualRun"] },
-        paceSecondsPerKm: { not: null, gte: 300, lte: 480 },
-      },
-      orderBy: { startDate: "desc" },
-      take: 5,
-      select: { paceSecondsPerKm: true },
-    });
-
-    let avgEasyPace: string | null = null;
-    if (recentRuns.length > 0) {
-      const avgSecs = Math.round(
-        recentRuns.reduce((sum, r) => sum + (r.paceSecondsPerKm || 0), 0) / recentRuns.length
-      );
-      const mins = Math.floor(avgSecs / 60);
-      const secs = avgSecs % 60;
-      avgEasyPace = `${mins}:${secs.toString().padStart(2, "0")}/km`;
-    }
 
     // Recent activities (last 10)
     const recentActivities = await prisma.activity.findMany({
@@ -273,12 +247,10 @@ export async function GET() {
       userName: user?.name || "Runner",
       goalRace: profile.goalRace,
       goalTime: profile.goalTime,
-      daysUntilRace,
       currentWeekKm: Math.round(currentWeekRunKm * 10) / 10,
       currentWeekAllKm: Math.round(currentWeekAllKm * 10) / 10,
       crossTrainingSummary: crossSummary,
       currentWeekPlannedKm: Math.round(currentWeekPlannedKm * 10) / 10,
-      avgEasyPace,
       weekDays,
       weeklyData,
       recentActivities: recentActivities.map((a) => ({

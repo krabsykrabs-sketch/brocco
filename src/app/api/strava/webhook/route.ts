@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getValidToken, fetchStravaActivity, storeStravaActivity } from "@/lib/strava";
-import { autoMatchActivity } from "@/lib/auto-match";
 
 /**
  * GET: Strava webhook verification (subscription creation).
@@ -68,8 +67,6 @@ export async function POST(request: NextRequest) {
       const stravaActivity = await fetchStravaActivity(token, activityId);
       const stored = await storeStravaActivity(userId, stravaActivity, profile.timezone);
       console.log(`[webhook] Stored activity: strava_id=${activityId}, db_id=${stored.id}, type=${stored.activityType}`);
-      // Auto-match to planned workout
-      await autoMatchActivity(stored.id, userId);
     } catch (err) {
       console.error(`[webhook] Failed to process activity ${activityId} for user ${userId}:`, err);
     }

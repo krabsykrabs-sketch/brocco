@@ -236,8 +236,7 @@ AVAILABLE TOOLS:
 - log_activity: log a manual activity not on Strava
 - query_data: fetch historical training data
 - save_profile: save profile data and coaching notes
-- add_weekly_tasks: add weekly tasks (strength, mobility, nutrition, recovery) to the plan
-- match_activity: manually link an activity to a planned workout`;
+- add_weekly_tasks: add weekly tasks (strength, mobility, nutrition, recovery) to the plan`;
 }
 
 /**
