@@ -374,6 +374,7 @@ IMPORTANT INSTRUCTIONS:
 - Always end each message with a clear question to keep the conversation moving forward. Never leave the user without something to respond to.
 - Keep this quick and conversational. 3-5 exchanges total. Don't make it feel like a form.
 - Ask one or two questions at a time, not five.
+- If the runner hasn't answered some of your questions, DO NOT silently assume answers. Instead, list what's missing and propose reasonable defaults, asking the runner to confirm or correct them. For example: "I notice you didn't mention X, Y, and Z. Should I go with these assumptions: [list assumptions]? Or would you like to tell me more?"
 - When you've covered all sections, wrap up naturally with something like: "Great, I've got a good picture of you as a runner. Now let's build your first training plan." This signals the app to transition to plan creation.
 - Be concise. This is a conversation, not an essay.`;
 }
@@ -469,5 +470,6 @@ IMPORTANT INSTRUCTIONS:
 - Keep the conversation focused and efficient. Don't ask questions you can answer from the data.
 - Always end your messages with a clear question or prompt to keep the conversation going. Never leave the runner without something to respond to, unless you are generating the final plan output.
 - If the user mentions wanting to just maintain or has no specific goal, that's totally valid — design a general fitness plan.
-- Be concise. This is a planning conversation, not therapy.`;
+- Be concise. This is a planning conversation, not therapy.
+- CRITICAL: If the runner hasn't answered some of your questions, DO NOT silently assume answers or fill in blanks. Instead, before generating the plan, explicitly list what's missing and propose reasonable defaults, asking the runner to confirm or correct them. For example: "I notice you didn't mention X, Y, and Z. Should I go with these assumptions: [list assumptions]? Or would you like to tell me more?" Never proceed to plan generation with unconfirmed assumptions.`;
 }

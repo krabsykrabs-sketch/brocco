@@ -227,14 +227,15 @@ export async function storeStravaActivity(userId: string, stravaActivity: Record
 /**
  * Historical backfill: fetch the last 6 months of activities for a user.
  */
-export async function backfillActivities(userId: string): Promise<number> {
+export async function backfillActivities(userId: string): Promise<{ newCount: number; totalChecked: number }> {
   const token = await getValidToken(userId);
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
   const timezone = profile?.timezone || "Europe/Berlin";
 
   const sixMonthsAgo = Math.floor(Date.now() / 1000) - 6 * 30 * 24 * 60 * 60;
   let page = 1;
-  let totalStored = 0;
+  let newCount = 0;
+  let totalChecked = 0;
 
   while (true) {
     const activities = await fetchStravaActivities(token, page, 200, sixMonthsAgo);
@@ -243,8 +244,15 @@ export async function backfillActivities(userId: string): Promise<number> {
 
     for (const activity of activities) {
       try {
+        totalChecked++;
+        const stravaId = String(activity.id);
+        // Check if activity already exists
+        const existing = await prisma.activity.findUnique({
+          where: { userId_stravaId: { userId, stravaId } },
+          select: { id: true },
+        });
         await storeStravaActivity(userId, activity, timezone);
-        totalStored++;
+        if (!existing) newCount++;
       } catch (err) {
         // Skip duplicates or errors, continue with next
         console.error(`Failed to store activity ${activity.id}:`, err);
@@ -255,19 +263,20 @@ export async function backfillActivities(userId: string): Promise<number> {
     page++;
   }
 
-  return totalStored;
+  return { newCount, totalChecked };
 }
 
 /**
  * Full historical backfill: fetch ALL activities (no date filter).
  */
-export async function backfillActivitiesFull(userId: string): Promise<number> {
+export async function backfillActivitiesFull(userId: string): Promise<{ newCount: number; totalChecked: number }> {
   const token = await getValidToken(userId);
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
   const timezone = profile?.timezone || "Europe/Berlin";
 
   let page = 1;
-  let totalStored = 0;
+  let newCount = 0;
+  let totalChecked = 0;
 
   while (true) {
     const activities = await fetchStravaActivities(token, page, 200);
@@ -276,8 +285,14 @@ export async function backfillActivitiesFull(userId: string): Promise<number> {
 
     for (const activity of activities) {
       try {
+        totalChecked++;
+        const stravaId = String(activity.id);
+        const existing = await prisma.activity.findUnique({
+          where: { userId_stravaId: { userId, stravaId } },
+          select: { id: true },
+        });
         await storeStravaActivity(userId, activity, timezone);
-        totalStored++;
+        if (!existing) newCount++;
       } catch (err) {
         console.error(`Failed to store activity ${activity.id}:`, err);
       }
@@ -287,7 +302,7 @@ export async function backfillActivitiesFull(userId: string): Promise<number> {
     page++;
   }
 
-  return totalStored;
+  return { newCount, totalChecked };
 }
 
 /**

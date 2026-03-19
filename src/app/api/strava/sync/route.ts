@@ -18,8 +18,8 @@ export async function POST() {
       return NextResponse.json({ error: "Strava not connected" }, { status: 400 });
     }
 
-    const count = await backfillActivities(session.userId);
-    return NextResponse.json({ ok: true, activitiesImported: count });
+    const { newCount, totalChecked } = await backfillActivities(session.userId);
+    return NextResponse.json({ ok: true, newCount, totalChecked });
   } catch (err) {
     console.error("Sync error:", err);
     return NextResponse.json({ error: "Sync failed" }, { status: 500 });

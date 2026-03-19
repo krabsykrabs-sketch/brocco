@@ -22,12 +22,12 @@ export async function POST(request: NextRequest) {
     const isFullHistory = depth === "full";
 
     // Run backfill
-    const count = isFullHistory
+    const { newCount, totalChecked } = isFullHistory
       ? await backfillActivitiesFull(session.userId)
       : await backfillActivities(session.userId);
 
     // For full history, run training analysis and store in coaching_notes
-    if (isFullHistory && count > 0) {
+    if (isFullHistory && newCount > 0) {
       const summary = await analyzeTrainingHistory(session.userId);
       const existing = (profile.coachingNotes as Record<string, unknown>) || {};
       await prisma.userProfile.update({
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ ok: true, activitiesImported: count, depth: isFullHistory ? "full" : "quick" });
+    return NextResponse.json({ ok: true, newCount, totalChecked, depth: isFullHistory ? "full" : "quick" });
   } catch (err) {
     console.error("Onboarding sync error:", err);
     return NextResponse.json({ error: "Sync failed" }, { status: 500 });

@@ -486,17 +486,13 @@ export default function ChatUI({
     }
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  }
+  // Enter inserts a newline (default textarea behavior).
+  // Send only via the green send button.
 
   return (
     <div className="flex flex-col h-screen max-w-2xl mx-auto">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-gray-800 flex-shrink-0 bg-gray-950/95 backdrop-blur-sm">
+      <header className="safe-top flex items-center justify-between px-4 pb-3 border-b border-gray-800 flex-shrink-0 bg-gray-950/95 backdrop-blur-sm">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(true)}
@@ -562,7 +558,7 @@ export default function ChatUI({
       </div>
 
       {/* Input */}
-      <div className="px-4 py-3 border-t border-gray-800 flex-shrink-0">
+      <div className="safe-bottom px-4 pt-3 border-t border-gray-800 flex-shrink-0">
         <div className="flex gap-2 items-end">
           <textarea
             ref={inputRef}
@@ -574,7 +570,6 @@ export default function ChatUI({
               el.style.height = "auto";
               el.style.height = Math.min(el.scrollHeight, 160) + "px";
             }}
-            onKeyDown={handleKeyDown}
             placeholder="Ask Brocco..."
             rows={1}
             className="flex-1 px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none text-sm"

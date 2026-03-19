@@ -116,7 +116,11 @@ function SettingsContent() {
     try {
       const res = await fetch("/api/strava/sync", { method: "POST" });
       const data = await res.json();
-      setSyncResult(res.ok ? `Imported ${data.activitiesImported} activities` : (data.error || "Sync failed"));
+      setSyncResult(res.ok
+        ? (data.newCount > 0
+          ? `${data.newCount} new ${data.newCount === 1 ? "activity" : "activities"} added (${data.totalChecked} checked)`
+          : `All up to date (${data.totalChecked} checked)`)
+        : (data.error || "Sync failed"));
     } catch {
       setSyncResult("Sync failed");
     } finally {

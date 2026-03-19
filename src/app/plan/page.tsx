@@ -481,7 +481,7 @@ function DesktopWeekRow({
 
 function Nav() {
   return (
-    <nav className="sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm flex items-center justify-between py-6 -mx-4 px-4 mb-6">
+    <nav className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm flex items-center justify-between pb-6 -mx-4 px-4 mb-6">
       <div className="flex items-center gap-2">
         <span className="text-2xl">&#x1F966;</span>
         <span className="font-bold text-lg">brocco.run</span>
@@ -499,7 +499,7 @@ function Nav() {
 // Mobile-only minimal nav
 function MobileNav({ planName, onNewPlan, starting }: { planName: string; onNewPlan: () => void; starting: boolean }) {
   return (
-    <nav className="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-gray-950/95 backdrop-blur-sm flex-shrink-0">
+    <nav className="safe-top flex items-center justify-between px-4 pb-3 border-b border-gray-800 bg-gray-950/95 backdrop-blur-sm flex-shrink-0">
       <div className="flex items-center gap-2 min-w-0">
         <span className="text-xl">&#x1F966;</span>
         <span className="font-semibold text-sm truncate">{planName}</span>

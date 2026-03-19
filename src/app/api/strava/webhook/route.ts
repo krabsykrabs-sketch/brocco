@@ -28,8 +28,11 @@ export async function POST(request: NextRequest) {
   try {
     const event = await request.json();
 
+    console.log(`[webhook] Received: object_type=${event.object_type}, aspect_type=${event.aspect_type}, owner_id=${event.owner_id}, object_id=${event.object_id}`);
+
     // Only handle activity events
     if (event.object_type !== "activity") {
+      console.log(`[webhook] Ignoring non-activity event: ${event.object_type}`);
       return NextResponse.json({ ok: true });
     }
 
@@ -43,17 +46,19 @@ export async function POST(request: NextRequest) {
     });
 
     if (!profile) {
-      console.warn(`Webhook: no user found for athlete ${athleteId}`);
+      console.warn(`[webhook] No user found for athlete_id=${athleteId}. Check that stravaAthleteId is stored in userProfile.`);
       return NextResponse.json({ ok: true });
     }
 
     const userId = profile.userId;
+    console.log(`[webhook] Matched athlete_id=${athleteId} to user_id=${userId}, aspect=${aspectType}, activity_id=${activityId}`);
 
     if (aspectType === "delete") {
       // Remove the activity if it exists
-      await prisma.activity.deleteMany({
+      const deleted = await prisma.activity.deleteMany({
         where: { stravaId: activityId, userId },
       });
+      console.log(`[webhook] Deleted ${deleted.count} activity records for strava_id=${activityId}`);
       return NextResponse.json({ ok: true });
     }
 
@@ -62,15 +67,16 @@ export async function POST(request: NextRequest) {
       const token = await getValidToken(userId);
       const stravaActivity = await fetchStravaActivity(token, activityId);
       const stored = await storeStravaActivity(userId, stravaActivity, profile.timezone);
+      console.log(`[webhook] Stored activity: strava_id=${activityId}, db_id=${stored.id}, type=${stored.activityType}`);
       // Auto-match to planned workout
       await autoMatchActivity(stored.id, userId);
     } catch (err) {
-      console.error(`Webhook: failed to process activity ${activityId} for user ${userId}:`, err);
+      console.error(`[webhook] Failed to process activity ${activityId} for user ${userId}:`, err);
     }
 
     return NextResponse.json({ ok: true });
   } catch (err) {
-    console.error("Webhook error:", err);
+    console.error("[webhook] Error processing event:", err);
     return NextResponse.json({ ok: true }); // Always return 200 to Strava
   }
 }

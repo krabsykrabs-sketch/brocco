@@ -87,7 +87,7 @@ function StepStrava({
       if (!res.ok) throw new Error("Sync failed");
 
       const data = await res.json();
-      setSyncResult(`Imported ${data.activitiesImported} activities!`);
+      setSyncResult(`Imported ${data.newCount} ${data.newCount === 1 ? "activity" : "activities"} (${data.totalChecked} checked)!`);
       setTimeout(() => onConnected(), 1500);
     } catch {
       setSyncResult("Sync failed. You can try again later in Settings.");

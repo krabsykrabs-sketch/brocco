@@ -18,3 +18,12 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
+
+/* iOS safe area insets for notch/dynamic island and home indicator */
+.safe-top {
+  padding-top: calc(env(safe-area-inset-top, 0px) + 1.5rem);
+}
+
+.safe-bottom {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
+}
