@@ -209,34 +209,39 @@ function DayCard({ day, prevDay, nextDay }: { day: DayData; prevDay: DayData | n
   );
 }
 
-// --- Vertical Day Carousel ---
+// --- Horizontal Day Carousel ---
 
 function DayCarousel({ days }: { days: DayData[] }) {
   const todayIdx = days.findIndex((d) => d.isToday);
   const [activeIdx, setActiveIdx] = useState(Math.max(0, todayIdx));
   const containerRef = useRef<HTMLDivElement>(null);
+  const touchStartX = useRef(0);
   const touchStartY = useRef(0);
-  const touchDeltaY = useRef(0);
+  const touchDeltaX = useRef(0);
+  const directionLocked = useRef<"horizontal" | "vertical" | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [swiping, setSwiping] = useState(false);
   const animatingRef = useRef(false);
   const [phase, setPhase] = useState<"idle" | "exit" | "entering">("idle");
 
-  const CARD_HEIGHT = 340; // approximate visible card height
-  const PEEK = 24; // peek size for adjacent cards
+  // Peek: ~10% on each side, card takes ~80%
+  const getCardWidth = () => containerRef.current?.offsetWidth ?? 360;
+  const PEEK_RATIO = 0.1;
 
   const slideToDay = useCallback((targetIdx: number, direction: number) => {
     if (animatingRef.current) return;
     const clamped = Math.max(0, Math.min(days.length - 1, targetIdx));
-    if (clamped === activeIdx) { setSwipeOffset(0); setSwiping(false); return; }
+    if (clamped === activeIdx) { setSwipeOffset(0); setSwiping(false); directionLocked.current = null; return; }
+    const w = getCardWidth();
     animatingRef.current = true;
     setSwiping(false);
+    directionLocked.current = null;
     setPhase("exit");
-    setSwipeOffset(direction * CARD_HEIGHT);
+    setSwipeOffset(direction * w);
     setTimeout(() => {
       setActiveIdx(clamped);
       setPhase("entering");
-      setSwipeOffset(-direction * CARD_HEIGHT);
+      setSwipeOffset(-direction * w);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           setPhase("idle");
@@ -249,29 +254,57 @@ function DayCarousel({ days }: { days: DayData[] }) {
 
   function onTouchStart(e: React.TouchEvent) {
     if (animatingRef.current) return;
+    touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
-    touchDeltaY.current = 0;
+    touchDeltaX.current = 0;
+    directionLocked.current = null;
     setSwiping(true);
     setPhase("idle");
   }
+
   function onTouchMove(e: React.TouchEvent) {
     if (animatingRef.current) return;
-    touchDeltaY.current = e.touches[0].clientY - touchStartY.current;
-    if (activeIdx === 0 && touchDeltaY.current > 0) touchDeltaY.current *= 0.3;
-    if (activeIdx === days.length - 1 && touchDeltaY.current < 0) touchDeltaY.current *= 0.3;
-    setSwipeOffset(touchDeltaY.current);
+    const dx = e.touches[0].clientX - touchStartX.current;
+    const dy = e.touches[0].clientY - touchStartY.current;
+
+    // Direction lock: decide on first significant movement
+    if (!directionLocked.current) {
+      if (Math.abs(dx) < 5 && Math.abs(dy) < 5) return; // too small to decide
+      directionLocked.current = Math.abs(dx) > Math.abs(dy) ? "horizontal" : "vertical";
+    }
+
+    // Vertical → let the browser scroll the page natively (touch-action: pan-y handles this)
+    if (directionLocked.current === "vertical") {
+      setSwiping(false);
+      return;
+    }
+
+    // Horizontal → we handle it, prevent default to stop scroll
+    e.preventDefault();
+    touchDeltaX.current = dx;
+    // Rubber band at edges
+    if (activeIdx === 0 && dx > 0) touchDeltaX.current = dx * 0.3;
+    if (activeIdx === days.length - 1 && dx < 0) touchDeltaX.current = dx * 0.3;
+    setSwipeOffset(touchDeltaX.current);
   }
+
   function onTouchEnd() {
-    if (animatingRef.current) return;
-    const threshold = CARD_HEIGHT * 0.25;
-    if (touchDeltaY.current < -threshold && activeIdx < days.length - 1) {
-      slideToDay(activeIdx + 1, -1); // swipe up = next day (tomorrow)
-    } else if (touchDeltaY.current > threshold && activeIdx > 0) {
-      slideToDay(activeIdx - 1, 1); // swipe down = prev day (yesterday)
+    if (animatingRef.current || directionLocked.current === "vertical") {
+      setSwiping(false);
+      directionLocked.current = null;
+      return;
+    }
+    const w = getCardWidth();
+    const threshold = w * 0.25;
+    if (touchDeltaX.current < -threshold && activeIdx < days.length - 1) {
+      slideToDay(activeIdx + 1, -1); // swipe left = next day
+    } else if (touchDeltaX.current > threshold && activeIdx > 0) {
+      slideToDay(activeIdx - 1, 1); // swipe right = prev day
     } else {
       setSwiping(false);
       setSwipeOffset(0);
     }
+    directionLocked.current = null;
   }
 
   const useTransition = !swiping && phase !== "entering";
@@ -280,50 +313,59 @@ function DayCarousel({ days }: { days: DayData[] }) {
   const nextDay = activeIdx < days.length - 1 ? days[activeIdx + 1] : null;
 
   return (
-    <div className="relative">
-      {/* Carousel container */}
+    <div className="relative -mx-4">
+      {/* Carousel container — touch-action: pan-y lets browser handle vertical scroll */}
       <div
         ref={containerRef}
         className="overflow-hidden relative"
-        style={{ height: CARD_HEIGHT + PEEK * 2 }}
+        style={{ touchAction: "pan-y" }}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
       >
-        {/* Peek: previous day (above) */}
-        {prevDay && swipeOffset === 0 && phase === "idle" && (
-          <div className="absolute top-0 left-0 right-0 opacity-30 pointer-events-none" style={{ height: PEEK }}>
-            <div className="rounded-2xl bg-gray-800/40 border border-gray-700/30 px-4 py-2 mx-0 h-full flex items-end">
-              <span className="text-[10px] text-gray-600 uppercase tracking-wider">{new Date(prevDay.date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</span>
-            </div>
+        <div className="flex items-stretch" style={{ minHeight: 300 }}>
+          {/* Peek: previous day (left) */}
+          <div
+            className="flex-shrink-0 pointer-events-none overflow-hidden"
+            style={{ width: `${PEEK_RATIO * 100}%` }}
+          >
+            {prevDay && swipeOffset === 0 && phase === "idle" && (
+              <div className="h-full rounded-l-2xl bg-gray-800/30 border border-gray-700/20 p-3 opacity-40">
+                <p className="text-[10px] text-gray-500 uppercase font-bold">{new Date(prevDay.date).toLocaleDateString("en-GB", { weekday: "short" })}</p>
+                <p className="text-2xl font-black text-gray-500 mt-1">{prevDay.dayNum}</p>
+              </div>
+            )}
           </div>
-        )}
 
-        {/* Active card */}
-        <div
-          className="absolute left-0 right-0 will-change-transform"
-          style={{
-            top: PEEK,
-            height: CARD_HEIGHT,
-            transform: `translateY(${swipeOffset}px)`,
-            transition: useTransition ? "transform 0.22s ease-out" : "none",
-          }}
-        >
-          <DayCard day={day} prevDay={prevDay} nextDay={nextDay} />
+          {/* Active card (center) */}
+          <div
+            className="flex-shrink-0 will-change-transform px-1"
+            style={{
+              width: `${(1 - PEEK_RATIO * 2) * 100}%`,
+              transform: `translateX(${swipeOffset}px)`,
+              transition: useTransition ? "transform 0.22s ease-out" : "none",
+            }}
+          >
+            <DayCard day={day} prevDay={prevDay} nextDay={nextDay} />
+          </div>
+
+          {/* Peek: next day (right) */}
+          <div
+            className="flex-shrink-0 pointer-events-none overflow-hidden"
+            style={{ width: `${PEEK_RATIO * 100}%` }}
+          >
+            {nextDay && swipeOffset === 0 && phase === "idle" && (
+              <div className="h-full rounded-r-2xl bg-gray-800/30 border border-gray-700/20 p-3 opacity-40">
+                <p className="text-[10px] text-gray-500 uppercase font-bold">{new Date(nextDay.date).toLocaleDateString("en-GB", { weekday: "short" })}</p>
+                <p className="text-2xl font-black text-gray-500 mt-1">{nextDay.dayNum}</p>
+              </div>
+            )}
+          </div>
         </div>
-
-        {/* Peek: next day (below) */}
-        {nextDay && swipeOffset === 0 && phase === "idle" && (
-          <div className="absolute bottom-0 left-0 right-0 opacity-30 pointer-events-none" style={{ height: PEEK }}>
-            <div className="rounded-2xl bg-gray-800/40 border border-gray-700/30 px-4 py-2 mx-0 h-full flex items-start">
-              <span className="text-[10px] text-gray-600 uppercase tracking-wider">{new Date(nextDay.date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</span>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Dot indicator */}
-      <div className="flex items-center justify-center gap-1 mt-3">
+      <div className="flex items-center justify-center gap-1 mt-3 px-4">
         {days.map((d, i) => (
           <button
             key={d.date}
