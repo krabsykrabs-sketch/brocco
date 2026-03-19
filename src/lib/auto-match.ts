@@ -14,12 +14,16 @@ export async function autoMatchActivity(activityId: string, userId: string): Pro
   if (!activity) return null;
 
   const localDate = format(new Date(activity.startDateLocal), "yyyy-MM-dd");
+  // Use a date range to avoid timezone edge cases:
+  // planned_workouts.date is a Postgres `date` column (no time component)
+  const dayStart = new Date(localDate + "T00:00:00.000Z");
+  const dayEnd = new Date(localDate + "T23:59:59.999Z");
 
   // Find planned workouts on the same date that are still 'planned' or 'modified'
   const candidates = await prisma.plannedWorkout.findMany({
     where: {
       plan: { userId, status: "active" },
-      date: new Date(localDate),
+      date: { gte: dayStart, lte: dayEnd },
       status: { in: ["planned", "modified"] },
       matchedActivityId: null,
     },

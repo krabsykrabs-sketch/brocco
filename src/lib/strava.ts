@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { autoMatchActivity } from "@/lib/auto-match";
 import crypto from "crypto";
 
 const STRAVA_API = "https://www.strava.com/api/v3";
@@ -251,8 +252,12 @@ export async function backfillActivities(userId: string): Promise<{ newCount: nu
           where: { userId_stravaId: { userId, stravaId } },
           select: { id: true },
         });
-        await storeStravaActivity(userId, activity, timezone);
-        if (!existing) newCount++;
+        const stored = await storeStravaActivity(userId, activity, timezone);
+        if (!existing) {
+          newCount++;
+          // Auto-match new activities to planned workouts
+          await autoMatchActivity(stored.id, userId).catch(() => {});
+        }
       } catch (err) {
         // Skip duplicates or errors, continue with next
         console.error(`Failed to store activity ${activity.id}:`, err);
@@ -291,8 +296,11 @@ export async function backfillActivitiesFull(userId: string): Promise<{ newCount
           where: { userId_stravaId: { userId, stravaId } },
           select: { id: true },
         });
-        await storeStravaActivity(userId, activity, timezone);
-        if (!existing) newCount++;
+        const stored = await storeStravaActivity(userId, activity, timezone);
+        if (!existing) {
+          newCount++;
+          await autoMatchActivity(stored.id, userId).catch(() => {});
+        }
       } catch (err) {
         console.error(`Failed to store activity ${activity.id}:`, err);
       }

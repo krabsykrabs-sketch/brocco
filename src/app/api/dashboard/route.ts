@@ -148,12 +148,17 @@ export async function GET() {
       });
     }
 
-    // Current week total km (running only)
-    const currentWeekKm = currentWeekActivities
-      .filter((a) => ["Run", "TrailRun", "VirtualRun", "Treadmill"].includes(a.activityType))
+    // Current week total km — running only for plan comparison
+    const runTypes = ["Run", "TrailRun", "VirtualRun", "Treadmill"];
+    const currentWeekRunKm = currentWeekActivities
+      .filter((a) => runTypes.includes(a.activityType))
       .reduce((sum, a) => sum + (a.distanceKm ? Number(a.distanceKm) : 0), 0);
 
-    // Current week planned km
+    // All activities km (including cycling, swimming, etc.)
+    const currentWeekAllKm = currentWeekActivities
+      .reduce((sum, a) => sum + (a.distanceKm ? Number(a.distanceKm) : 0), 0);
+
+    // Current week planned km (running plan target)
     const currentWeekPlannedKm = currentWeekPlanned
       .filter((w) => w.workoutType !== "rest")
       .reduce((sum, w) => sum + (w.targetDistanceKm ? Number(w.targetDistanceKm) : 0), 0);
@@ -255,7 +260,8 @@ export async function GET() {
       goalRace: profile.goalRace,
       goalTime: profile.goalTime,
       daysUntilRace,
-      currentWeekKm: Math.round(currentWeekKm * 10) / 10,
+      currentWeekKm: Math.round(currentWeekRunKm * 10) / 10,
+      currentWeekAllKm: Math.round(currentWeekAllKm * 10) / 10,
       currentWeekPlannedKm: Math.round(currentWeekPlannedKm * 10) / 10,
       avgEasyPace,
       weekDays,

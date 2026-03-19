@@ -100,6 +100,7 @@ interface DashboardData {
   goalTime: string | null;
   daysUntilRace: number | null;
   currentWeekKm: number;
+  currentWeekAllKm: number;
   currentWeekPlannedKm: number;
   avgEasyPace: string | null;
   weekDays: DayData[];
@@ -151,7 +152,187 @@ function getWorkoutTypeColor(type: string): string {
 
 // --- Sub-components ---
 
-function WeekGrid({ days }: { days: DayData[] }) {
+function getWorkoutTypeBg(type: string): string {
+  switch (type) {
+    case "easy": case "recovery": return "bg-green-900/25 border-green-800/40";
+    case "tempo": return "bg-orange-900/25 border-orange-800/40";
+    case "interval": return "bg-red-900/25 border-red-800/40";
+    case "race_pace": return "bg-orange-900/30 border-orange-700/40";
+    case "long": return "bg-blue-900/25 border-blue-800/40";
+    case "cross_training": return "bg-teal-900/25 border-teal-800/40";
+    case "strength": return "bg-purple-900/25 border-purple-800/40";
+    case "rest": return "bg-gray-900/50 border-gray-800/40";
+    case "race": return "bg-yellow-900/25 border-yellow-800/40";
+    default: return "bg-gray-900/50 border-gray-800/40";
+  }
+}
+
+function formatDayHeader(dateStr: string): string {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" });
+}
+
+function TodayCard({ day }: { day: DayData }) {
+  const hasPlanned = day.planned && day.planned.length > 0;
+  const hasActivities = day.activities.length > 0;
+  const planned = hasPlanned ? day.planned![0] : null;
+  const isRest = planned?.workoutType === "rest";
+  const workoutBg = planned ? getWorkoutTypeBg(planned.workoutType) : "bg-gray-900/50 border-gray-800/40";
+
+  return (
+    <div className={`rounded-xl border p-4 ${workoutBg}`}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[10px] font-bold text-green-400 uppercase tracking-wider">Today</span>
+        <span className="text-[10px] text-gray-500 uppercase tracking-wider">{"\u00b7"} {formatDayHeader(day.date)}</span>
+      </div>
+
+      {/* Planned workout */}
+      {planned && !isRest && (
+        <div className="mb-3">
+          <div className="flex items-center gap-2">
+            <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(planned.workoutType) }} />
+            <span className="text-base font-semibold text-white">{planned.title}</span>
+          </div>
+          <div className="flex items-center gap-3 mt-1 ml-4 text-sm text-gray-400">
+            {planned.targetDistanceKm && <span>{planned.targetDistanceKm}km</span>}
+            {planned.targetPace && <span>{planned.targetPace}</span>}
+          </div>
+        </div>
+      )}
+
+      {planned && isRest && !hasActivities && (
+        <div className="mb-1">
+          <p className="text-base font-semibold text-gray-400">Rest Day</p>
+          <p className="text-sm text-gray-500 mt-0.5">Recover well — tomorrow counts.</p>
+        </div>
+      )}
+
+      {!planned && !hasActivities && (
+        <div className="mb-1">
+          <p className="text-sm text-gray-500">Nothing planned. Enjoy the day or go for a spontaneous run.</p>
+        </div>
+      )}
+
+      {/* Actual activities */}
+      {hasActivities && (
+        <div className="space-y-2">
+          {day.activities.map((a) => (
+            <Link key={a.id} href={`/activity/${a.id}`} className="block bg-black/20 rounded-lg px-3 py-2.5 hover:bg-black/30 transition-colors">
+              <div className="flex items-center gap-2">
+                <span className="text-green-400 text-sm">{"\u2713"}</span>
+                <span className="text-sm font-medium text-green-300">{a.name}</span>
+              </div>
+              <div className="flex items-center gap-3 mt-1 ml-5 text-sm text-gray-400">
+                {a.distanceKm && <span>{a.distanceKm.toFixed(1)}km</span>}
+                {a.avgPacePerKm && <span>{a.avgPacePerKm}</span>}
+                {a.avgHeartRate && <span>HR {a.avgHeartRate}</span>}
+              </div>
+            </Link>
+          ))}
+          {isRest && (
+            <p className="text-xs text-gray-500 mt-1">Bonus work on a rest day — nice.</p>
+          )}
+        </div>
+      )}
+
+      {/* Encouragement when planned but not done yet */}
+      {planned && !isRest && !hasActivities && (
+        <p className="text-xs text-gray-500 mt-2">Get after it today.</p>
+      )}
+    </div>
+  );
+}
+
+function TomorrowCard({ day }: { day: DayData }) {
+  const planned = day.planned && day.planned.length > 0 ? day.planned[0] : null;
+  const isRest = planned?.workoutType === "rest";
+
+  return (
+    <div className="rounded-xl border bg-gray-900/50 border-gray-800/40 px-4 py-3">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tomorrow</span>
+        <span className="text-[10px] text-gray-600 uppercase tracking-wider">{"\u00b7"} {formatDayHeader(day.date)}</span>
+      </div>
+      {planned && !isRest && (
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(planned.workoutType) }} />
+          <span className="text-sm font-medium text-gray-300">{planned.title}</span>
+          <span className="text-sm text-gray-500">
+            {[
+              planned.targetDistanceKm ? `${planned.targetDistanceKm}km` : null,
+              planned.targetPace,
+            ].filter(Boolean).join(" · ")}
+          </span>
+        </div>
+      )}
+      {planned && isRest && (
+        <p className="text-sm text-gray-500">Rest day</p>
+      )}
+      {!planned && (
+        <p className="text-sm text-gray-600">Nothing planned</p>
+      )}
+    </div>
+  );
+}
+
+function WeekProgressBar({
+  runKm, allKm, plannedKm,
+}: {
+  runKm: number; allKm: number; plannedKm: number;
+}) {
+  const hasCross = allKm > runKm + 0.1;
+  const pct = plannedKm > 0 ? Math.min((allKm / plannedKm) * 100, 150) : 0;
+  const runPct = plannedKm > 0 ? Math.min((runKm / plannedKm) * 100, 150) : 0;
+
+  return (
+    <div className="rounded-xl border bg-gray-900/50 border-gray-800/40 px-4 py-3">
+      <div className="flex items-baseline justify-between mb-2">
+        <p className="text-sm text-gray-300">
+          <span className="font-semibold text-white">{allKm.toFixed(1)}km</span>
+          {plannedKm > 0 && <span className="text-gray-500"> of {plannedKm.toFixed(0)}km planned</span>}
+        </p>
+        {plannedKm > 0 && (
+          <span className={`text-xs font-medium ${pct >= 100 ? "text-green-400" : "text-gray-500"}`}>
+            {Math.round(pct)}%
+          </span>
+        )}
+      </div>
+      {plannedKm > 0 && (
+        <div className="h-2.5 bg-gray-800 rounded-full overflow-hidden relative">
+          {/* Running portion */}
+          <div
+            className="absolute top-0 left-0 h-full bg-green-500 rounded-full transition-all duration-500"
+            style={{ width: `${Math.min(runPct, 100)}%` }}
+          />
+          {/* Cross-training portion (stacked on top of running) */}
+          {hasCross && (
+            <div
+              className="absolute top-0 left-0 h-full bg-teal-500/60 rounded-full transition-all duration-500"
+              style={{ width: `${Math.min(pct, 100)}%` }}
+            />
+          )}
+          {/* Running on top so it's visible */}
+          <div
+            className="absolute top-0 left-0 h-full bg-green-500 rounded-full transition-all duration-500"
+            style={{ width: `${Math.min(runPct, 100)}%` }}
+          />
+          {/* Over 100% marker */}
+          {plannedKm > 0 && (
+            <div className="absolute top-0 h-full w-px bg-gray-600" style={{ left: `${Math.min(100, (100 / Math.max(pct, 100)) * 100)}%` }} />
+          )}
+        </div>
+      )}
+      {hasCross && (
+        <div className="flex items-center gap-3 mt-1.5 text-[11px] text-gray-500">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />{runKm.toFixed(1)}km running</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-teal-500/60 inline-block" />{(allKm - runKm).toFixed(1)}km cross</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DesktopWeekRow({ days }: { days: DayData[] }) {
   const today = new Date().toISOString().split("T")[0];
 
   return (
@@ -160,71 +341,42 @@ function WeekGrid({ days }: { days: DayData[] }) {
         const hasPlanned = day.planned && day.planned.length > 0;
         const hasActivities = day.activities.length > 0;
         const isPast = day.date < today;
-
-        // Determine day status for border color
         const isRest = hasPlanned && day.planned!.every((w) => w.workoutType === "rest");
         const isCompleted = hasPlanned && day.planned!.some((w) => w.matchedActivityId);
         const isMissed = isPast && hasPlanned && !isRest && !isCompleted;
 
-        let borderClass = "";
+        let borderClass = "border border-gray-800/30";
         if (isCompleted) borderClass = "border border-green-800/60";
         else if (isMissed) borderClass = "border border-red-900/50";
-        else if (isRest) borderClass = "border border-gray-800/40";
 
         return (
           <div
             key={day.date}
-            className={`rounded-lg p-2 min-h-[80px] ${
-              day.isToday
-                ? "bg-gray-800 ring-1 ring-green-500/50"
-                : "bg-gray-900"
+            className={`rounded-lg p-2 min-h-[90px] ${
+              day.isToday ? "bg-gray-800 ring-1 ring-green-500/50" : "bg-gray-900"
             } ${borderClass}`}
           >
             <div className="flex items-baseline justify-between mb-1">
               <span className="text-[11px] text-gray-500 uppercase">{day.dayName}</span>
-              <span className={`text-xs font-medium ${day.isToday ? "text-green-400" : "text-gray-400"}`}>
-                {day.dayNum}
-              </span>
+              <span className={`text-xs font-medium ${day.isToday ? "text-green-400" : "text-gray-400"}`}>{day.dayNum}</span>
             </div>
-            {/* Planned workouts */}
             {hasPlanned && day.planned!.map((w) => (
               <div key={w.id} className="mt-0.5">
                 <div className="flex items-center gap-1">
-                  <div
-                    className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: getWorkoutTypeColor(w.workoutType) }}
-                  />
-                  <span className={`text-[10px] truncate ${w.matchedActivityId ? "text-green-400" : "text-gray-500"}`}>
-                    {w.title}
-                  </span>
+                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(w.workoutType) }} />
+                  <span className={`text-[10px] truncate ${w.matchedActivityId ? "text-green-400" : isMissed ? "text-red-400/60" : "text-gray-400"}`}>{w.title}</span>
                 </div>
                 {w.targetDistanceKm && (
-                  <div className="text-[10px] text-gray-600 ml-2.5">
-                    {w.targetDistanceKm.toFixed(0)}km {w.targetPace || ""}
-                  </div>
+                  <div className="text-[10px] text-gray-600 ml-2.5">{w.targetDistanceKm.toFixed(0)}km</div>
                 )}
               </div>
             ))}
-            {/* Actual activities */}
-            {hasActivities ? (
-              day.activities.map((a) => (
-                <Link key={a.id} href={`/activity/${a.id}`} className="block mt-1 hover:opacity-80">
-                  {a.distanceKm && (
-                    <div className="text-[11px] text-green-300 font-medium">
-                      {a.distanceKm.toFixed(1)} km
-                    </div>
-                  )}
-                  {a.avgPacePerKm && (
-                    <div className="text-[10px] text-gray-400">{a.avgPacePerKm}</div>
-                  )}
-                  {a.avgHeartRate && (
-                    <div className="text-[10px] text-gray-500">HR {a.avgHeartRate}</div>
-                  )}
-                </Link>
-              ))
-            ) : !hasPlanned ? (
-              <div className="text-[10px] text-gray-700 mt-2">-</div>
-            ) : null}
+            {hasActivities && day.activities.map((a) => (
+              <Link key={a.id} href={`/activity/${a.id}`} className="block mt-1 hover:opacity-80">
+                {a.distanceKm && <div className="text-[11px] text-green-300 font-medium">{a.distanceKm.toFixed(1)} km</div>}
+                {a.avgPacePerKm && <div className="text-[10px] text-gray-400">{a.avgPacePerKm}</div>}
+              </Link>
+            ))}
           </div>
         );
       })}
@@ -280,63 +432,27 @@ function MileageChart({ data }: { data: WeeklyBar[] }) {
   );
 }
 
-function MetricsPanel({
-  currentWeekKm,
-  currentWeekPlannedKm,
-  daysUntilRace,
-  avgEasyPace,
-  goalRace,
+function QuickStats({
+  daysUntilRace, avgEasyPace, goalRace,
 }: {
-  currentWeekKm: number;
-  currentWeekPlannedKm: number;
-  daysUntilRace: number | null;
-  avgEasyPace: string | null;
-  goalRace: string | null;
+  daysUntilRace: number | null; avgEasyPace: string | null; goalRace: string | null;
 }) {
+  const showRace = daysUntilRace !== null && daysUntilRace > 0;
+  if (!showRace && !avgEasyPace) return null;
+
   return (
-    <div className="grid grid-cols-3 gap-3">
-      <div className="bg-gray-900 rounded-lg p-3">
-        <p className="text-[10px] text-gray-500 uppercase tracking-wider">This week</p>
-        <p className="text-xl font-semibold text-white mt-1">
-          {currentWeekKm.toFixed(1)}
-          <span className="text-xs text-gray-400 ml-1">km</span>
-        </p>
-        {currentWeekPlannedKm > 0 && (
-          <p className="text-[10px] text-gray-500 mt-0.5">
-            / {currentWeekPlannedKm.toFixed(0)} planned
-          </p>
-        )}
-      </div>
-      <div className="bg-gray-900 rounded-lg p-3">
-        <p className="text-[10px] text-gray-500 uppercase tracking-wider">
-          {daysUntilRace !== null && daysUntilRace > 0 ? "Race in" : "Easy pace"}
-        </p>
-        <p className="text-xl font-semibold text-white mt-1">
-          {daysUntilRace !== null && daysUntilRace > 0 ? (
-            <>
-              {daysUntilRace}
-              <span className="text-xs text-gray-400 ml-1">days</span>
-            </>
-          ) : avgEasyPace ? (
-            <span className="text-lg">{avgEasyPace}</span>
-          ) : (
-            <span className="text-gray-600">-</span>
-          )}
-        </p>
-        {daysUntilRace !== null && daysUntilRace > 0 && goalRace && (
-          <p className="text-[10px] text-gray-500 mt-0.5 truncate">{goalRace}</p>
-        )}
-      </div>
-      <div className="bg-gray-900 rounded-lg p-3">
-        <p className="text-[10px] text-gray-500 uppercase tracking-wider">Easy pace</p>
-        <p className="text-xl font-semibold text-white mt-1">
-          {avgEasyPace ? (
-            <span className="text-lg">{avgEasyPace}</span>
-          ) : (
-            <span className="text-gray-600">-</span>
-          )}
-        </p>
-      </div>
+    <div className="flex items-center gap-4 text-sm">
+      {showRace && (
+        <span className="text-gray-400">
+          <span className="font-semibold text-white">{daysUntilRace}</span> days to{" "}
+          <span className="text-gray-300">{goalRace || "race"}</span>
+        </span>
+      )}
+      {avgEasyPace && (
+        <span className="text-gray-500">
+          Easy pace <span className="text-gray-300">{avgEasyPace}</span>
+        </span>
+      )}
     </div>
   );
 }
@@ -703,50 +819,94 @@ export default function Dashboard() {
         />
       </section>
 
-      {/* Metrics */}
-      <section className="mb-6">
-        <MetricsPanel
-          currentWeekKm={data.currentWeekKm}
-          currentWeekPlannedKm={data.currentWeekPlannedKm}
-          daysUntilRace={data.daysUntilRace}
-          avgEasyPace={data.avgEasyPace}
-          goalRace={data.goalRace}
-        />
-      </section>
+      {/* Quick stats (race countdown + easy pace) */}
+      {(data.daysUntilRace || data.avgEasyPace) && (
+        <section className="mb-4">
+          <QuickStats
+            daysUntilRace={data.daysUntilRace}
+            avgEasyPace={data.avgEasyPace}
+            goalRace={data.goalRace}
+          />
+        </section>
+      )}
 
-      {/* Current week */}
-      <section className="mb-6">
-        <h2 className="text-sm font-medium text-gray-400 uppercase tracking-wider mb-2">
-          This Week
-        </h2>
-        <WeekGrid days={data.weekDays} />
-        {data.currentWeekPlannedKm > 0 && (
-          <p className="text-xs text-gray-500 mt-2">
-            This week: <span className="text-gray-300">{data.currentWeekKm.toFixed(1)} km</span> of {data.currentWeekPlannedKm.toFixed(0)} km planned
-          </p>
-        )}
-        {data.weeklyTasks.length > 0 && (
-          <div className="mt-3 space-y-1">
-            {data.weeklyTasks.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => handleToggleTask(t.id, t.status === "done" ? "pending" : "done")}
-                className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 transition-colors text-left"
-              >
-                <span className={`text-xs ${t.status === "done" ? "text-green-400" : "text-gray-600"}`}>
-                  {t.status === "done" ? "\u2611" : "\u2610"}
-                </span>
-                <span className="text-xs">
-                  {({ strength: "\ud83d\udcaa", mobility: "\ud83e\uddd8", nutrition: "\ud83e\udd66", recovery: "\ud83d\udca4" } as Record<string, string>)[t.category] || "\u2705"}
-                </span>
-                <span className={`text-xs flex-1 ${t.status === "done" ? "text-gray-500 line-through" : "text-gray-300"}`}>
-                  {t.description}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
+      {/* Today + Tomorrow (mobile: stacked, desktop: side by side with week row) */}
+      {(() => {
+        const todayIdx = data.weekDays.findIndex((d) => d.isToday);
+        const todayDay = todayIdx >= 0 ? data.weekDays[todayIdx] : null;
+        const tomorrowDay = todayIdx >= 0 && todayIdx < 6 ? data.weekDays[todayIdx + 1] : null;
+
+        return (
+          <>
+            {/* Mobile layout */}
+            <section className="md:hidden space-y-3 mb-6">
+              {todayDay && <TodayCard day={todayDay} />}
+              {tomorrowDay && <TomorrowCard day={tomorrowDay} />}
+              <WeekProgressBar
+                runKm={data.currentWeekKm}
+                allKm={data.currentWeekAllKm}
+                plannedKm={data.currentWeekPlannedKm}
+              />
+              {data.weeklyTasks.length > 0 && (
+                <div className="space-y-1">
+                  {data.weeklyTasks.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => handleToggleTask(t.id, t.status === "done" ? "pending" : "done")}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 transition-colors text-left"
+                    >
+                      <span className={`text-xs ${t.status === "done" ? "text-green-400" : "text-gray-600"}`}>
+                        {t.status === "done" ? "\u2611" : "\u2610"}
+                      </span>
+                      <span className="text-xs">
+                        {({ strength: "\ud83d\udcaa", mobility: "\ud83e\uddd8", nutrition: "\ud83e\udd66", recovery: "\ud83d\udca4" } as Record<string, string>)[t.category] || "\u2705"}
+                      </span>
+                      <span className={`text-xs flex-1 ${t.status === "done" ? "text-gray-500 line-through" : "text-gray-300"}`}>
+                        {t.description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* Desktop layout */}
+            <section className="hidden md:block mb-6 space-y-3">
+              <div className="flex gap-3">
+                {todayDay && <div className="flex-1"><TodayCard day={todayDay} /></div>}
+                {tomorrowDay && <div className="w-64 flex-shrink-0"><TomorrowCard day={tomorrowDay} /></div>}
+              </div>
+              <WeekProgressBar
+                runKm={data.currentWeekKm}
+                allKm={data.currentWeekAllKm}
+                plannedKm={data.currentWeekPlannedKm}
+              />
+              <DesktopWeekRow days={data.weekDays} />
+              {data.weeklyTasks.length > 0 && (
+                <div className="space-y-1">
+                  {data.weeklyTasks.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => handleToggleTask(t.id, t.status === "done" ? "pending" : "done")}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900 hover:bg-gray-800 transition-colors text-left"
+                    >
+                      <span className={`text-xs ${t.status === "done" ? "text-green-400" : "text-gray-600"}`}>
+                        {t.status === "done" ? "\u2611" : "\u2610"}
+                      </span>
+                      <span className="text-xs">
+                        {({ strength: "\ud83d\udcaa", mobility: "\ud83e\uddd8", nutrition: "\ud83e\udd66", recovery: "\ud83d\udca4" } as Record<string, string>)[t.category] || "\u2705"}
+                      </span>
+                      <span className={`text-xs flex-1 ${t.status === "done" ? "text-gray-500 line-through" : "text-gray-300"}`}>
+                        {t.description}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          </>
+        );
+      })()}
 
       {/* Mileage chart */}
       <section className="mb-6">
