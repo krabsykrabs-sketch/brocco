@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
-import { startOfWeek, endOfWeek, subWeeks, format, addDays } from "date-fns";
+import { startOfWeek, endOfWeek, subWeeks, subDays, format, addDays } from "date-fns";
 
 export async function GET() {
   try {
@@ -27,11 +27,15 @@ export async function GET() {
     const weekStart = startOfWeek(now, { weekStartsOn: 1 });
     const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
 
-    // Fetch activities for current week
-    const currentWeekActivities = await prisma.activity.findMany({
+    // Carousel range: 7 days before today through 7 days after
+    const carouselStart = subDays(now, 7);
+    const carouselEnd = addDays(now, 7);
+
+    // Fetch activities for carousel range
+    const carouselActivities = await prisma.activity.findMany({
       where: {
         userId,
-        startDateLocal: { gte: weekStart, lte: weekEnd },
+        startDateLocal: { gte: carouselStart, lte: carouselEnd },
       },
       orderBy: { startDateLocal: "asc" },
       select: {
@@ -47,11 +51,11 @@ export async function GET() {
       },
     });
 
-    // Fetch planned workouts for current week
-    const currentWeekPlanned = await prisma.plannedWorkout.findMany({
+    // Fetch planned workouts for carousel range
+    const carouselPlanned = await prisma.plannedWorkout.findMany({
       where: {
         plan: { userId, status: "active" },
-        date: { gte: weekStart, lte: weekEnd },
+        date: { gte: carouselStart, lte: carouselEnd },
       },
       orderBy: { date: "asc" },
       select: {
@@ -66,22 +70,22 @@ export async function GET() {
       },
     });
 
-    // Build 7-day grid
-    const weekDays = [];
-    for (let i = 0; i < 7; i++) {
-      const day = addDays(weekStart, i);
+    // Build 15-day carousel (7 past + today + 7 future)
+    const carouselDays = [];
+    for (let i = -7; i <= 7; i++) {
+      const day = addDays(now, i);
       const dayStr = format(day, "yyyy-MM-dd");
-      const dayActivities = currentWeekActivities.filter(
+      const dayActivities = carouselActivities.filter(
         (a) => format(new Date(a.startDateLocal), "yyyy-MM-dd") === dayStr
       );
-      const dayPlanned = currentWeekPlanned.filter(
+      const dayPlanned = carouselPlanned.filter(
         (w) => format(new Date(w.date), "yyyy-MM-dd") === dayStr
       );
-      weekDays.push({
+      carouselDays.push({
         date: dayStr,
         dayName: format(day, "EEE"),
         dayNum: format(day, "d"),
-        isToday: format(now, "yyyy-MM-dd") === dayStr,
+        isToday: i === 0,
         activities: dayActivities.map((a) => ({
           id: a.id,
           name: a.name,
@@ -148,17 +152,26 @@ export async function GET() {
       });
     }
 
-    // Current week total km — running only for plan comparison
+    // Current week stats — filter carousel data to current week range
+    const weekStartStr = format(weekStart, "yyyy-MM-dd");
+    const weekEndStr = format(weekEnd, "yyyy-MM-dd");
+    const currentWeekActivities = carouselActivities.filter((a) => {
+      const d = format(new Date(a.startDateLocal), "yyyy-MM-dd");
+      return d >= weekStartStr && d <= weekEndStr;
+    });
+    const currentWeekPlanned = carouselPlanned.filter((w) => {
+      const d = format(new Date(w.date), "yyyy-MM-dd");
+      return d >= weekStartStr && d <= weekEndStr;
+    });
+
     const runTypes = ["Run", "TrailRun", "VirtualRun", "Treadmill"];
     const currentWeekRunKm = currentWeekActivities
       .filter((a) => runTypes.includes(a.activityType))
       .reduce((sum, a) => sum + (a.distanceKm ? Number(a.distanceKm) : 0), 0);
 
-    // All activities km (including cycling, swimming, etc.)
     const currentWeekAllKm = currentWeekActivities
       .reduce((sum, a) => sum + (a.distanceKm ? Number(a.distanceKm) : 0), 0);
 
-    // Current week planned km (running plan target)
     const currentWeekPlannedKm = currentWeekPlanned
       .filter((w) => w.workoutType !== "rest")
       .reduce((sum, w) => sum + (w.targetDistanceKm ? Number(w.targetDistanceKm) : 0), 0);
@@ -251,7 +264,7 @@ export async function GET() {
       currentWeekAllKm: Math.round(currentWeekAllKm * 10) / 10,
       crossTrainingSummary: crossSummary,
       currentWeekPlannedKm: Math.round(currentWeekPlannedKm * 10) / 10,
-      weekDays,
+      carouselDays,
       weeklyData,
       recentActivities: recentActivities.map((a) => ({
         id: a.id,
