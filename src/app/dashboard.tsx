@@ -465,16 +465,24 @@ function RaceCountdownCard({ data }: { data: DashboardData }) {
 
 function NavBar() {
   return (
-    <nav className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm flex items-center justify-between pb-4 -mx-4 px-4 mb-2">
-      <div className="flex items-center gap-2">
-        <span className="text-2xl">&#x1F966;</span>
-        <span className="font-bold text-lg">brocco.run</span>
+    <nav className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm -mx-4 px-4 mb-2">
+      {/* Mobile: minimal branding only */}
+      <div className="md:hidden flex items-center gap-2 pb-2">
+        <span className="text-lg">&#x1F966;</span>
+        <span className="font-semibold text-sm text-gray-300">brocco.run</span>
       </div>
-      <div className="flex items-center gap-4 text-sm text-gray-400">
-        <Link href="/chat" className="hover:text-white transition-colors">Chat</Link>
-        <Link href="/plan" className="hover:text-white transition-colors">Plan</Link>
-        <Link href="/history" className="hover:text-white transition-colors">History</Link>
-        <Link href="/settings" className="hover:text-white transition-colors">Settings</Link>
+      {/* Desktop: full nav */}
+      <div className="hidden md:flex items-center justify-between pb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl">&#x1F966;</span>
+          <span className="font-bold text-lg">brocco.run</span>
+        </div>
+        <div className="flex items-center gap-4 text-sm text-gray-400">
+          <Link href="/chat" className="hover:text-white transition-colors">Chat</Link>
+          <Link href="/plan" className="hover:text-white transition-colors">Plan</Link>
+          <Link href="/history" className="hover:text-white transition-colors">History</Link>
+          <Link href="/settings" className="hover:text-white transition-colors">Settings</Link>
+        </div>
       </div>
     </nav>
   );

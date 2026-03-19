@@ -128,20 +128,24 @@ export default function HistoryPage() {
   }, [fetchActivities]);
 
   return (
-    <main className="min-h-screen max-w-2xl mx-auto px-4 py-6">
-      <div className="sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm flex items-center justify-between py-3 -mx-4 px-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">Activity History</h1>
-          <p className="text-sm text-gray-400">
-            {total} {total === 1 ? "activity" : "activities"}
-          </p>
+    <main className="min-h-screen max-w-2xl mx-auto px-4 py-6 pb-24">
+      <div className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm -mx-4 px-4 mb-6">
+        {/* Mobile */}
+        <div className="md:hidden flex items-center gap-2 pb-2">
+          <span className="text-lg">&#x1F966;</span>
+          <span className="font-semibold text-sm text-gray-300">History</span>
+          <span className="text-xs text-gray-500 ml-auto">{total} activities</span>
         </div>
-        <Link
-          href="/"
-          className="text-sm text-gray-400 hover:text-white transition-colors"
-        >
-          Dashboard
-        </Link>
+        {/* Desktop */}
+        <div className="hidden md:flex items-center justify-between py-3">
+          <div>
+            <h1 className="text-2xl font-bold">Activity History</h1>
+            <p className="text-sm text-gray-400">{total} {total === 1 ? "activity" : "activities"}</p>
+          </div>
+          <Link href="/" className="text-sm text-gray-400 hover:text-white transition-colors">
+            Dashboard
+          </Link>
+        </div>
       </div>
 
       <div className="mb-4">

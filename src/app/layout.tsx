@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AppFooter } from "./app-footer";
+import { BottomTabBar } from "./bottom-tabs";
+import { PWAInstallBanner } from "./pwa-banner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -48,6 +50,8 @@ export default function RootLayout({
       >
         {children}
         <AppFooter />
+        <BottomTabBar />
+        <PWAInstallBanner />
         <script
           dangerouslySetInnerHTML={{
             __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').then(function(r){console.log('SW registered, scope:',r.scope)}).catch(function(e){console.error('SW registration failed:',e)})}`,

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { InstallInstructions } from "@/app/pwa-banner";
 import { Suspense } from "react";
 
 interface InviteCodeData {
@@ -475,21 +476,33 @@ function SettingsContent() {
           </div>
         </div>
       </section>
+
+      {/* Install App */}
+      <section>
+        <h2 className="text-lg font-semibold mb-3">Install App</h2>
+        <div className="bg-gray-900 rounded-lg p-4">
+          <p className="text-sm text-gray-400 mb-3">Add brocco.run to your home screen for the best experience — it works like a regular app.</p>
+          <InstallInstructions />
+        </div>
+      </section>
     </div>
   );
 }
 
 export default function SettingsPage() {
   return (
-    <main className="min-h-screen max-w-lg mx-auto px-4 py-6 pb-20">
-      <div className="sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm flex items-center justify-between py-3 -mx-4 px-4 mb-6">
-        <h1 className="text-2xl font-bold">Settings</h1>
-        <Link
-          href="/"
-          className="text-sm text-gray-400 hover:text-white transition-colors"
-        >
-          Dashboard
-        </Link>
+    <main className="min-h-screen max-w-lg mx-auto px-4 py-6 pb-24">
+      <div className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm -mx-4 px-4 mb-6">
+        {/* Mobile: minimal */}
+        <div className="md:hidden flex items-center gap-2 pb-2">
+          <span className="text-lg">&#x1F966;</span>
+          <span className="font-semibold text-sm text-gray-300">Settings</span>
+        </div>
+        {/* Desktop: full */}
+        <div className="hidden md:flex items-center justify-between py-3">
+          <h1 className="text-2xl font-bold">Settings</h1>
+          <Link href="/" className="text-sm text-gray-400 hover:text-white transition-colors">Dashboard</Link>
+        </div>
       </div>
 
       <Suspense fallback={<div className="text-gray-500 text-center py-12">Loading...</div>}>

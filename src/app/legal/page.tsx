@@ -2,18 +2,19 @@ import Link from "next/link";
 
 export default function LegalPage() {
   return (
-    <main className="min-h-screen max-w-2xl mx-auto px-4 py-8 pb-20">
-      <nav className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm flex items-center justify-between pb-6 -mx-4 px-4 mb-8">
-        <Link href="/" className="flex items-center gap-2">
-          <span className="text-2xl">&#x1F966;</span>
-          <span className="font-bold text-lg">brocco.run</span>
-        </Link>
-        <Link
-          href="/"
-          className="text-sm text-gray-400 hover:text-white transition-colors"
-        >
-          Back to Dashboard
-        </Link>
+    <main className="min-h-screen max-w-2xl mx-auto px-4 py-8 pb-24">
+      <nav className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm -mx-4 px-4 mb-8">
+        <div className="hidden md:flex items-center justify-between pb-6">
+          <Link href="/" className="flex items-center gap-2">
+            <span className="text-2xl">&#x1F966;</span>
+            <span className="font-bold text-lg">brocco.run</span>
+          </Link>
+          <Link href="/" className="text-sm text-gray-400 hover:text-white transition-colors">Back</Link>
+        </div>
+        <div className="md:hidden flex items-center gap-2 pb-2">
+          <span className="text-lg">&#x1F966;</span>
+          <span className="font-semibold text-sm text-gray-300">Legal</span>
+        </div>
       </nav>
 
       <h1 className="text-2xl font-bold mb-8">Legal</h1>

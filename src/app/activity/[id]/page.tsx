@@ -178,7 +178,7 @@ export default function ActivityDetailPage() {
   const mw = activity.matchedWorkout;
 
   return (
-    <main className="min-h-screen max-w-2xl mx-auto px-4 py-6 pb-20">
+    <main className="min-h-screen max-w-2xl mx-auto px-4 py-6 pb-24">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <Link

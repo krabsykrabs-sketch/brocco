@@ -548,9 +548,9 @@ export default function ChatUI({
   // Send only via the green send button.
 
   return (
-    <div className="flex flex-col h-screen max-w-2xl mx-auto">
+    <div className="flex flex-col h-[calc(100vh-3.5rem)] md:h-screen max-w-2xl mx-auto">
       {/* Header */}
-      <header className="safe-top flex items-center justify-between px-4 pb-3 border-b border-gray-800 flex-shrink-0 bg-gray-950/95 backdrop-blur-sm">
+      <header className="safe-top flex items-center justify-between px-4 pb-2 border-b border-gray-800 flex-shrink-0 bg-gray-950/95 backdrop-blur-sm">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(true)}
@@ -560,11 +560,12 @@ export default function ChatUI({
             &#9776;
           </button>
           <div className="flex items-center gap-2">
-            <span className="text-xl">&#x1F966;</span>
-            <span className="font-bold text-lg">brocco.run</span>
+            <span className="text-lg">&#x1F966;</span>
+            <span className="font-semibold text-sm text-gray-300 md:text-lg md:font-bold md:text-white">brocco.run</span>
           </div>
         </div>
-        <div className="flex items-center gap-4 text-sm text-gray-400">
+        {/* Desktop nav only */}
+        <div className="hidden md:flex items-center gap-4 text-sm text-gray-400">
           <Link href="/" className="hover:text-white transition-colors">Dashboard</Link>
           <Link href="/plan" className="hover:text-white transition-colors">Plan</Link>
           <Link href="/history" className="hover:text-white transition-colors">History</Link>

@@ -424,7 +424,7 @@ function MobilePlanView({
   const useTransition = !swiping && phase !== "entering";
 
   return (
-    <div className="flex flex-col h-[calc(100vh-52px)]">
+    <div className="flex flex-col h-[calc(100vh-52px-3.5rem)]">
       {/* Navigation arrows */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800/50 flex-shrink-0">
         <button
@@ -595,36 +595,33 @@ function DesktopWeekRow({
 
 function Nav() {
   return (
-    <nav className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm flex items-center justify-between pb-6 -mx-4 px-4 mb-6">
-      <div className="flex items-center gap-2">
-        <span className="text-2xl">&#x1F966;</span>
-        <span className="font-bold text-lg">brocco.run</span>
-      </div>
-      <div className="flex items-center gap-4 text-sm text-gray-400">
-        <Link href="/" className="hover:text-white transition-colors">Dashboard</Link>
-        <Link href="/chat" className="hover:text-white transition-colors">Chat</Link>
-        <Link href="/history" className="hover:text-white transition-colors">History</Link>
-        <Link href="/settings" className="hover:text-white transition-colors">Settings</Link>
+    <nav className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm -mx-4 px-4 mb-6">
+      <div className="hidden md:flex items-center justify-between pb-6">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl">&#x1F966;</span>
+          <span className="font-bold text-lg">brocco.run</span>
+        </div>
+        <div className="flex items-center gap-4 text-sm text-gray-400">
+          <Link href="/" className="hover:text-white transition-colors">Dashboard</Link>
+          <Link href="/chat" className="hover:text-white transition-colors">Chat</Link>
+          <Link href="/history" className="hover:text-white transition-colors">History</Link>
+          <Link href="/settings" className="hover:text-white transition-colors">Settings</Link>
+        </div>
       </div>
     </nav>
   );
 }
 
-// Mobile-only minimal nav
 function MobileNav({ planName, onNewPlan, starting }: { planName: string; onNewPlan: () => void; starting: boolean }) {
   return (
-    <nav className="safe-top flex items-center justify-between px-4 pb-3 border-b border-gray-800 bg-gray-950/95 backdrop-blur-sm flex-shrink-0">
+    <nav className="safe-top flex items-center justify-between px-4 pb-2 border-b border-gray-800 bg-gray-950/95 backdrop-blur-sm flex-shrink-0">
       <div className="flex items-center gap-2 min-w-0">
-        <span className="text-xl">&#x1F966;</span>
-        <span className="font-semibold text-sm truncate">{planName}</span>
+        <span className="text-lg">&#x1F966;</span>
+        <span className="font-semibold text-sm text-gray-300 truncate">{planName}</span>
       </div>
-      <div className="flex items-center gap-3 text-sm text-gray-400 flex-shrink-0">
-        <Link href="/" className="hover:text-white transition-colors">Dashboard</Link>
-        <Link href="/chat" className="hover:text-white transition-colors">Chat</Link>
-        <button onClick={onNewPlan} disabled={starting} className="text-xs text-gray-500 hover:text-white transition-colors">
-          {starting ? "..." : "New"}
-        </button>
-      </div>
+      <button onClick={onNewPlan} disabled={starting} className="text-xs text-gray-500 hover:text-white transition-colors flex-shrink-0">
+        {starting ? "..." : "+ New plan"}
+      </button>
     </nav>
   );
 }
@@ -732,7 +729,7 @@ function PlanPageContent() {
   return (
     <>
       {/* MOBILE VIEW */}
-      <div className="md:hidden h-screen flex flex-col">
+      <div className="md:hidden h-[calc(100vh-3.5rem)] flex flex-col">
         <MobileNav planName={plan.name} onNewPlan={handleNewPlan} starting={startingPlan} />
         <MobilePlanView
           weekList={weekList}
