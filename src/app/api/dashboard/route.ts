@@ -220,21 +220,73 @@ export async function GET() {
       ? new Date(activePlan.raceDate) < now
       : false;
 
-    // Weekly tasks for current week
+    // Current week info + tasks
     let weeklyTasks: Array<{ id: string; description: string; category: string; status: string }> = [];
+    let currentWeekNumber: number | null = null;
+    let totalWeeks = 0;
+    let currentPhaseName: string | null = null;
+    let currentWeekSessions = 0; // planned non-rest sessions
+    let completedSessions = 0;
+    let raceDate: string | null = null;
+    let goalRaceDisplay: string | null = null;
+
     if (activePlan) {
-      // Determine current week number from planned workouts
-      const todayStr = format(now, "yyyy-MM-dd");
-      const currentWeekWorkout = await prisma.plannedWorkout.findFirst({
-        where: {
-          planId: activePlan.id,
-          date: { gte: weekStart, lte: weekEnd },
-        },
-        select: { weekNumber: true },
+      raceDate = activePlan.raceDate ? activePlan.raceDate.toISOString() : null;
+      goalRaceDisplay = profile.goalRace || activePlan.name;
+
+      // Get all workouts to derive week info
+      const allWorkouts = await prisma.plannedWorkout.findMany({
+        where: { planId: activePlan.id },
+        select: { weekNumber: true, date: true, workoutType: true, activityType: true },
+        orderBy: { date: "asc" },
       });
-      if (currentWeekWorkout) {
+
+      const weekNums = new Set(allWorkouts.map((w) => w.weekNumber));
+      totalWeeks = weekNums.size;
+
+      // Find current week number
+      const thisWeekWorkouts = allWorkouts.filter((w) => {
+        const d = format(new Date(w.date), "yyyy-MM-dd");
+        return d >= format(weekStart, "yyyy-MM-dd") && d <= format(weekEnd, "yyyy-MM-dd");
+      });
+      if (thisWeekWorkouts.length > 0) {
+        currentWeekNumber = thisWeekWorkouts[0].weekNumber;
+        currentWeekSessions = thisWeekWorkouts.filter((w) => w.workoutType !== "rest").length;
+
+        // Count completed sessions (day-based: compatible activity exists on that date)
+        const todayStr = format(now, "yyyy-MM-dd");
+        for (const w of thisWeekWorkouts) {
+          if (w.workoutType === "rest") continue;
+          const wDate = format(new Date(w.date), "yyyy-MM-dd");
+          if (wDate > todayStr) continue; // future — not yet
+          const dayActs = currentWeekActivities.filter((a) => format(new Date(a.startDateLocal), "yyyy-MM-dd") === wDate);
+          const typeMap: Record<string, string[]> = { run: runTypes, cycle: ["Ride", "VirtualRide", "EBikeRide"], swim: ["Swim"], hike: ["Hike", "Walk"], strength: ["WeightTraining", "Workout"] };
+          const compatible = (typeMap[w.activityType] || []);
+          if (dayActs.some((a) => compatible.includes(a.activityType))) completedSessions++;
+        }
+      }
+
+      // Phase name from plan_weeks or plan_phases
+      if (currentWeekNumber) {
+        const planWeek = await prisma.planWeek.findFirst({
+          where: { planId: activePlan.id, weekNumber: currentWeekNumber },
+          include: { phase: { select: { name: true } } },
+        });
+        if (planWeek?.phase?.name) {
+          currentPhaseName = planWeek.phase.name;
+        } else {
+          const phase = await prisma.planPhase.findFirst({
+            where: { planId: activePlan.id, startWeek: { lte: currentWeekNumber }, endWeek: { gte: currentWeekNumber } },
+            select: { name: true },
+          });
+          currentPhaseName = phase?.name || null;
+        }
+      }
+
+      // Weekly tasks
+      if (currentWeekNumber) {
         const tasks = await prisma.weeklyTask.findMany({
-          where: { planId: activePlan.id, weekNumber: currentWeekWorkout.weekNumber },
+          where: { planId: activePlan.id, weekNumber: currentWeekNumber },
           orderBy: { category: "asc" },
           select: { id: true, description: true, category: true, status: true },
         });
@@ -261,9 +313,17 @@ export async function GET() {
       goalRace: profile.goalRace,
       goalTime: profile.goalTime,
       currentWeekKm: Math.round(currentWeekRunKm * 10) / 10,
-      currentWeekAllKm: Math.round(currentWeekAllKm * 10) / 10,
       crossTrainingSummary: crossSummary,
       currentWeekPlannedKm: Math.round(currentWeekPlannedKm * 10) / 10,
+      currentWeekSessions,
+      completedSessions,
+      currentWeekNumber,
+      totalWeeks,
+      currentPhaseName,
+      weekStartDate: format(weekStart, "MMM d"),
+      weekEndDate: format(weekEnd, "MMM d"),
+      raceDate,
+      goalRaceDisplay,
       carouselDays,
       weeklyData,
       recentActivities: recentActivities.map((a) => ({
