@@ -654,13 +654,9 @@ function PlanPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading]);
 
-  async function handleNewPlan() {
+  function handleNewPlan() {
     setStartingPlan(true);
-    try {
-      const res = await fetch("/api/plan/new-plan-session", { method: "POST" });
-      const data = await res.json();
-      router.push(`/chat/${data.id}`);
-    } catch { setStartingPlan(false); }
+    router.push(`/chat?msg=${encodeURIComponent("I'd like to build a new training plan")}`);
   }
 
   async function handleToggleTask(id: string, status: string) {

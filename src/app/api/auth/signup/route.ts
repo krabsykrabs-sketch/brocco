@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
       await tx.userProfile.create({
         data: {
           userId: newUser.id,
-          onboardingCompleted: false,
+          onboardingCompleted: true,
         },
       });
 

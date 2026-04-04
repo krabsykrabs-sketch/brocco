@@ -32,6 +32,8 @@ interface DashboardData {
   hasActivePlan: boolean;
   planExpired: boolean;
   activePlanName: string | null;
+  stravaConnected: boolean;
+  activityCount: number;
 }
 
 // --- Utilities ---
@@ -513,6 +515,61 @@ export default function Dashboard() {
   if (loading) return <main className="h-screen max-w-2xl mx-auto px-4 py-4"><NavBar /><div className="text-gray-500 text-center py-12">Loading...</div></main>;
   if (!data) return <main className="h-screen max-w-2xl mx-auto px-4 py-4"><NavBar /><div className="text-red-400 text-center py-12">Failed to load dashboard.</div></main>;
 
+  const showEmptyState = !data.hasActivePlan && !data.planExpired;
+
+  if (showEmptyState) {
+    return (
+      <main className="h-screen max-w-2xl mx-auto px-4 py-4 flex flex-col">
+        <NavBar />
+
+        <div className="flex-1 flex flex-col justify-center max-w-sm mx-auto w-full">
+          <h1 className="text-2xl font-bold text-white mb-1">Hey {data.userName} &#x1F966;</h1>
+          <p className="text-gray-400 text-sm mb-8">Welcome to brocco.run!</p>
+
+          {/* Connect Strava */}
+          {data.stravaConnected ? (
+            <div className="mb-3 bg-green-900/20 border border-green-800/40 rounded-xl p-4 flex items-center gap-3">
+              <span className="text-xl">&#x2705;</span>
+              <div>
+                <p className="text-sm font-medium text-green-400">Strava connected</p>
+                {data.activityCount > 0 && <p className="text-xs text-gray-500 mt-0.5">{data.activityCount} activities imported</p>}
+              </div>
+            </div>
+          ) : (
+            <Link
+              href="/api/strava/auth?returnTo=/"
+              className="mb-3 bg-gray-900 border border-gray-700 hover:border-gray-600 rounded-xl p-4 flex items-center gap-3 transition-colors"
+            >
+              <span className="text-xl">&#x1F3C3;</span>
+              <div>
+                <p className="text-sm font-medium text-white">Connect Strava</p>
+                <p className="text-xs text-gray-500 mt-0.5">Import your runs so Brocco knows your fitness level</p>
+              </div>
+            </Link>
+          )}
+
+          {/* Build my plan */}
+          <Link
+            href={`/chat?msg=${encodeURIComponent("I'd like to build a training plan")}`}
+            className={`mb-3 rounded-xl p-4 flex items-center gap-3 transition-colors ${
+              data.stravaConnected
+                ? "bg-green-600 hover:bg-green-700 border border-green-500/30"
+                : "bg-gray-900 border border-gray-700 hover:border-gray-600"
+            }`}
+          >
+            <span className="text-xl">&#x1F4AC;</span>
+            <div>
+              <p className={`text-sm font-medium ${data.stravaConnected ? "text-white" : "text-white"}`}>Build my plan</p>
+              <p className={`text-xs mt-0.5 ${data.stravaConnected ? "text-green-200/70" : "text-gray-500"}`}>Chat with Brocco to create your training plan</p>
+            </div>
+          </Link>
+
+          <p className="text-center text-xs text-gray-600 mt-4">or just explore the app first</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="h-screen max-w-2xl mx-auto px-4 py-4 flex flex-col">
       <NavBar />
@@ -523,16 +580,16 @@ export default function Dashboard() {
         {data.activePlanName && <p className="text-xs text-gray-400 mt-0.5">{data.activePlanName}</p>}
       </div>
 
-      {/* No plan prompt (replaces everything below if no plan) */}
-      {(!data.hasActivePlan || data.planExpired) && (
+      {/* Plan expired prompt */}
+      {data.planExpired && (
         <div className="mb-3 bg-green-900/20 border border-green-800/40 rounded-xl p-4 flex items-center gap-3 flex-shrink-0">
           <span className="text-2xl flex-shrink-0">&#x1F966;</span>
           <div className="flex-1">
             <p className="text-sm text-gray-200 font-medium">
-              {data.planExpired ? `${data.activePlanName || "Your plan"} is done!` : "No active plan yet."}
+              {data.activePlanName || "Your plan"} is done!
             </p>
           </div>
-          <Link href="/chat?startPlan=1" className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors flex-shrink-0">Build a plan</Link>
+          <Link href={`/chat?msg=${encodeURIComponent("I'd like to build a new training plan")}`} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors flex-shrink-0">Build a plan</Link>
         </div>
       )}
 

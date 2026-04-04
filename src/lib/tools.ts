@@ -170,7 +170,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: "save_profile",
     description:
-      "Save structured profile data and coaching notes. Used during onboarding interview and when users share new info in regular chat. Typed fields update user_profiles columns. coaching_notes_update is deep-merged into existing coaching_notes jsonb.",
+      "Save structured profile data and coaching notes. Used when users share personal info in chat. Typed fields update user_profiles columns. coaching_notes_update is deep-merged into existing coaching_notes jsonb.",
     input_schema: {
       type: "object" as const,
       properties: {

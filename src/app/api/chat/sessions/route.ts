@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { startOfDay, endOfDay } from "date-fns";
@@ -36,28 +36,37 @@ export async function GET() {
   }
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
     const session = await getSession();
     if (!session.userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Check if caller wants a fresh session (e.g. for auto-messages like "build my plan")
+    let forceNew = false;
+    try {
+      const body = await request.json();
+      forceNew = !!body?.forceNew;
+    } catch { /* no body = default behavior */ }
+
     const now = new Date();
 
-    // Reuse today's general session if one exists
-    const todaySession = await prisma.chatSession.findFirst({
-      where: {
-        userId: session.userId,
-        type: "general",
-        createdAt: { gte: startOfDay(now), lte: endOfDay(now) },
-      },
-      orderBy: { updatedAt: "desc" },
-      select: { id: true, title: true },
-    });
+    if (!forceNew) {
+      // Reuse today's general session if one exists
+      const todaySession = await prisma.chatSession.findFirst({
+        where: {
+          userId: session.userId,
+          type: "general",
+          createdAt: { gte: startOfDay(now), lte: endOfDay(now) },
+        },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true, title: true },
+      });
 
-    if (todaySession) {
-      return NextResponse.json({ id: todaySession.id, title: todaySession.title, reused: true });
+      if (todaySession) {
+        return NextResponse.json({ id: todaySession.id, title: todaySession.title, reused: true });
+      }
     }
 
     const chatSession = await prisma.chatSession.create({

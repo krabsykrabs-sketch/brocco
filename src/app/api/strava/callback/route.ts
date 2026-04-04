@@ -44,15 +44,12 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // If coming from settings, trigger backfill automatically
-    // From onboarding, sync is triggered separately with depth choice
-    if (returnTo === "/settings") {
-      backfillActivities(session.userId).then((count) => {
-        console.log(`Backfill complete for user ${session.userId}: ${count} activities`);
-      }).catch((err) => {
-        console.error(`Backfill error for user ${session.userId}:`, err);
-      });
-    }
+    // Always trigger backfill after Strava connect
+    backfillActivities(session.userId).then((count) => {
+      console.log(`Backfill complete for user ${session.userId}: ${count} activities`);
+    }).catch((err) => {
+      console.error(`Backfill error for user ${session.userId}:`, err);
+    });
 
     // Clear cookies and redirect
     const response = NextResponse.redirect(new URL(`${returnTo}?strava=connected`, process.env.BASE_URL));

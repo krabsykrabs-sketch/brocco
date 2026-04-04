@@ -139,11 +139,11 @@ function SessionSidebar({
 export default function ChatUI({
   sessionId: initialSessionId,
   initialMessages,
-  startPlanCreation,
+  autoMessage,
 }: {
   sessionId: string | null;
   initialMessages: Message[];
-  startPlanCreation?: boolean;
+  autoMessage?: string;
 }) {
   const router = useRouter();
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
@@ -256,26 +256,26 @@ export default function ChatUI({
   }
 
   // Auto-send Brocco opener for new general sessions
-  // Or start plan creation if startPlanCreation is set
+  // Or auto-send a pre-filled message if autoMessage is set
   useEffect(() => {
     if (initialSessionId || initialMessages.length > 0) return;
 
     let cancelled = false;
     async function initSession() {
       try {
-        if (startPlanCreation) {
-          // Create a plan_creation session and send first message
-          const res = await fetch("/api/plan/new-plan-session", { method: "POST" });
+        if (autoMessage) {
+          // Create a new session and auto-send the pre-filled message
+          const res = await fetch("/api/chat/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ forceNew: true }) });
           const data = await res.json();
           if (cancelled) return;
           setSessionId(data.id);
           window.history.replaceState(null, "", `/chat/${data.id}`);
 
-          // Send the first message to kick off the plan interview
+          // Send the pre-filled message
           const chatRes = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: "I'd like to build a training plan.", sessionId: data.id }),
+            body: JSON.stringify({ message: autoMessage, sessionId: data.id }),
           });
           if (cancelled || !chatRes.ok) return;
 
@@ -289,7 +289,7 @@ export default function ChatUI({
           setMessages([{
             id: `user-${Date.now()}`,
             role: "user",
-            displayText: "I'd like to build a training plan.",
+            displayText: autoMessage,
           }]);
 
           while (true) {

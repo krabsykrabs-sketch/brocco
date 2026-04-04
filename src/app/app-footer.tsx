@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 export function AppFooter() {
   const pathname = usePathname();
 
-  // Hide on chat, login, signup, onboarding pages
-  if (pathname.startsWith("/chat") || pathname.startsWith("/login") || pathname.startsWith("/signup") || pathname.startsWith("/onboarding")) return null;
+  // Hide on chat, login, signup pages
+  if (pathname.startsWith("/chat") || pathname.startsWith("/login") || pathname.startsWith("/signup")) return null;
 
   return (
     <footer className="hidden md:flex w-full justify-center items-center gap-3 py-4 opacity-60">

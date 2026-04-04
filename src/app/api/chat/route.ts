@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
-import { buildCoachContext, buildSystemPrompt, buildOnboardingSystemPrompt, buildPlanCreationSystemPrompt } from "@/lib/coach-context";
+import { buildCoachContext, buildSystemPrompt } from "@/lib/coach-context";
 import { toolDefinitions, handleToolCall } from "@/lib/tools";
 
 const anthropic = new Anthropic();
@@ -47,18 +47,8 @@ export async function POST(request: NextRequest) {
   });
   const userName = user?.name || "Runner";
 
-  let systemPrompt: string;
-  let context: string;
-  if (chatSession.type === "onboarding") {
-    systemPrompt = await buildOnboardingSystemPrompt(session.userId, userName);
-    context = "";
-  } else if (chatSession.type === "plan_creation") {
-    systemPrompt = await buildPlanCreationSystemPrompt(session.userId, userName);
-    context = "";
-  } else {
-    context = await buildCoachContext(session.userId);
-    systemPrompt = buildSystemPrompt(userName, context);
-  }
+  const context = await buildCoachContext(session.userId);
+  const systemPrompt = await buildSystemPrompt(session.userId, userName, context);
 
   // Store user message
   await prisma.chatMessage.create({
@@ -124,8 +114,7 @@ export async function POST(request: NextRequest) {
           assistantMsg.id,
           controller,
           encoder,
-          model,
-          chatSession.type as string
+          model
         );
 
         // Update assistant message with final text
@@ -184,15 +173,14 @@ async function runWithTools(
   controller: ReadableStreamDefaultController,
   encoder: TextEncoder,
   model: string,
-  sessionType: string,
   maxIterations = 5
 ): Promise<ToolUseResult> {
   let fullText = "";
   let currentMessages = [...messages];
 
-  // Plan creation needs much higher max_tokens because generate_plan
-  // outputs 70+ workouts as JSON in a single tool call (~12k+ tokens)
-  const maxTokens = sessionType === "plan_creation" ? 32000 : 8192;
+  // High max_tokens needed because generate_plan can output 70+ workouts
+  // as JSON in a single tool call (~12k+ tokens). Any session can trigger plan creation.
+  const maxTokens = 32000;
 
   for (let i = 0; i < maxIterations; i++) {
     const stream = anthropic.messages.stream({
@@ -214,7 +202,7 @@ async function runWithTools(
 
     // Detect truncation — if response was cut off, the tool call may be incomplete
     if (response.stop_reason === "max_tokens") {
-      console.warn(`[chat] Response truncated (max_tokens=${maxTokens}, session=${sessionId}, type=${sessionType})`);
+      console.warn(`[chat] Response truncated (max_tokens=${maxTokens}, session=${sessionId})`);
     }
 
     // Process response content blocks

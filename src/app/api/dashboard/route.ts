@@ -308,10 +308,16 @@ export async function GET() {
       },
     });
 
+    // Strava connection status + activity count for empty state
+    const stravaConnected = !!profile.stravaAccessToken;
+    const activityCount = await prisma.activity.count({ where: { userId } });
+
     return NextResponse.json({
       userName: user?.name || "Runner",
       goalRace: profile.goalRace,
       goalTime: profile.goalTime,
+      stravaConnected,
+      activityCount,
       currentWeekKm: Math.round(currentWeekRunKm * 10) / 10,
       crossTrainingSummary: crossSummary,
       currentWeekPlannedKm: Math.round(currentWeekPlannedKm * 10) / 10,

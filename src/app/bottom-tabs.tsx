@@ -71,7 +71,7 @@ const tabs = [
 ];
 
 // Pages where tabs should be hidden
-const HIDDEN_ON = ["/login", "/signup", "/onboarding", "/legal"];
+const HIDDEN_ON = ["/login", "/signup", "/legal"];
 
 export function BottomTabBar() {
   const pathname = usePathname();

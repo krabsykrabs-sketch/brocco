@@ -6,9 +6,9 @@ import ChatUI from "./chat-ui";
 
 function ChatPageContent() {
   const searchParams = useSearchParams();
-  const startPlan = searchParams.get("startPlan") === "1";
+  const msg = searchParams.get("msg") || undefined;
 
-  return <ChatUI sessionId={null} initialMessages={[]} startPlanCreation={startPlan} />;
+  return <ChatUI sessionId={null} initialMessages={[]} autoMessage={msg} />;
 }
 
 export default function NewChatPage() {
