@@ -244,8 +244,13 @@ function PlanCreationChat({
     ToolNotification[]
   >([]);
   const [interviewStarted, setInterviewStarted] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [micSupported, setMicSupported] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -403,10 +408,66 @@ function PlanCreationChat({
     await sendMessage(sessionId, text);
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+  // Detect MediaRecorder support
+  useEffect(() => {
+    setMicSupported(typeof window !== "undefined" && !!window.MediaRecorder);
+  }, []);
+
+  async function toggleRecording() {
+    if (recording) {
+      mediaRecorderRef.current?.stop();
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4",
+      });
+      mediaRecorderRef.current = recorder;
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        setRecording(false);
+
+        const chunks = audioChunksRef.current;
+        if (chunks.length === 0) return;
+
+        const blob = new Blob(chunks, { type: recorder.mimeType });
+        setTranscribing(true);
+
+        try {
+          const form = new FormData();
+          form.append("audio", blob, `recording.${recorder.mimeType.includes("webm") ? "webm" : "mp4"}`);
+
+          const res = await fetch("/api/voice/transcribe", { method: "POST", body: form });
+          if (res.ok) {
+            const { text } = await res.json();
+            if (text) {
+              const newValue = input ? input + " " + text : text;
+              setInput(newValue);
+              if (inputRef.current) {
+                inputRef.current.style.height = "auto";
+                inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 160) + "px";
+              }
+            }
+          }
+        } catch {
+          // Transcription failed silently
+        } finally {
+          setTranscribing(false);
+        }
+      };
+
+      recorder.start();
+      setRecording(true);
+    } catch {
+      // Mic access denied or not available
     }
   }
 
@@ -508,14 +569,40 @@ function PlanCreationChat({
           <textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
+            onChange={(e) => {
+              setInput(e.target.value);
+              const el = e.target;
+              el.style.height = "auto";
+              el.style.height = Math.min(el.scrollHeight, 160) + "px";
+            }}
             placeholder="Talk to Brocco..."
             rows={1}
             className="flex-1 px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none text-sm"
-            style={{ maxHeight: "120px" }}
+            style={{ height: "auto", maxHeight: "160px", overflow: "auto" }}
             disabled={sending}
           />
+          {micSupported && (
+            <button
+              onClick={toggleRecording}
+              disabled={sending || transcribing}
+              className={`p-2.5 rounded-xl transition-colors flex-shrink-0 ${
+                recording
+                  ? "bg-red-600 hover:bg-red-700 text-white animate-pulse"
+                  : transcribing
+                  ? "bg-yellow-600/50 text-yellow-300"
+                  : "bg-gray-800 hover:bg-gray-700 text-gray-400"
+              } disabled:opacity-40 disabled:cursor-not-allowed`}
+              title={recording ? "Stop recording" : transcribing ? "Transcribing..." : "Voice input"}
+            >
+              {transcribing ? (
+                <span className="inline-block w-5 h-5 border-2 border-yellow-300/30 border-t-yellow-300 rounded-full animate-spin" />
+              ) : (
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m-4 0h8M12 3a3 3 0 00-3 3v4a3 3 0 006 0V6a3 3 0 00-3-3z" />
+                </svg>
+              )}
+            </button>
+          )}
           <button
             onClick={handleSend}
             disabled={sending || !input.trim()}
@@ -524,18 +611,8 @@ function PlanCreationChat({
             {sending ? (
               <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
             ) : (
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M5 12h14M12 5l7 7-7 7"
-                />
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
               </svg>
             )}
           </button>
