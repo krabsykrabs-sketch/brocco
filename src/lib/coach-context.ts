@@ -382,7 +382,24 @@ AVAILABLE TOOLS:
 - log_activity: log a manual activity not on Strava
 - query_data: fetch historical training data
 - save_profile: save profile data and coaching notes
-- add_weekly_tasks: add weekly tasks (strength, mobility, nutrition, recovery) to the plan`;
+- add_weekly_tasks: add weekly tasks (strength, mobility, nutrition, recovery) to the plan
+
+STATUS LINES:
+At the end of every message, include a status line that summarizes the key takeaway or next step. Wrap it in a tag like this:
+
+[STATUS:question]Your question or what you need from the runner[/STATUS] — when you're asking the runner something or need confirmation
+[STATUS:done]What was completed[/STATUS] — when you've completed an action (plan created, workout adjusted, profile updated, health logged)
+[STATUS:info]Key insight or reminder[/STATUS] — when sharing analysis, advice, or information that doesn't require a response
+
+Keep the status text short — one line, max 10-15 words. Examples:
+[STATUS:question]Does this plan look good? Say yes to build it.[/STATUS]
+[STATUS:question]How many days per week can you train?[/STATUS]
+[STATUS:done]Plan created! Check your Plan tab.[/STATUS]
+[STATUS:done]Workout adjusted — Friday is now a rest day.[/STATUS]
+[STATUS:info]Your pace is trending faster — great progress.[/STATUS]
+[STATUS:info]Tomorrow's long run is the key session this week.[/STATUS]
+
+Always include exactly one status line at the very end of your message. Never skip it.`;
 }
 
 /**

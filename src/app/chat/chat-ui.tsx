@@ -48,6 +48,32 @@ function ToolNotificationBadge({ notification }: { notification: ToolNotificatio
   );
 }
 
+function parseStatus(text: string): { cleanText: string; statusType: string | null; statusText: string | null } {
+  const match = text.match(/\[STATUS:(question|done|info)\](.*?)\[\/STATUS\]/);
+  if (!match) return { cleanText: text, statusType: null, statusText: null };
+  return {
+    cleanText: text.replace(match[0], "").trim(),
+    statusType: match[1],
+    statusText: match[2],
+  };
+}
+
+const statusStyles: Record<string, { bg: string; icon: string }> = {
+  question: { bg: "bg-amber-900/40 border border-amber-600/50 text-amber-200", icon: "\uD83D\uDFE1" },
+  done: { bg: "bg-green-900/40 border border-green-600/50 text-green-200", icon: "\uD83D\uDFE2" },
+  info: { bg: "bg-blue-900/40 border border-blue-600/50 text-blue-200", icon: "\uD83D\uDD35" },
+};
+
+function StatusStrip({ type, text }: { type: string; text: string }) {
+  const style = statusStyles[type] || statusStyles.info;
+  return (
+    <div className={`${style.bg} rounded-lg px-3 py-1.5 mt-2 flex items-center gap-2`}>
+      <span className="text-xs flex-shrink-0">{style.icon}</span>
+      <span className="text-xs font-medium">{text}</span>
+    </div>
+  );
+}
+
 function MessageBubble({ msg }: { msg: Message }) {
   if (msg.role === "user") {
     return (
@@ -59,6 +85,10 @@ function MessageBubble({ msg }: { msg: Message }) {
     );
   }
 
+  const { cleanText, statusType, statusText } = msg.displayText
+    ? parseStatus(msg.displayText)
+    : { cleanText: null, statusType: null, statusText: null };
+
   return (
     <div className="flex gap-2 mb-3 items-start">
       <div className="w-7 h-7 rounded-full bg-green-900/50 flex items-center justify-center flex-shrink-0 mt-0.5 text-sm">
@@ -68,9 +98,12 @@ function MessageBubble({ msg }: { msg: Message }) {
         {msg.toolNotifications?.map((n, i) => (
           <ToolNotificationBadge key={i} notification={n} />
         ))}
-        {msg.displayText && (
+        {cleanText && (
           <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5">
-            <p className="text-sm text-gray-200 whitespace-pre-wrap">{msg.displayText}</p>
+            <p className="text-sm text-gray-200 whitespace-pre-wrap">{cleanText}</p>
+            {statusType && statusText && (
+              <StatusStrip type={statusType} text={statusText} />
+            )}
           </div>
         )}
       </div>
@@ -604,11 +637,17 @@ export default function ChatUI({
               {streamingNotifications.map((n, i) => (
                 <ToolNotificationBadge key={i} notification={n} />
               ))}
-              {streamingText && (
-                <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5">
-                  <p className="text-sm text-gray-200 whitespace-pre-wrap">{streamingText}</p>
-                </div>
-              )}
+              {streamingText && (() => {
+                const { cleanText, statusType, statusText } = parseStatus(streamingText);
+                return (
+                  <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5">
+                    <p className="text-sm text-gray-200 whitespace-pre-wrap">{cleanText}</p>
+                    {statusType && statusText && (
+                      <StatusStrip type={statusType} text={statusText} />
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
