@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { DesktopNavLinks } from "@/app/nav";
 
 interface Message {
   id: string;
@@ -598,12 +598,7 @@ export default function ChatUI({
           </div>
         </div>
         {/* Desktop nav only */}
-        <div className="hidden md:flex items-center gap-4 text-sm text-gray-400">
-          <Link href="/" className="hover:text-white transition-colors">Dashboard</Link>
-          <Link href="/plan" className="hover:text-white transition-colors">Plan</Link>
-          <Link href="/history" className="hover:text-white transition-colors">History</Link>
-          <Link href="/settings" className="hover:text-white transition-colors">Settings</Link>
-        </div>
+        <DesktopNavLinks />
       </header>
 
       {/* Sidebar */}

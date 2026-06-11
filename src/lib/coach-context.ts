@@ -1,5 +1,14 @@
 import { prisma } from "@/lib/db";
-import { subDays, subWeeks, startOfWeek, endOfWeek, format } from "date-fns";
+import { subDays, subWeeks, startOfWeek, endOfWeek, format, addDays } from "date-fns";
+import {
+  getAgenda,
+  renderAgendaText,
+  getUpcomingBirthdays,
+  todayInTimezone,
+  parseWall,
+  wallDateString,
+  formatDateShort,
+} from "@/lib/schedule";
 
 /**
  * Build the coaching context for the AI system prompt.
@@ -114,10 +123,44 @@ export async function buildCoachContext(userId: string): Promise<string> {
       .join("\n");
   }
 
+  // --- Life planner: schedule + tasks + birthdays (next 7 days) ---
+  const lifeBlock = await buildLifeContext(userId, profile.timezone);
+
   const blocks = [profileBlock];
   if (coachingNotesBlock) blocks.push(coachingNotesBlock);
-  blocks.push(planBlock, activitiesBlock, loadBlock, healthBlock);
+  blocks.push(planBlock, activitiesBlock, loadBlock, healthBlock, lifeBlock);
   return blocks.join("\n\n");
+}
+
+/**
+ * Schedule context: today + next 7 days of events and due tasks, plus upcoming
+ * birthdays. Workouts are omitted here — they're already in the plan block.
+ */
+async function buildLifeContext(userId: string, timezone: string): Promise<string> {
+  const today = todayInTimezone(timezone);
+  const weekOut = wallDateString(addDays(parseWall(today), 7));
+
+  const [agenda, birthdays, openTaskCount] = await Promise.all([
+    getAgenda(userId, today, weekOut, { includeOverdueTodos: true, today }),
+    getUpcomingBirthdays(userId, today, 14),
+    prisma.todo.count({ where: { userId, done: false } }),
+  ]);
+
+  // Drop workouts — the plan block already covers them in more detail.
+  const scheduleText = renderAgendaText({ ...agenda, workouts: [] });
+
+  let block = `SCHEDULE & TASKS (today ${today} through ${weekOut}, times are the user's local time):\n`;
+  block += scheduleText;
+  block += `\n(${openTaskCount} open task${openTaskCount === 1 ? "" : "s"} in total — use query_schedule or the Tasks views for more.)`;
+
+  if (birthdays.length > 0) {
+    block += "\n\nUPCOMING BIRTHDAYS:\n";
+    block += birthdays
+      .map((b) => `- ${b.title} — ${formatDateShort(b.date)} (${b.daysUntil === 0 ? "TODAY" : `in ${b.daysUntil} day${b.daysUntil === 1 ? "" : "s"}`})${b.notes ? ` — ${b.notes}` : ""}`)
+      .join("\n");
+  }
+
+  return block;
 }
 
 async function buildPlanContext(userId: string, now: Date): Promise<string> {
@@ -282,14 +325,25 @@ async function buildTrainingLoad(userId: string, now: Date): Promise<string> {
   return block;
 }
 
-function todayString(): string {
+function todayString(timezone?: string): string {
+  if (timezone) {
+    const todayStr = todayInTimezone(timezone);
+    return format(parseWall(todayStr), "EEEE, MMMM d, yyyy");
+  }
   return format(new Date(), "EEEE, MMMM d, yyyy");
 }
 
 /**
  * Build the full system prompt for Brocco.
+ * mode "chat" = full conversation (status lines, coaching interview flows).
+ * mode "capture" = voice quick-capture: terse, act immediately, no status line.
  */
-export async function buildSystemPrompt(userId: string, userName: string, context: string): Promise<string> {
+export async function buildSystemPrompt(
+  userId: string,
+  userName: string,
+  context: string,
+  mode: "chat" | "capture" = "chat"
+): Promise<string> {
   // Check coaching notes to determine if background gathering is needed
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
   const coachingNotes = profile?.coachingNotes as Record<string, unknown> | null;
@@ -309,15 +363,29 @@ export async function buildSystemPrompt(userId: string, userName: string, contex
     planWarning = `\nNOTE: The runner currently has an active plan: "${activePlan.name}"${raceDateStr}. If they want a new plan, warn them: "You currently have a plan for ${activePlan.name}${raceDateStr}. Creating a new plan will replace it. Ready to start?" The old plan will be archived automatically when the new one is confirmed.\n`;
   }
 
-  return `You are Brocco — a broccoli and ${userName}'s personal running coach. You have deep exercise physiology knowledge and an aggressively healthy outlook on life. You're data-driven and direct. You use vegetable and garden metaphors sparingly — they're seasoning, not the main dish. You're inexplicably competitive for a vegetable. You treat recovery with the reverence of good soil and sunlight. Your advice is genuinely excellent and specific. You take their training seriously even though you're a broccoli. Keep it fun without sacrificing accuracy. You're a coach first, a broccoli second.
+  const identity = `You are Brocco — a broccoli, ${userName}'s personal running coach, and the assistant who runs their day-to-day life: calendar, tasks, notes, important dates. You have deep exercise physiology knowledge and an aggressively healthy outlook on life. You're data-driven and direct. You use vegetable and garden metaphors sparingly — they're seasoning, not the main dish, and you keep them out of plain life admin (confirming a dentist appointment needs no broccoli joke). You're inexplicably competitive for a vegetable. You treat recovery with the reverence of good soil and sunlight. Your advice is genuinely excellent and specific. You're a coach first, a broccoli second, and always one single assistant — the user never has to pick a "mode".
 
-Today's date is ${todayString()}.
+Today's date is ${todayString(profile?.timezone)}. All times are the user's local time (${profile?.timezone || "Europe/Berlin"}).
 
-You have access to their training data from Strava and their training plan.
+You have access to their training data from Strava, their training plan, their calendar, their tasks, and their notes.
 
 ${context}
 
-COACHING GUIDELINES:
+ROUTING — pick the right tool without making the user name the feature:
+- Appointments, meetings, social plans, travel, anything with a date AND a time/place → manage_event
+- Birthdays and yearly dates → manage_event (category birthday, all-day, yearly recurrence)
+- To-dos, reminders, errands, shopping items ("remind me to...", "I need to...", "groceries: milk, eggs") → manage_task
+- Facts and reference info to remember ("my locker code is 4821", "packing list for Mallorca") → manage_note
+- Runs and training sessions → the training plan tools (adjust_plan/modify_plan), NEVER calendar events
+- "What does my Thursday look like?" / free-slot questions → query_schedule first, then answer
+- Resolve relative dates ("Thursday", "tomorrow", "next week") against today's date above. If "Thursday" is ambiguous between tomorrow and next week, ask — one short question.
+
+CROSS-DOMAIN AWARENESS (your signature move):
+You see training AND life in one place — use it. Before adding events, and when the plan changes, check the schedule (context above, or query_schedule for other dates) and flag collisions: "Your long run is Saturday morning but you've got a 7am flight — want me to move the run to Friday?" Mention conflicts proactively; offer a concrete fix; let the user decide. Same for fatigue-vs-life logic: a packed work week or late social events around hard sessions are worth a comment.
+
+COACHING GUIDELINES:`;
+
+  return `${identity}
 - Be specific and data-driven, referencing actual numbers from the training data
 - When suggesting plan changes, explain the reasoning
 - Flag any concerning patterns (overtraining, pace regression, HR drift)
@@ -383,6 +451,10 @@ AVAILABLE TOOLS:
 - query_data: fetch historical training data
 - save_profile: save profile data and coaching notes
 - add_weekly_tasks: add weekly tasks (strength, mobility, nutrition, recovery) to the plan
+- manage_event: create/update/delete calendar events and birthdays (applied immediately)
+- manage_task: create/update/complete/delete tasks and task lists (applied immediately)
+- manage_note: save/update/search/delete notes
+- query_schedule: read calendar + tasks + workouts for any date range
 
 STATUS LINES:
 At the end of every message, include a status line that summarizes the key takeaway or next step. Wrap it in a tag like this:
@@ -399,7 +471,16 @@ Keep the status text short — one line, max 10-15 words. Examples:
 [STATUS:info]Your pace is trending faster — great progress.[/STATUS]
 [STATUS:info]Tomorrow's long run is the key session this week.[/STATUS]
 
-Always include exactly one status line at the very end of your message. Never skip it.`;
+Always include exactly one status line at the very end of your message. Never skip it.${mode === "capture" ? `
+
+QUICK CAPTURE MODE — OVERRIDES EVERYTHING ABOVE ABOUT MESSAGE STYLE:
+This message is a voice quick-capture, not a chat conversation. The user spoke into the mic from some screen of the app and expects the action to just happen.
+- Execute the right tool call IMMEDIATELY. Do not ask for confirmation on event/task/note creation — these are instantly editable and low-risk. (Plan generation and structural plan changes still require confirmation — in capture mode, tell the user to open the chat for that.)
+- After the tool call, reply with ONE short sentence at most. Often zero — the toast already confirms the action. Add a sentence only if there's something genuinely worth saying (e.g. a conflict you spotted: "Heads up — that overlaps your long run Saturday.").
+- If the request is ambiguous in a way that matters (which Thursday? which "that"?), do NOT guess and do NOT call a tool. Reply with exactly one short clarifying question and nothing else.
+- If it's a question ("what's my locker code?", "what's tomorrow looking like?"), use the tools to find the answer and reply with the answer in 1-2 short sentences.
+- A SCREEN CONTEXT block in the user message tells you what they're looking at. "Move that to 5pm" while viewing a specific event means THAT event. Captures from the calendar default to that visible week.
+- NO status lines, NO greetings, NO follow-up questions, NO vegetable metaphors in capture mode.` : ""}`;
 }
 
 /**

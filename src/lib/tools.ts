@@ -320,6 +320,120 @@ export const toolDefinitions: Anthropic.Tool[] = [
       required: ["tasks"],
     },
   },
+  {
+    name: "manage_event",
+    description:
+      "Create, update, or delete calendar events. Use for appointments, meetings, social plans, travel, and birthdays. Birthdays: category 'birthday', all_day true, recurrence yearly, title like \"Anna's birthday\". For training runs, do NOT create events — workouts live in the training plan (use adjust_plan/modify_plan). Times are the user's local time.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["create", "update", "delete"] },
+        event_id: { type: "string", description: "Required for update/delete" },
+        title: { type: "string" },
+        start: {
+          type: "string",
+          description: "Local start: 'yyyy-MM-ddTHH:mm', or 'yyyy-MM-dd' for all-day",
+        },
+        end: { type: "string", description: "Local end time 'yyyy-MM-ddTHH:mm' (optional)" },
+        all_day: { type: "boolean" },
+        location: { type: "string" },
+        notes: { type: "string" },
+        category: {
+          type: "string",
+          enum: ["work", "family", "training", "social", "health", "birthday", "other"],
+        },
+        recurrence: {
+          type: "object",
+          description: "Optional recurrence rule",
+          properties: {
+            freq: { type: "string", enum: ["none", "daily", "weekly", "monthly", "yearly"] },
+            interval: { type: "integer", description: "Every N periods, default 1" },
+            until: { type: "string", description: "Last date 'yyyy-MM-dd' (optional)" },
+            count: { type: "integer", description: "Total occurrences (optional)" },
+          },
+        },
+        reminder_minutes: { type: "integer", description: "Reminder offset before start" },
+        delete_scope: {
+          type: "string",
+          enum: ["occurrence", "series"],
+          description: "For deleting from a recurring event: one occurrence or the whole series. Default series.",
+        },
+        occurrence_date: {
+          type: "string",
+          description: "'yyyy-MM-dd' of the occurrence, required when delete_scope=occurrence",
+        },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "manage_task",
+    description:
+      "Create, update, complete, or delete to-dos and task lists. Tasks can have due dates, priority, recurrence ('water plants every Sunday'), subtasks, and a list (e.g. Groceries, House). Tasks without a list land in the Inbox. Reference lists by name — they're created automatically. For multiple items ('groceries: milk, eggs, coffee') create one task per item in the right list.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        action: {
+          type: "string",
+          enum: ["create", "update", "complete", "reopen", "delete", "create_list", "rename_list", "delete_list"],
+        },
+        task_id: { type: "string", description: "For update/complete/reopen/delete" },
+        title: { type: "string" },
+        notes: { type: "string" },
+        due_date: { type: "string", description: "'yyyy-MM-dd' (optional)" },
+        due_time: { type: "string", description: "'HH:mm' local (optional)" },
+        priority: { type: "string", enum: ["low", "medium", "high"] },
+        list: { type: "string", description: "List name; omit for Inbox" },
+        parent_task_id: { type: "string", description: "Make this a subtask of another task" },
+        subtasks: {
+          type: "array",
+          items: { type: "string" },
+          description: "Subtask titles to create alongside (create only)",
+        },
+        recurrence: {
+          type: "object",
+          properties: {
+            freq: { type: "string", enum: ["none", "daily", "weekly", "monthly", "yearly"] },
+            interval: { type: "integer", description: "Every N periods, default 1" },
+          },
+        },
+        list_id: { type: "string", description: "For rename_list/delete_list" },
+        new_name: { type: "string", description: "For rename_list" },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "manage_note",
+    description:
+      "Save, update, search, or delete notes — quick facts ('locker code is 4821'), lists (packing list), reference info. Use search before answering questions about previously stored facts. 'append' adds text to an existing note's body.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["create", "update", "append", "search", "delete"] },
+        note_id: { type: "string", description: "For update/append/delete" },
+        title: { type: "string" },
+        body: { type: "string" },
+        tags: { type: "array", items: { type: "string" } },
+        query: { type: "string", description: "Search text (action=search) — matches title, body, tags" },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "query_schedule",
+    description:
+      "Read the unified schedule — calendar events, planned workouts from the training plan, and due tasks — for a date range. Use to answer 'what does my Thursday look like', to find free slots, and ALWAYS before scheduling something new, so you can flag conflicts (e.g. a long run colliding with an early flight).",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        date_from: { type: "string", description: "'yyyy-MM-dd'" },
+        date_to: { type: "string", description: "'yyyy-MM-dd' (inclusive)" },
+        include_overdue_tasks: { type: "boolean", description: "Also list overdue open tasks. Default true." },
+      },
+      required: ["date_from", "date_to"],
+    },
+  },
 ];
 
 // --- Tool handlers ---
@@ -359,6 +473,14 @@ export async function handleToolCall(
       return handleGeneratePlan(input, userId, chatMessageId);
     case "add_weekly_tasks":
       return handleAddWeeklyTasks(input, userId);
+    case "manage_event":
+      return handleManageEvent(input, userId);
+    case "manage_task":
+      return handleManageTask(input, userId);
+    case "manage_note":
+      return handleManageNote(input, userId);
+    case "query_schedule":
+      return handleQuerySchedule(input, userId);
     default:
       return { success: false, error: `Unknown tool: ${toolName}` };
   }
@@ -924,6 +1046,409 @@ async function handleAddWeeklyTasks(
       type: "tasks_added",
       message: `Added ${taskData.length} weekly task${taskData.length > 1 ? "s" : ""} to your plan`,
     },
+  };
+}
+
+// --- Life planner tools ---
+
+import {
+  parseWall,
+  formatDateShort,
+  formatTimeShort,
+  getAgenda,
+  renderAgendaText,
+  todayInTimezone,
+} from "@/lib/schedule";
+import { setTodoDone, resolveListByName, parseDueDate } from "@/lib/todos";
+import type { EventCategory, RecurrenceFreq, TodoPriority } from "@prisma/client";
+
+const EVENT_CATEGORIES = ["work", "family", "training", "social", "health", "birthday", "other"];
+const RECURRENCE_FREQS = ["none", "daily", "weekly", "monthly", "yearly"];
+const TODO_PRIORITIES = ["low", "medium", "high"];
+
+function parseStartInput(start: string, allDayFlag?: boolean): { startAt: Date; allDay: boolean } {
+  const allDay = allDayFlag ?? start.length <= 10;
+  return { startAt: parseWall(start), allDay };
+}
+
+function eventToast(title: string, startAt: Date, allDay: boolean): string {
+  const dateStr = startAt.toISOString().slice(0, 10);
+  const time = allDay ? "" : ` ${formatTimeShort(startAt.toISOString().slice(0, 16))}`;
+  return `${title} — ${formatDateShort(dateStr)}${time}`;
+}
+
+async function handleManageEvent(
+  input: Record<string, unknown>,
+  userId: string
+): Promise<ToolResult> {
+  const action = input.action as string;
+  const rec = (input.recurrence || {}) as { freq?: string; interval?: number; until?: string; count?: number };
+  const recurrenceFreq = (RECURRENCE_FREQS.includes(rec.freq || "") ? rec.freq : "none") as RecurrenceFreq;
+
+  if (action === "create") {
+    if (!input.title || !input.start) {
+      return { success: false, error: "title and start are required to create an event" };
+    }
+    const { startAt, allDay } = parseStartInput(input.start as string, input.all_day as boolean | undefined);
+    const event = await prisma.event.create({
+      data: {
+        userId,
+        title: input.title as string,
+        location: (input.location as string) || null,
+        notes: (input.notes as string) || null,
+        category: (EVENT_CATEGORIES.includes(input.category as string) ? input.category : "other") as EventCategory,
+        startAt,
+        endAt: input.end ? parseWall(input.end as string) : null,
+        allDay,
+        recurrence: recurrenceFreq,
+        recurrenceInterval: rec.interval && rec.interval > 0 ? rec.interval : 1,
+        recurrenceUntil: rec.until ? parseWall(rec.until) : null,
+        recurrenceCount: rec.count || null,
+        reminderMinutes: input.reminder_minutes != null ? Number(input.reminder_minutes) : null,
+      },
+    });
+    return {
+      success: true,
+      data: { event_id: event.id, title: event.title, start: event.startAt.toISOString().slice(0, 16) },
+      notification: {
+        type: "event_created",
+        message: eventToast(event.title, event.startAt, event.allDay),
+        data: { id: event.id, domain: "calendar" },
+      },
+    };
+  }
+
+  if (action === "update") {
+    const event = await prisma.event.findFirst({ where: { id: input.event_id as string, userId } });
+    if (!event) return { success: false, error: "Event not found" };
+
+    const data: Record<string, unknown> = {};
+    if (input.title !== undefined) data.title = input.title;
+    if (input.location !== undefined) data.location = input.location || null;
+    if (input.notes !== undefined) data.notes = input.notes || null;
+    if (input.category !== undefined && EVENT_CATEGORIES.includes(input.category as string)) data.category = input.category;
+    if (input.start !== undefined) {
+      const { startAt, allDay } = parseStartInput(input.start as string, input.all_day as boolean | undefined);
+      data.startAt = startAt;
+      if (input.all_day !== undefined || (input.start as string).length <= 10) data.allDay = allDay;
+    } else if (input.all_day !== undefined) {
+      data.allDay = !!input.all_day;
+    }
+    if (input.end !== undefined) data.endAt = input.end ? parseWall(input.end as string) : null;
+    if (input.reminder_minutes !== undefined) data.reminderMinutes = input.reminder_minutes != null ? Number(input.reminder_minutes) : null;
+    if (input.recurrence !== undefined) {
+      data.recurrence = recurrenceFreq;
+      data.recurrenceInterval = rec.interval && rec.interval > 0 ? rec.interval : 1;
+      data.recurrenceUntil = rec.until ? parseWall(rec.until) : null;
+      data.recurrenceCount = rec.count || null;
+    }
+
+    const updated = await prisma.event.update({ where: { id: event.id }, data });
+    return {
+      success: true,
+      data: { event_id: updated.id, title: updated.title, start: updated.startAt.toISOString().slice(0, 16) },
+      notification: {
+        type: "event_updated",
+        message: eventToast(updated.title, updated.startAt, updated.allDay),
+        data: { id: updated.id, domain: "calendar" },
+      },
+    };
+  }
+
+  if (action === "delete") {
+    const event = await prisma.event.findFirst({ where: { id: input.event_id as string, userId } });
+    if (!event) return { success: false, error: "Event not found" };
+
+    if (input.delete_scope === "occurrence" && event.recurrence !== "none") {
+      if (!input.occurrence_date) {
+        return { success: false, error: "occurrence_date required when delete_scope=occurrence" };
+      }
+      const exdates = Array.isArray(event.exdates) ? (event.exdates as string[]) : [];
+      const dateStr = (input.occurrence_date as string).slice(0, 10);
+      if (!exdates.includes(dateStr)) exdates.push(dateStr);
+      await prisma.event.update({ where: { id: event.id }, data: { exdates } });
+      return {
+        success: true,
+        data: { event_id: event.id, removed_occurrence: dateStr },
+        notification: {
+          type: "event_deleted",
+          message: `${event.title} removed on ${formatDateShort(dateStr)}`,
+          data: { id: event.id, domain: "calendar" },
+        },
+      };
+    }
+
+    await prisma.event.delete({ where: { id: event.id } });
+    return {
+      success: true,
+      data: { event_id: event.id, deleted: true },
+      notification: {
+        type: "event_deleted",
+        message: `${event.title} deleted`,
+        data: { id: event.id, domain: "calendar" },
+      },
+    };
+  }
+
+  return { success: false, error: `Unknown manage_event action: ${action}` };
+}
+
+async function handleManageTask(
+  input: Record<string, unknown>,
+  userId: string
+): Promise<ToolResult> {
+  const action = input.action as string;
+  const rec = (input.recurrence || {}) as { freq?: string; interval?: number };
+  const recurrenceFreq = (RECURRENCE_FREQS.includes(rec.freq || "") ? rec.freq : "none") as RecurrenceFreq;
+
+  if (action === "create") {
+    if (!input.title) return { success: false, error: "title is required" };
+    let listId: string | null = null;
+    let listName: string | null = null;
+    if (input.list) {
+      const list = await resolveListByName(userId, input.list as string);
+      listId = list.id;
+      listName = list.name;
+    }
+    const dueDate = parseDueDate(input.due_date);
+    const task = await prisma.todo.create({
+      data: {
+        userId,
+        listId,
+        parentId: (input.parent_task_id as string) || null,
+        title: input.title as string,
+        notes: (input.notes as string) || null,
+        dueDate,
+        dueTime: (input.due_time as string) || null,
+        priority: (TODO_PRIORITIES.includes(input.priority as string) ? input.priority : null) as TodoPriority | null,
+        recurrence: recurrenceFreq,
+        recurrenceInterval: rec.interval && rec.interval > 0 ? rec.interval : 1,
+      },
+    });
+    const subtaskTitles = (input.subtasks as string[]) || [];
+    if (Array.isArray(subtaskTitles) && subtaskTitles.length > 0) {
+      await prisma.todo.createMany({
+        data: subtaskTitles.map((t, i) => ({ userId, parentId: task.id, listId, title: String(t), position: i })),
+      });
+    }
+    const dueLabel = dueDate ? ` — ${formatDateShort(dueDate.toISOString().slice(0, 10))}${input.due_time ? ` ${input.due_time}` : ""}` : "";
+    return {
+      success: true,
+      data: { task_id: task.id, title: task.title, list: listName || "Inbox", subtasks_created: subtaskTitles.length },
+      notification: {
+        type: "task_created",
+        message: `${task.title}${dueLabel}${listName ? ` (${listName})` : ""}`,
+        data: { id: task.id, domain: "tasks" },
+      },
+    };
+  }
+
+  if (action === "complete" || action === "reopen") {
+    const result = await setTodoDone(userId, input.task_id as string, action === "complete");
+    if (!result) return { success: false, error: "Task not found" };
+    const nextInfo = result.nextOccurrence
+      ? ` (next: ${formatDateShort(result.nextOccurrence.dueDate!.toISOString().slice(0, 10))})`
+      : "";
+    return {
+      success: true,
+      data: {
+        task_id: result.todo.id,
+        done: result.todo.done,
+        next_occurrence_id: result.nextOccurrence?.id || null,
+      },
+      notification: {
+        type: action === "complete" ? "task_completed" : "task_reopened",
+        message: action === "complete" ? `Done: ${result.todo.title}${nextInfo}` : `Reopened: ${result.todo.title}`,
+        data: { id: result.todo.id, domain: "tasks" },
+      },
+    };
+  }
+
+  if (action === "update") {
+    const task = await prisma.todo.findFirst({ where: { id: input.task_id as string, userId } });
+    if (!task) return { success: false, error: "Task not found" };
+    const data: Record<string, unknown> = {};
+    if (input.title !== undefined) data.title = input.title;
+    if (input.notes !== undefined) data.notes = input.notes || null;
+    if (input.due_date !== undefined) data.dueDate = parseDueDate(input.due_date);
+    if (input.due_time !== undefined) data.dueTime = input.due_time || null;
+    if (input.priority !== undefined) data.priority = TODO_PRIORITIES.includes(input.priority as string) ? input.priority : null;
+    if (input.list !== undefined) {
+      if (input.list) {
+        const list = await resolveListByName(userId, input.list as string);
+        data.listId = list.id;
+      } else {
+        data.listId = null;
+      }
+    }
+    if (input.recurrence !== undefined) {
+      data.recurrence = recurrenceFreq;
+      data.recurrenceInterval = rec.interval && rec.interval > 0 ? rec.interval : 1;
+    }
+    const updated = await prisma.todo.update({ where: { id: task.id }, data });
+    return {
+      success: true,
+      data: { task_id: updated.id, title: updated.title },
+      notification: {
+        type: "task_updated",
+        message: `Updated: ${updated.title}`,
+        data: { id: updated.id, domain: "tasks" },
+      },
+    };
+  }
+
+  if (action === "delete") {
+    const task = await prisma.todo.findFirst({ where: { id: input.task_id as string, userId } });
+    if (!task) return { success: false, error: "Task not found" };
+    await prisma.todo.delete({ where: { id: task.id } });
+    return {
+      success: true,
+      data: { task_id: task.id, deleted: true },
+      notification: { type: "task_deleted", message: `Deleted: ${task.title}`, data: { id: task.id, domain: "tasks" } },
+    };
+  }
+
+  if (action === "create_list") {
+    if (!input.title && !input.list) return { success: false, error: "Provide the list name in 'list'" };
+    const list = await resolveListByName(userId, (input.list || input.title) as string);
+    return {
+      success: true,
+      data: { list_id: list.id, name: list.name, already_existed: !list.created },
+      notification: { type: "list_created", message: `List: ${list.name}`, data: { id: list.id, domain: "tasks" } },
+    };
+  }
+
+  if (action === "rename_list") {
+    const list = await prisma.taskList.findFirst({ where: { id: input.list_id as string, userId } });
+    if (!list) return { success: false, error: "List not found" };
+    const updated = await prisma.taskList.update({ where: { id: list.id }, data: { name: input.new_name as string } });
+    return {
+      success: true,
+      data: { list_id: updated.id, name: updated.name },
+      notification: { type: "list_updated", message: `List renamed: ${updated.name}`, data: { id: updated.id, domain: "tasks" } },
+    };
+  }
+
+  if (action === "delete_list") {
+    const list = await prisma.taskList.findFirst({ where: { id: input.list_id as string, userId } });
+    if (!list) return { success: false, error: "List not found" };
+    await prisma.taskList.delete({ where: { id: list.id } }); // todos fall back to Inbox via SetNull
+    return {
+      success: true,
+      data: { list_id: list.id, deleted: true },
+      notification: { type: "list_deleted", message: `List deleted: ${list.name} (tasks moved to Inbox)`, data: { id: list.id, domain: "tasks" } },
+    };
+  }
+
+  return { success: false, error: `Unknown manage_task action: ${action}` };
+}
+
+async function handleManageNote(
+  input: Record<string, unknown>,
+  userId: string
+): Promise<ToolResult> {
+  const action = input.action as string;
+
+  if (action === "create") {
+    if (!input.title) return { success: false, error: "title is required" };
+    const note = await prisma.note.create({
+      data: {
+        userId,
+        title: input.title as string,
+        body: (input.body as string) || "",
+        tags: Array.isArray(input.tags) ? (input.tags as string[]).map(String) : [],
+      },
+    });
+    return {
+      success: true,
+      data: { note_id: note.id, title: note.title },
+      notification: { type: "note_saved", message: `Note saved: ${note.title}`, data: { id: note.id, domain: "notes" } },
+    };
+  }
+
+  if (action === "update" || action === "append") {
+    const note = await prisma.note.findFirst({ where: { id: input.note_id as string, userId } });
+    if (!note) return { success: false, error: "Note not found" };
+    const data: Record<string, unknown> = {};
+    if (input.title !== undefined) data.title = input.title;
+    if (input.body !== undefined) {
+      data.body = action === "append" ? `${note.body}\n${input.body}`.trim() : input.body;
+    }
+    if (input.tags !== undefined) data.tags = Array.isArray(input.tags) ? (input.tags as string[]).map(String) : [];
+    const updated = await prisma.note.update({ where: { id: note.id }, data });
+    return {
+      success: true,
+      data: { note_id: updated.id, title: updated.title },
+      notification: { type: "note_saved", message: `Note updated: ${updated.title}`, data: { id: updated.id, domain: "notes" } },
+    };
+  }
+
+  if (action === "search") {
+    const query = (input.query as string) || "";
+    const notes = await prisma.note.findMany({
+      where: {
+        userId,
+        ...(query
+          ? {
+              OR: [
+                { title: { contains: query, mode: "insensitive" } },
+                { body: { contains: query, mode: "insensitive" } },
+                { tags: { has: query.toLowerCase() } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 10,
+      select: { id: true, title: true, body: true, tags: true, updatedAt: true },
+    });
+    return {
+      success: true,
+      data: {
+        notes: notes.map((n) => ({
+          note_id: n.id,
+          title: n.title,
+          body: n.body.length > 500 ? n.body.slice(0, 500) + "…" : n.body,
+          tags: n.tags,
+        })),
+      },
+    };
+  }
+
+  if (action === "delete") {
+    const note = await prisma.note.findFirst({ where: { id: input.note_id as string, userId } });
+    if (!note) return { success: false, error: "Note not found" };
+    await prisma.note.delete({ where: { id: note.id } });
+    return {
+      success: true,
+      data: { note_id: note.id, deleted: true },
+      notification: { type: "note_deleted", message: `Note deleted: ${note.title}`, data: { id: note.id, domain: "notes" } },
+    };
+  }
+
+  return { success: false, error: `Unknown manage_note action: ${action}` };
+}
+
+async function handleQuerySchedule(
+  input: Record<string, unknown>,
+  userId: string
+): Promise<ToolResult> {
+  const from = (input.date_from as string)?.slice(0, 10);
+  const to = (input.date_to as string)?.slice(0, 10);
+  if (!from || !to) return { success: false, error: "date_from and date_to are required" };
+
+  const profile = await prisma.userProfile.findUnique({ where: { userId }, select: { timezone: true } });
+  const today = todayInTimezone(profile?.timezone || "Europe/Berlin");
+
+  const agenda = await getAgenda(userId, from, to, {
+    includeOverdueTodos: input.include_overdue_tasks !== false,
+    today,
+    includeRestWorkouts: false,
+  });
+
+  return {
+    success: true,
+    data: { schedule: renderAgendaText(agenda), today },
   };
 }
 

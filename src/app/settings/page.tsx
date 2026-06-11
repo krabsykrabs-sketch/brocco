@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { InstallInstructions } from "@/app/pwa-banner";
+import { DesktopNavLinks } from "@/app/nav";
 import { Suspense } from "react";
 
 interface InviteCodeData {
@@ -501,7 +502,7 @@ export default function SettingsPage() {
         {/* Desktop: full */}
         <div className="hidden md:flex items-center justify-between py-3">
           <h1 className="text-2xl font-bold">Settings</h1>
-          <Link href="/" className="text-sm text-gray-400 hover:text-white transition-colors">Dashboard</Link>
+          <DesktopNavLinks />
         </div>
       </div>
 

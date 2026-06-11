@@ -4,6 +4,7 @@ import "./globals.css";
 import { AppFooter } from "./app-footer";
 import { BottomTabBar } from "./bottom-tabs";
 import { PWAInstallBanner } from "./pwa-banner";
+import { QuickCapture } from "./quick-capture";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -51,6 +52,7 @@ export default function RootLayout({
         {children}
         <AppFooter />
         <BottomTabBar />
+        <QuickCapture />
         <PWAInstallBanner />
         <script
           dangerouslySetInnerHTML={{
