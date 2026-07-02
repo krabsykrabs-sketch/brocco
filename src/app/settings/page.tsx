@@ -85,6 +85,172 @@ function TimezonePicker({ value, onChange }: { value: string; onChange: (tz: str
   );
 }
 
+function urlBase64ToUint8Array(base64: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob((base64 + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+/**
+ * Per-device push notification controls. Push reaches the phone even with
+ * the app closed — this is what makes event reminders real.
+ */
+function NotificationSettings() {
+  const [status, setStatus] = useState<"loading" | "unsupported" | "unconfigured" | "denied" | "off" | "on">("loading");
+  const [busy, setBusy] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function check() {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+        setStatus("unsupported");
+        return;
+      }
+      try {
+        const vapid = await fetch("/api/push/vapid").then((r) => r.json());
+        if (!vapid.configured) {
+          setStatus("unconfigured");
+          return;
+        }
+        if (Notification.permission === "denied") {
+          setStatus("denied");
+          return;
+        }
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        setStatus(sub ? "on" : "off");
+      } catch {
+        setStatus("unsupported");
+      }
+    }
+    check();
+  }, []);
+
+  async function enable() {
+    setBusy(true);
+    setTestResult(null);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setStatus(permission === "denied" ? "denied" : "off");
+        return;
+      }
+      const { publicKey } = await fetch("/api/push/vapid").then((r) => r.json());
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
+      });
+      const res = await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub.toJSON()),
+      });
+      if (!res.ok) throw new Error();
+      setStatus("on");
+    } catch {
+      setTestResult("Couldn't enable notifications — try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disable() {
+    setBusy(true);
+    setTestResult(null);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await fetch("/api/push/unsubscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        });
+        await sub.unsubscribe();
+      }
+      setStatus("off");
+    } catch {
+      setTestResult("Couldn't disable — try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendTest() {
+    setBusy(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/push/test", { method: "POST" });
+      const data = await res.json();
+      setTestResult(res.ok ? `Sent to ${data.sent} device${data.sent === 1 ? "" : "s"} — check your notifications.` : data.error || "Test failed");
+    } catch {
+      setTestResult("Test failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section>
+      <h2 className="text-lg font-semibold mb-1">Notifications</h2>
+      <p className="text-xs text-gray-500 mb-3">
+        Event reminders on this device — even when the app is closed.
+      </p>
+      <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+        {status === "loading" && <p className="text-sm text-gray-500">Checking…</p>}
+        {status === "unsupported" && (
+          <p className="text-sm text-gray-500">
+            This browser doesn&apos;t support push notifications. On iPhone, add brocco.run to your home screen first.
+          </p>
+        )}
+        {status === "unconfigured" && (
+          <p className="text-sm text-gray-500">Push isn&apos;t configured on the server yet.</p>
+        )}
+        {status === "denied" && (
+          <p className="text-sm text-gray-500">
+            Notifications are blocked for brocco.run — allow them in your browser&apos;s site settings, then reload.
+          </p>
+        )}
+        {status === "off" && (
+          <button
+            onClick={enable}
+            disabled={busy}
+            className="px-4 py-2 text-sm bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+          >
+            {busy ? "Enabling..." : "Enable on this device"}
+          </button>
+        )}
+        {status === "on" && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-green-500" />
+              <span className="text-sm text-gray-300">Enabled on this device</span>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={sendTest}
+                disabled={busy}
+                className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-200 rounded-lg transition-colors"
+              >
+                Send test notification
+              </button>
+              <button
+                onClick={disable}
+                disabled={busy}
+                className="px-4 py-2 text-sm text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                Disable
+              </button>
+            </div>
+          </div>
+        )}
+        {testResult && <p className="text-xs text-gray-400">{testResult}</p>}
+      </div>
+    </section>
+  );
+}
+
 function SettingsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -433,6 +599,9 @@ function SettingsContent() {
           ))}
         </div>
       </section>
+
+      {/* Notifications */}
+      <NotificationSettings />
 
       {/* Strava */}
       <section>
