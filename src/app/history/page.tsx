@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { DesktopNavLinks } from "@/app/nav";
 
 interface Activity {
   id: string;
@@ -142,9 +143,7 @@ export default function HistoryPage() {
             <h1 className="text-2xl font-bold">Activity History</h1>
             <p className="text-sm text-gray-400">{total} {total === 1 ? "activity" : "activities"}</p>
           </div>
-          <Link href="/" className="text-sm text-gray-400 hover:text-white transition-colors">
-            Dashboard
-          </Link>
+          <DesktopNavLinks />
         </div>
       </div>
 

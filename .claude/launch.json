@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "brocco-dev",
+      "runtimeExecutable": "wsl",
+      "runtimeArgs": [
+        "-d",
+        "ubuntu",
+        "-e",
+        "bash",
+        "-c",
+        "export PATH=/home/jan/.nvm/versions/node/v24.13.1/bin:$PATH; cd /home/jan/brocc && npx next dev -p 3000"
+      ],
+      "port": 3000
+    }
+  ]
+}

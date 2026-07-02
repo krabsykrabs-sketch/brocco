@@ -1,9 +1,17 @@
 import { prisma } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildCoachContext } from "@/lib/coach-context";
-import { format, startOfWeek, addDays } from "date-fns";
+import { format } from "date-fns";
+import { todayInTimezone, parseWall, addDaysWall } from "@/lib/schedule";
 
 const anthropic = new Anthropic();
+
+/** Monday of the week containing the given "yyyy-MM-dd" date, as a UTC-anchored Date (server-TZ independent). */
+function mondayOf(dateStr: string): Date {
+  const d = parseWall(dateStr);
+  const dow = d.getUTCDay() === 0 ? 7 : d.getUTCDay();
+  return addDaysWall(d, -(dow - 1));
+}
 
 /**
  * Promote outline weeks to detailed and shift the rolling window forward.
@@ -23,9 +31,15 @@ export async function promoteWeekDetails(userId: string): Promise<{ promoted: nu
 
   if (!plan) return { promoted: 0 };
 
-  const now = new Date();
-  const thisMonday = startOfWeek(now, { weekStartsOn: 1 });
-  const nextMonday = addDays(thisMonday, 7);
+  // Week boundaries in the USER's timezone — a Monday-00:30-Berlin visit on a
+  // UTC server must not compute the previous week's Monday.
+  const profileForTz = await prisma.userProfile.findUnique({
+    where: { userId },
+    select: { timezone: true },
+  });
+  const today = todayInTimezone(profileForTz?.timezone || "Europe/Berlin");
+  const thisMonday = mondayOf(today);
+  const nextMonday = addDaysWall(thisMonday, 7);
 
   // Find outline weeks that should be promoted to detailed
   // (start_date is this week or next week)
@@ -33,7 +47,7 @@ export async function promoteWeekDetails(userId: string): Promise<{ promoted: nu
     where: {
       planId: plan.id,
       detailLevel: "outline",
-      startDate: { lte: addDays(nextMonday, 6) },
+      startDate: { lte: addDaysWall(nextMonday, 6) },
     },
     orderBy: { weekNumber: "asc" },
     include: { phase: { select: { name: true } } },
@@ -49,10 +63,14 @@ export async function promoteWeekDetails(userId: string): Promise<{ promoted: nu
   let promoted = 0;
 
   for (const week of outlineWeeks) {
-    // Delete existing outline workouts for this week (will be replaced with detailed ones)
-    await prisma.plannedWorkout.deleteMany({
-      where: { planId: plan.id, weekNumber: week.weekNumber },
+    // Atomic claim: flip outline→detailed BEFORE the slow Opus call so a
+    // concurrent request (second tab/device) skips instead of promoting the
+    // same week twice. Reverted on failure.
+    const claim = await prisma.planWeek.updateMany({
+      where: { id: week.id, detailLevel: "outline" },
+      data: { detailLevel: "detailed" },
     });
+    if (claim.count === 0) continue; // another request is already promoting this week
 
     const weekStart = format(new Date(week.startDate), "yyyy-MM-dd");
     const sessionTypes = (week.sessionTypes as string[]) || [];
@@ -85,7 +103,7 @@ Generate one workout per day (Mon-Sun). Include rest days.`,
       const text = response.content[0].type === "text" ? response.content[0].text : "";
       // Extract JSON array from response
       const jsonMatch = text.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) continue;
+      if (!jsonMatch) throw new Error("No JSON array in generation response");
 
       const generatedWorkouts = JSON.parse(jsonMatch[0]) as Array<{
         date: string;
@@ -98,34 +116,41 @@ Generate one workout per day (Mon-Sun). Include rest days.`,
         description?: string;
       }>;
 
-      // Create detailed workouts
-      await prisma.plannedWorkout.createMany({
-        data: generatedWorkouts.map((w) => ({
-          planId: plan.id,
-          phaseId: week.phaseId,
-          weekNumber: week.weekNumber,
-          date: new Date(w.date),
-          title: w.title,
-          workoutType: (w.workout_type || "easy") as "easy" | "long" | "tempo" | "interval" | "race_pace" | "recovery" | "rest" | "cross_training" | "strength" | "race",
-          activityType: (w.activity_type || "run") as "run" | "cycle" | "swim" | "hike" | "strength" | "rest" | "other",
-          detailLevel: "detailed" as const,
-          targetDistanceKm: w.target_distance_km ?? null,
-          targetPace: w.target_pace || null,
-          targetDurationMin: w.target_duration_min ?? null,
-          description: w.description || null,
-          status: "planned" as const,
-        })),
-      });
+      if (generatedWorkouts.length === 0) throw new Error("Generation returned zero workouts");
 
-      // Mark week as detailed
-      await prisma.planWeek.update({
-        where: { id: week.id },
-        data: { detailLevel: "detailed" },
-      });
+      // Swap outline workouts for detailed ones atomically — the old
+      // workouts are only deleted once we have valid replacements in hand.
+      await prisma.$transaction([
+        prisma.plannedWorkout.deleteMany({
+          where: { planId: plan.id, weekNumber: week.weekNumber },
+        }),
+        prisma.plannedWorkout.createMany({
+          data: generatedWorkouts.map((w) => ({
+            planId: plan.id,
+            phaseId: week.phaseId,
+            weekNumber: week.weekNumber,
+            date: new Date(w.date),
+            title: w.title,
+            workoutType: (w.workout_type || "easy") as "easy" | "long" | "tempo" | "interval" | "race_pace" | "recovery" | "rest" | "cross_training" | "strength" | "race",
+            activityType: (w.activity_type || "run") as "run" | "cycle" | "swim" | "hike" | "strength" | "rest" | "other",
+            detailLevel: "detailed" as const,
+            targetDistanceKm: w.target_distance_km ?? null,
+            targetPace: w.target_pace || null,
+            targetDurationMin: w.target_duration_min ?? null,
+            description: w.description || null,
+            status: "planned" as const,
+          })),
+        }),
+      ]);
 
       promoted++;
     } catch (err) {
       console.error(`Failed to promote week ${week.weekNumber}:`, err);
+      // Release the claim so the outline week (and its workouts, still
+      // intact) can be promoted on a later attempt.
+      await prisma.planWeek
+        .update({ where: { id: week.id }, data: { detailLevel: "outline" } })
+        .catch(() => {});
     }
   }
 
@@ -160,7 +185,7 @@ Generate one workout per day (Mon-Sun). Include rest days.`,
       };
 
       for (let d = 0; d < 7; d++) {
-        const date = addDays(twStart, d);
+        const date = addDaysWall(twStart, d);
         const code = sessionTypes[d] || (d === 6 ? "R" : "E");
         const wt = typeMap[code] || "easy";
         const isRest = wt === "rest";
@@ -192,7 +217,7 @@ Generate one workout per day (Mon-Sun). Include rest days.`,
   });
 
   for (const pw of pastWeeks) {
-    const weekEnd = addDays(new Date(pw.startDate), 6);
+    const weekEnd = addDaysWall(new Date(pw.startDate), 6);
     const activities = await prisma.activity.findMany({
       where: {
         userId,

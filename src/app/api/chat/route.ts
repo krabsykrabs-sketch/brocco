@@ -3,7 +3,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { buildCoachContext, buildSystemPrompt } from "@/lib/coach-context";
-import { toolDefinitions, handleToolCall } from "@/lib/tools";
+import { toolsForFeatures, handleToolCall } from "@/lib/tools";
+import { resolveFeatures } from "@/lib/features";
 
 const anthropic = new Anthropic();
 
@@ -49,6 +50,12 @@ export async function POST(request: NextRequest) {
 
   const context = await buildCoachContext(session.userId);
   const systemPrompt = await buildSystemPrompt(session.userId, userName, context);
+
+  const profileFlags = await prisma.userProfile.findUnique({
+    where: { userId: session.userId },
+    select: { features: true },
+  });
+  const tools = toolsForFeatures(resolveFeatures(profileFlags?.features));
 
   // Store user message
   await prisma.chatMessage.create({
@@ -114,7 +121,8 @@ export async function POST(request: NextRequest) {
           assistantMsg.id,
           controller,
           encoder,
-          model
+          model,
+          tools
         );
 
         // Update assistant message with final text
@@ -173,6 +181,7 @@ async function runWithTools(
   controller: ReadableStreamDefaultController,
   encoder: TextEncoder,
   model: string,
+  tools: Anthropic.Tool[],
   maxIterations = 5
 ): Promise<ToolUseResult> {
   let fullText = "";
@@ -188,7 +197,7 @@ async function runWithTools(
       max_tokens: maxTokens,
       system: systemPrompt,
       messages: currentMessages,
-      tools: toolDefinitions,
+      tools,
     });
 
     // Stream text chunks to client as they arrive
@@ -281,7 +290,7 @@ async function runWithTools(
         max_tokens: maxTokens,
         system: systemPrompt,
         messages: currentMessages,
-        tools: toolDefinitions,
+        tools,
       });
 
       finalStream.on("text", (text) => {

@@ -9,7 +9,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", process.env.BASE_URL));
   }
 
-  const returnTo = new URL(request.url).searchParams.get("returnTo") || "/settings";
+  // Only allow same-origin relative paths — "https://evil.com" or
+  // protocol-relative "//evil.com" would otherwise survive the cookie
+  // round-trip and become an open redirect after OAuth completes.
+  const rawReturnTo = new URL(request.url).searchParams.get("returnTo") || "/settings";
+  const returnTo = rawReturnTo.startsWith("/") && !rawReturnTo.startsWith("//") ? rawReturnTo : "/settings";
 
   // Generate a random state token for CSRF protection
   const state = randomBytes(32).toString("hex");

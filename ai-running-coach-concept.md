@@ -1112,3 +1112,18 @@ The context builder includes `activity_analysis` for recent quality sessions (la
 | Available on phone | Yes (but typing is tedious) | Yes, optimized for mobile + voice |
 | Remembers your coach | No | Yes, Brocco knows your history |
 | Logs manual workouts | You describe them each time | Yes, stored via chat tool |
+
+---
+
+## Life Planner Expansion (June 2026) — shipped
+
+This document describes the original running-coach concept. In June 2026 the app
+was expanded into a **voice-first life planner** per `brocco-life-planner-spec.md`:
+calendar (day/week/month with recurring events), tasks (lists, subtasks, recurrence),
+notes, birthdays, a Today home screen with a generated morning briefing, and a
+floating-mic quick-capture pipeline (`POST /api/capture`) that routes utterances to
+Brocco tools with screen context. Running coaching is now one feature among several,
+still driven by the same single Brocco assistant; everything in this document about
+plans, Strava, adjustments, and chat remains accurate. The navigation changed to
+Today · Calendar · Chat · Tasks · More (training pages live under More).
+See `CLAUDE-ai-coach.md` ("Life Planner Architecture") for the implementation map.

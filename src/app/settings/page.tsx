@@ -4,6 +4,9 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { InstallInstructions } from "@/app/pwa-banner";
+import { DesktopNavLinks } from "@/app/nav";
+import { FEATURES_CHANGED_EVENT } from "@/app/features-provider";
+import { ALL_FEATURES, type Features } from "@/lib/features";
 import { Suspense } from "react";
 
 interface InviteCodeData {
@@ -23,7 +26,63 @@ interface ProfileData {
   goalRace: string | null;
   goalTime: string | null;
   goalRaceDate: string | null;
+  hrMaxBpm: number | null;
   inviteCodes: InviteCodeData[];
+}
+
+/**
+ * IANA timezone picker — a select instead of a free-text input, because one
+ * typo ("Europe/berlin") silently breaks every "today" computation for the
+ * user. Falls back to a text input on browsers without supportedValuesOf.
+ */
+function TimezonePicker({ value, onChange }: { value: string; onChange: (tz: string) => void }) {
+  const [zones, setZones] = useState<string[] | null>(null);
+  const [deviceTz, setDeviceTz] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const supported = (Intl as any).supportedValuesOf?.("timeZone") as string[] | undefined;
+      setZones(supported && supported.length > 0 ? supported : null);
+    } catch {
+      setZones(null);
+    }
+    try {
+      setDeviceTz(Intl.DateTimeFormat().resolvedOptions().timeZone || null);
+    } catch { /* leave null */ }
+  }, []);
+
+  const inputCls = "w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500";
+
+  return (
+    <div className="space-y-1">
+      {zones ? (
+        <select value={value} onChange={(e) => onChange(e.target.value)} className={inputCls}>
+          {/* Keep a stored-but-unknown value selectable rather than silently jumping */}
+          {value && !zones.includes(value) && <option value={value}>{value}</option>}
+          {zones.map((z) => (
+            <option key={z} value={z}>{z.replace(/_/g, " ")}</option>
+          ))}
+        </select>
+      ) : (
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="e.g. Europe/Berlin"
+          className={inputCls}
+        />
+      )}
+      {deviceTz && deviceTz !== value && (
+        <button
+          type="button"
+          onClick={() => onChange(deviceTz)}
+          className="text-xs text-green-400 hover:text-green-300 underline underline-offset-2"
+        >
+          Use device timezone ({deviceTz})
+        </button>
+      )}
+    </div>
+  );
 }
 
 function SettingsContent() {
@@ -40,6 +99,8 @@ function SettingsContent() {
   const [editGoalRace, setEditGoalRace] = useState("");
   const [editGoalTime, setEditGoalTime] = useState("");
   const [editGoalDate, setEditGoalDate] = useState("");
+  const [editHrMax, setEditHrMax] = useState("");
+  const [featureFlags, setFeatureFlags] = useState<Features>(ALL_FEATURES);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
 
@@ -75,6 +136,8 @@ function SettingsContent() {
           setEditGoalRace(data.goalRace || "");
           setEditGoalTime(data.goalTime || "");
           setEditGoalDate(data.goalRaceDate ? data.goalRaceDate.split("T")[0] : "");
+          setEditHrMax(data.hrMaxBpm ? String(data.hrMaxBpm) : "");
+          if (data.features) setFeatureFlags(data.features);
         }
       } catch {
         // ignore
@@ -98,6 +161,7 @@ function SettingsContent() {
           goalRace: editGoalRace,
           goalTime: editGoalTime,
           goalRaceDate: editGoalDate || null,
+          hrMaxBpm: editHrMax || null,
         }),
       });
       if (res.ok) {
@@ -108,6 +172,25 @@ function SettingsContent() {
       // ignore
     } finally {
       setProfileSaving(false);
+    }
+  }
+
+  async function handleToggleFeature(key: keyof Features) {
+    const next = { ...featureFlags, [key]: !featureFlags[key] };
+    setFeatureFlags(next); // optimistic — the switch flips immediately
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ features: next }),
+      });
+      if (!res.ok) throw new Error();
+      // Navigation & global components re-read the flags; the cached
+      // briefing predates the toggle, so force a regeneration in background
+      window.dispatchEvent(new Event(FEATURES_CHANGED_EVENT));
+      fetch("/api/briefing?refresh=1").catch(() => {});
+    } catch {
+      setFeatureFlags(featureFlags); // roll back
     }
   }
 
@@ -251,12 +334,7 @@ function SettingsContent() {
           </div>
           <div>
             <label className="text-xs text-gray-500 block mb-1">Timezone</label>
-            <input
-              value={editTimezone}
-              onChange={(e) => setEditTimezone(e.target.value)}
-              placeholder="e.g. Europe/Berlin"
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
+            <TimezonePicker value={editTimezone} onChange={setEditTimezone} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -287,6 +365,22 @@ function SettingsContent() {
               className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
             />
           </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Max heart rate (bpm)</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={100}
+              max={230}
+              value={editHrMax}
+              onChange={(e) => setEditHrMax(e.target.value)}
+              placeholder="e.g. 188"
+              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+            <p className="text-[11px] text-gray-600 mt-1">
+              Used to compute heart rate zones for intensity analysis. If left blank, Brocco estimates it from your highest recorded heart rate.
+            </p>
+          </div>
           <div className="flex items-center gap-3">
             <button
               onClick={handleProfileSave}
@@ -299,6 +393,44 @@ function SettingsContent() {
               <span className="text-sm text-green-400">Saved</span>
             )}
           </div>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section>
+        <h2 className="text-lg font-semibold mb-1">Features</h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Switch off what you don&apos;t use — navigation, the Today screen, and Brocco adapt.
+          With everything off you get the classic running-coach experience. Your data is kept, just hidden.
+        </p>
+        <div className="bg-gray-900 border border-gray-800 rounded-lg divide-y divide-gray-800">
+          {([
+            ["calendar", "Calendar", "Events, birthdays, and reminders"],
+            ["tasks", "Tasks", "To-dos, lists, and recurring chores"],
+            ["notes", "Notes", "Quick facts and reference lists"],
+          ] as Array<[keyof Features, string, string]>).map(([key, label, desc]) => (
+            <div key={key} className="flex items-center gap-3 px-4 py-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-200">{label}</p>
+                <p className="text-xs text-gray-500">{desc}</p>
+              </div>
+              <button
+                role="switch"
+                aria-checked={featureFlags[key]}
+                aria-label={`${label} ${featureFlags[key] ? "enabled" : "disabled"}`}
+                onClick={() => handleToggleFeature(key)}
+                className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
+                  featureFlags[key] ? "bg-green-600" : "bg-gray-700"
+                }`}
+              >
+                <span
+                  className={`absolute left-0 top-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                    featureFlags[key] ? "translate-x-[22px]" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -501,7 +633,7 @@ export default function SettingsPage() {
         {/* Desktop: full */}
         <div className="hidden md:flex items-center justify-between py-3">
           <h1 className="text-2xl font-bold">Settings</h1>
-          <Link href="/" className="text-sm text-gray-400 hover:text-white transition-colors">Dashboard</Link>
+          <DesktopNavLinks />
         </div>
       </div>
 

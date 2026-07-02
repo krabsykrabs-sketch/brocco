@@ -14,6 +14,7 @@ interface DayActivity { id: string; name: string; activityType: string; distance
 interface Plan { id: string; name: string; goal: string | null; raceDate: string | null; startDate: string; endDate: string; status: string; phases: Phase[]; weeks: PlanWeekData[]; workouts: Workout[]; weeklyTasks: WeeklyTask[]; activitiesByDate: Record<string, DayActivity[]>; }
 
 import { isCompatibleType, isRunning } from "@/lib/activity-types";
+import { DesktopNavLinks } from "@/app/nav";
 
 // --- Shared Utilities ---
 
@@ -601,12 +602,7 @@ function Nav() {
           <span className="text-2xl">&#x1F966;</span>
           <span className="font-bold text-lg">brocco.run</span>
         </div>
-        <div className="flex items-center gap-4 text-sm text-gray-400">
-          <Link href="/" className="hover:text-white transition-colors">Dashboard</Link>
-          <Link href="/chat" className="hover:text-white transition-colors">Chat</Link>
-          <Link href="/history" className="hover:text-white transition-colors">History</Link>
-          <Link href="/settings" className="hover:text-white transition-colors">Settings</Link>
-        </div>
+        <DesktopNavLinks />
       </div>
     </nav>
   );

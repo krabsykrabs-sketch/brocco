@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 
 interface Split {
   distance: number;
@@ -43,6 +44,7 @@ interface ActivityDetail {
   startDate: string;
   startDateLocal: string;
   splits: Split[] | null;
+  activityAnalysis: ActivityAnalysis | null;
   matchedWorkout: MatchedWorkout | null;
 }
 
@@ -122,6 +124,165 @@ function SplitsTable({ splits }: { splits: Split[] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+const ZONE_META: Array<{ key: keyof NonNullable<ActivityAnalysis["zones"]>; label: string; color: string }> = [
+  { key: "z1Pct", label: "Z1 · Very light", color: "#4b5563" },
+  { key: "z2Pct", label: "Z2 · Easy", color: "#4ade80" },
+  { key: "z3Pct", label: "Z3 · Moderate", color: "#facc15" },
+  { key: "z4Pct", label: "Z4 · Hard", color: "#fb923c" },
+  { key: "z5Pct", label: "Z5 · Max", color: "#ef4444" },
+];
+
+function ZoneBar({ zones }: { zones: NonNullable<ActivityAnalysis["zones"]> }) {
+  return (
+    <div>
+      <div className="flex h-3 rounded-full overflow-hidden bg-gray-800">
+        {ZONE_META.map((z) => {
+          const pct = zones[z.key];
+          if (pct <= 0) return null;
+          return <div key={z.key} style={{ width: `${pct}%`, backgroundColor: z.color }} title={`${z.label}: ${pct}%`} />;
+        })}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+        {ZONE_META.map((z) => (
+          <div key={z.key} className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: z.color }} />
+            <span className="text-[11px] text-gray-400">{z.label} {zones[z.key]}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const EFFORT_BADGE: Record<string, { label: string; className: string }> = {
+  harder_than_planned: { label: "Harder than planned", className: "bg-amber-900/40 border-amber-600/50 text-amber-200" },
+  easier_than_planned: { label: "Easier than planned", className: "bg-blue-900/40 border-blue-600/50 text-blue-200" },
+};
+
+function EffortSegmentsTable({ segments }: { segments: ActivityAnalysis["effortSegments"] }) {
+  if (segments.length === 0) return null;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-gray-500 border-b border-gray-800">
+            <th className="text-left py-1.5 pr-3 font-medium">Rep</th>
+            <th className="text-right py-1.5 px-3 font-medium">Dist</th>
+            <th className="text-right py-1.5 px-3 font-medium">Pace</th>
+            <th className="text-right py-1.5 px-3 font-medium">HR</th>
+            <th className="text-right py-1.5 pl-3 font-medium">Recovery</th>
+          </tr>
+        </thead>
+        <tbody>
+          {segments.map((s) => (
+            <tr key={s.rep} className="border-b border-gray-900 text-gray-300">
+              <td className="py-1.5 pr-3">{s.rep}</td>
+              <td className="py-1.5 px-3 text-right font-mono">{(s.distanceM / 1000).toFixed(2)}km</td>
+              <td className="py-1.5 px-3 text-right font-mono">{s.paceSecPerKm ? formatPace(s.paceSecPerKm) : "-"}</td>
+              <td className="py-1.5 px-3 text-right">{s.avgHr ?? "-"}</td>
+              <td className="py-1.5 pl-3 text-right text-gray-500">
+                {s.recovery ? `${Math.round(s.recovery.durationSec / 60)}m${s.recovery.avgHr ? ` · HR ${s.recovery.avgHr}` : ""}` : "-"}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function IntensitySection({
+  activityId,
+  analysis,
+  onAnalyzed,
+}: {
+  activityId: string;
+  analysis: ActivityAnalysis | null;
+  onAnalyzed: (a: ActivityAnalysis) => void;
+}) {
+  const [analyzing, setAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleAnalyze() {
+    setAnalyzing(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/activities/${activityId}/analyze`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        onAnalyzed(data.analysis);
+      } else {
+        setError(data.error || "Analysis failed");
+      }
+    } catch {
+      setError("Analysis failed");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
+  const badge = analysis?.effortVsPlanned ? EFFORT_BADGE[analysis.effortVsPlanned] : null;
+
+  return (
+    <section className="mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-medium text-gray-400 uppercase tracking-wider">Intensity</h2>
+        <button
+          onClick={handleAnalyze}
+          disabled={analyzing}
+          className="text-xs text-gray-500 hover:text-green-400 disabled:opacity-50 transition-colors"
+        >
+          {analyzing ? "Analyzing..." : analysis ? "Re-analyze" : "Analyze this run"}
+        </button>
+      </div>
+
+      {error && <p className="text-xs text-red-400/80 mb-3">{error}</p>}
+
+      {!analysis && !analyzing && !error && (
+        <p className="text-xs text-gray-500">
+          No intensity analysis yet — pulls second-by-second heart rate and pace from Strava to break down effort by zone.
+        </p>
+      )}
+
+      {analysis && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-4">
+          {badge && (
+            <span className={`inline-flex items-center gap-1.5 text-xs font-medium border rounded-lg px-2.5 py-1 ${badge.className}`}>
+              {badge.label}
+            </span>
+          )}
+
+          {analysis.zones && <ZoneBar zones={analysis.zones} />}
+
+          <div className="grid grid-cols-2 gap-4">
+            {analysis.decouplingPct != null && (
+              <Stat
+                label="Cardiac drift"
+                value={`${analysis.decouplingPct > 0 ? "+" : ""}${analysis.decouplingPct}%`}
+              />
+            )}
+            {analysis.paceFade && (
+              <Stat
+                label={analysis.paceFade.negativeSplit ? "Negative split" : "Pace fade"}
+                value={`${analysis.paceFade.fadePct > 0 ? "+" : ""}${analysis.paceFade.fadePct}%`}
+              />
+            )}
+          </div>
+
+          {analysis.effortSegments.length > 0 && (
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">
+                {analysis.effortSegments.length > 1 ? "Effort reps" : "Hard effort block"}
+              </p>
+              <EffortSegmentsTable segments={analysis.effortSegments} />
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -270,6 +431,13 @@ export default function ActivityDetailPage() {
           <Stat label="Effort" value={`${activity.perceivedEffort}/10`} />
         )}
       </div>
+
+      {/* Intensity */}
+      <IntensitySection
+        activityId={activity.id}
+        analysis={activity.activityAnalysis}
+        onAnalyzed={(a) => setActivity({ ...activity, activityAnalysis: a })}
+      />
 
       {/* Splits */}
       {activity.splits && Array.isArray(activity.splits) && activity.splits.length > 0 && (

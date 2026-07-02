@@ -5,12 +5,6 @@ export async function applyPlanGeneration(
   userId: string,
   payload: Record<string, unknown>
 ) {
-  // Deactivate any existing active plan
-  await prisma.plan.updateMany({
-    where: { userId, status: "active" },
-    data: { status: "completed" },
-  });
-
   const planName = payload.plan_name as string;
   const goal = payload.goal as string;
   const raceDate = payload.race_date as string;
@@ -48,81 +42,94 @@ export async function applyPlanGeneration(
   const endDateObj = new Date(lastWeek);
   endDateObj.setDate(endDateObj.getDate() + 6);
 
-  const plan = await prisma.plan.create({
-    data: {
-      userId,
-      name: planName,
-      goal,
-      raceDate: raceDate ? new Date(raceDate) : endDateObj,
-      startDate: new Date(startDate),
-      endDate: endDateObj,
-      status: "active",
-    },
-  });
+  // One transaction: if any step fails, the old plan stays active and no
+  // partial new plan exists — re-approving after a failure is then safe.
+  const plan = await prisma.$transaction(async (tx) => {
+    // Deactivate any existing active plan (inside the tx so a failure
+    // later in generation leaves the old plan untouched and active)
+    await tx.plan.updateMany({
+      where: { userId, status: "active" },
+      data: { status: "completed" },
+    });
 
-  const phaseMap: Record<string, string> = {};
-  for (let i = 0; i < phases.length; i++) {
-    const p = phases[i];
-    const phase = await prisma.planPhase.create({
+    const created = await tx.plan.create({
       data: {
-        planId: plan.id,
-        name: p.name,
-        orderIndex: i,
-        description: p.description || null,
-        startWeek: p.start_week,
-        endWeek: p.end_week,
+        userId,
+        name: planName,
+        goal,
+        raceDate: raceDate ? new Date(raceDate) : endDateObj,
+        startDate: new Date(startDate),
+        endDate: endDateObj,
+        status: "active",
       },
     });
-    for (let w = p.start_week; w <= p.end_week; w++) {
-      phaseMap[String(w)] = phase.id;
-    }
-  }
 
-  if (planWeeks.length > 0) {
-    const validDetailLevels: WeekDetailLevel[] = ["detailed", "outline", "target"];
-    await prisma.planWeek.createMany({
-      data: planWeeks.map((pw) => ({
-        planId: plan.id,
-        phaseId: phaseMap[String(pw.week_number)] || null,
-        weekNumber: pw.week_number,
-        startDate: new Date(pw.start_date),
-        detailLevel: (validDetailLevels.includes(pw.detail_level as WeekDetailLevel) ? pw.detail_level : "target") as WeekDetailLevel,
-        targetKm: pw.target_km ?? null,
-        targetSessions: pw.target_sessions ?? null,
-        sessionTypes: pw.session_types || undefined,
+    const phaseMap: Record<string, string> = {};
+    for (let i = 0; i < phases.length; i++) {
+      const p = phases[i];
+      const phase = await tx.planPhase.create({
+        data: {
+          planId: created.id,
+          name: p.name,
+          orderIndex: i,
+          description: p.description || null,
+          startWeek: p.start_week,
+          endWeek: p.end_week,
+        },
+      });
+      for (let w = p.start_week; w <= p.end_week; w++) {
+        phaseMap[String(w)] = phase.id;
+      }
+    }
+
+    if (planWeeks.length > 0) {
+      const validDetailLevels: WeekDetailLevel[] = ["detailed", "outline", "target"];
+      await tx.planWeek.createMany({
+        data: planWeeks.map((pw) => ({
+          planId: created.id,
+          phaseId: phaseMap[String(pw.week_number)] || null,
+          weekNumber: pw.week_number,
+          startDate: new Date(pw.start_date),
+          detailLevel: (validDetailLevels.includes(pw.detail_level as WeekDetailLevel) ? pw.detail_level : "target") as WeekDetailLevel,
+          targetKm: pw.target_km ?? null,
+          targetSessions: pw.target_sessions ?? null,
+          sessionTypes: pw.session_types || undefined,
+        })),
+      });
+    }
+
+    const validWorkoutDetail: WorkoutDetailLevel[] = ["detailed", "outline"];
+    await tx.plannedWorkout.createMany({
+      data: workouts.map((w) => ({
+        planId: created.id,
+        phaseId: phaseMap[String(w.week_number)] || null,
+        weekNumber: w.week_number,
+        date: new Date(w.date),
+        title: w.title,
+        workoutType: (w.workout_type || "easy") as WorkoutType,
+        activityType: (w.activity_type || "run") as ActivityKind,
+        detailLevel: (validWorkoutDetail.includes(w.detail_level as WorkoutDetailLevel) ? w.detail_level : "detailed") as WorkoutDetailLevel,
+        targetDistanceKm: w.target_distance_km ?? null,
+        targetPace: w.target_pace || null,
+        targetDurationMin: w.target_duration_min ?? null,
+        description: w.description || null,
+        status: "planned" as const,
       })),
     });
-  }
 
-  const validWorkoutDetail: WorkoutDetailLevel[] = ["detailed", "outline"];
-  const workoutData = workouts.map((w) => ({
-    planId: plan.id,
-    phaseId: phaseMap[String(w.week_number)] || null,
-    weekNumber: w.week_number,
-    date: new Date(w.date),
-    title: w.title,
-    workoutType: (w.workout_type || "easy") as WorkoutType,
-    activityType: (w.activity_type || "run") as ActivityKind,
-    detailLevel: (validWorkoutDetail.includes(w.detail_level as WorkoutDetailLevel) ? w.detail_level : "detailed") as WorkoutDetailLevel,
-    targetDistanceKm: w.target_distance_km ?? null,
-    targetPace: w.target_pace || null,
-    targetDurationMin: w.target_duration_min ?? null,
-    description: w.description || null,
-    status: "planned" as const,
-  }));
+    if (raceDate) {
+      await tx.userProfile.update({
+        where: { userId },
+        data: {
+          goalRace: planName,
+          goalRaceDate: new Date(raceDate),
+          goalTime: goal,
+        },
+      });
+    }
 
-  await prisma.plannedWorkout.createMany({ data: workoutData });
-
-  if (raceDate) {
-    await prisma.userProfile.update({
-      where: { userId },
-      data: {
-        goalRace: planName,
-        goalRaceDate: new Date(raceDate),
-        goalTime: goal,
-      },
-    });
-  }
+    return created;
+  });
 
   return { planId: plan.id, planName: plan.name };
 }
@@ -140,6 +147,9 @@ export async function applyPlanModifications(
   const results: Array<{ action: string; success: boolean }> = [];
 
   for (const c of changes) {
+    // workout_id values come from LLM tool output — never trust them alone.
+    // Every mutation is scoped through the plan's userId; count===0 means
+    // the workout doesn't exist OR belongs to someone else, either way a no-op.
     if (c.action === "update" && c.workout_id) {
       const updateData: Record<string, unknown> = {};
       if (c.updates) {
@@ -151,14 +161,22 @@ export async function applyPlanModifications(
         if (c.updates.description !== undefined) updateData.description = c.updates.description;
       }
       updateData.status = "modified";
-      await prisma.plannedWorkout.update({ where: { id: c.workout_id }, data: updateData });
-      results.push({ action: "update", success: true });
+      const { count } = await prisma.plannedWorkout.updateMany({
+        where: { id: c.workout_id, plan: { userId } },
+        data: updateData,
+      });
+      results.push({ action: "update", success: count > 0 });
     } else if (c.action === "skip" && c.workout_id) {
-      await prisma.plannedWorkout.update({ where: { id: c.workout_id }, data: { status: "skipped" } });
-      results.push({ action: "skip", success: true });
+      const { count } = await prisma.plannedWorkout.updateMany({
+        where: { id: c.workout_id, plan: { userId } },
+        data: { status: "skipped" },
+      });
+      results.push({ action: "skip", success: count > 0 });
     } else if (c.action === "delete" && c.workout_id) {
-      await prisma.plannedWorkout.delete({ where: { id: c.workout_id } });
-      results.push({ action: "delete", success: true });
+      const { count } = await prisma.plannedWorkout.deleteMany({
+        where: { id: c.workout_id, plan: { userId } },
+      });
+      results.push({ action: "delete", success: count > 0 });
     } else if (c.action === "add" && c.date) {
       const plan = await prisma.plan.findFirst({ where: { userId, status: "active" } });
       if (plan && c.updates) {

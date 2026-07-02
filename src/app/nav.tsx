@@ -1,0 +1,60 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useFeatures } from "./features-provider";
+
+/**
+ * Shared navigation. Desktop top-nav mirrors the mobile tab structure:
+ * Today · Calendar · Chat · Tasks, plus the "More" pages inline. Links for
+ * disabled features are hidden (see features-provider).
+ */
+
+const DESKTOP_LINKS = [
+  { name: "Today", href: "/today", match: (p: string) => p === "/" || p.startsWith("/today") },
+  { name: "Calendar", href: "/calendar", match: (p: string) => p.startsWith("/calendar"), feature: "calendar" as const },
+  { name: "Chat", href: "/chat", match: (p: string) => p.startsWith("/chat") },
+  { name: "Tasks", href: "/tasks", match: (p: string) => p.startsWith("/tasks"), feature: "tasks" as const },
+  { name: "Plan", href: "/plan", match: (p: string) => p.startsWith("/plan") },
+  { name: "History", href: "/history", match: (p: string) => p.startsWith("/history") || p.startsWith("/activity") },
+  { name: "Notes", href: "/notes", match: (p: string) => p.startsWith("/notes"), feature: "notes" as const },
+  { name: "Settings", href: "/settings", match: (p: string) => p.startsWith("/settings") },
+];
+
+export function DesktopNavLinks() {
+  const pathname = usePathname();
+  const features = useFeatures();
+  return (
+    <div className="hidden md:flex items-center gap-4 text-sm">
+      {DESKTOP_LINKS.filter((l) => !l.feature || features[l.feature]).map((l) => (
+        <Link
+          key={l.name}
+          href={l.href}
+          className={`transition-colors ${l.match(pathname) ? "text-white font-medium" : "text-gray-400 hover:text-white"}`}
+        >
+          {l.name}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+/** Standard page header: branding + desktop links. Used by the new life-planner pages. */
+export function PageHeader({ title, right }: { title?: string; right?: React.ReactNode }) {
+  return (
+    <nav className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm -mx-4 px-4">
+      <div className="flex items-center justify-between pb-2 md:pb-4">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-lg md:text-2xl">&#x1F966;</span>
+          <span className="font-semibold text-sm text-gray-300 md:font-bold md:text-lg md:text-white truncate">
+            {title || "brocco.run"}
+          </span>
+        </div>
+        <div className="flex items-center gap-3">
+          {right}
+          <DesktopNavLinks />
+        </div>
+      </div>
+    </nav>
+  );
+}

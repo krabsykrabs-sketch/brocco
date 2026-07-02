@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { DesktopNavLinks } from "@/app/nav";
+import { ChatMarkdown } from "./markdown";
 
 interface Message {
   id: string;
@@ -100,7 +101,7 @@ function MessageBubble({ msg }: { msg: Message }) {
         ))}
         {cleanText && (
           <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5">
-            <p className="text-sm text-gray-200 whitespace-pre-wrap">{cleanText}</p>
+            <ChatMarkdown text={cleanText} />
             {statusType && statusText && (
               <StatusStrip type={statusType} text={statusText} />
             )}
@@ -598,12 +599,7 @@ export default function ChatUI({
           </div>
         </div>
         {/* Desktop nav only */}
-        <div className="hidden md:flex items-center gap-4 text-sm text-gray-400">
-          <Link href="/" className="hover:text-white transition-colors">Dashboard</Link>
-          <Link href="/plan" className="hover:text-white transition-colors">Plan</Link>
-          <Link href="/history" className="hover:text-white transition-colors">History</Link>
-          <Link href="/settings" className="hover:text-white transition-colors">Settings</Link>
-        </div>
+        <DesktopNavLinks />
       </header>
 
       {/* Sidebar */}
@@ -641,7 +637,7 @@ export default function ChatUI({
                 const { cleanText, statusType, statusText } = parseStatus(streamingText);
                 return (
                   <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5">
-                    <p className="text-sm text-gray-200 whitespace-pre-wrap">{cleanText}</p>
+                    <ChatMarkdown text={cleanText} />
                     {statusType && statusText && (
                       <StatusStrip type={statusType} text={statusText} />
                     )}

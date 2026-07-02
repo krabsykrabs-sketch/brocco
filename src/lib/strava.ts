@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import crypto from "crypto";
+import type { Activity } from "@prisma/client";
 
 const STRAVA_API = "https://www.strava.com/api/v3";
 const STRAVA_OAUTH = "https://www.strava.com/oauth";
@@ -118,6 +119,32 @@ export async function fetchStravaActivities(
   }
 
   return res.json();
+}
+
+/**
+ * Fetch an activity's raw time-series streams (heartrate, velocity, distance,
+ * moving). Returns null if the activity has no heartrate stream (no HR strap
+ * worn) — nothing to analyze in that case. One Strava API call.
+ */
+export async function fetchActivityStreams(
+  accessToken: string,
+  activityId: string
+): Promise<Record<string, { data: unknown[] }> | null> {
+  const keys = "time,distance,heartrate,velocity_smooth,moving";
+  const res = await fetch(
+    `${STRAVA_API}/activities/${activityId}/streams?keys=${keys}&key_by_type=true`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+
+  if (!res.ok) {
+    throw new Error(`Strava streams fetch failed: ${res.status}`);
+  }
+
+  const data = await res.json();
+  if (!data.heartrate || !data.time || !data.distance || !data.velocity_smooth) {
+    return null; // missing a required stream (most commonly: no HR device)
+  }
+  return data;
 }
 
 /**
@@ -266,6 +293,71 @@ export async function backfillActivities(userId: string): Promise<{ newCount: nu
   }
 
   return { newCount, totalChecked };
+}
+
+/**
+ * Incremental sync: fetch only activities since the last sync (with a small
+ * overlap buffer for late-arriving/edited activities), and advance
+ * stravaLastSyncAt. Used by the once-per-day auto-sync — cheap compared to
+ * backfillActivities, which pages through the full 6-month window every call.
+ */
+export async function syncRecentActivities(
+  userId: string,
+  opts: { lastSyncAt?: Date | null } = {}
+): Promise<{ newCount: number; totalChecked: number; newActivities: Activity[] }> {
+  const token = await getValidToken(userId);
+  const profile = await prisma.userProfile.findUnique({ where: { userId } });
+  const timezone = profile?.timezone || "Europe/Berlin";
+
+  const OVERLAP_MS = 60 * 60 * 1000; // 1 hour, absorbs clock skew / late edits
+  const DEFAULT_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000; // first auto-sync: 30 days
+  // The caller may have already claimed the sync slot by writing
+  // stravaLastSyncAt (optimistic lock) — in that case it passes the
+  // pre-claim value here so we don't compute `since` from our own claim.
+  const lastSyncAt = opts.lastSyncAt !== undefined ? opts.lastSyncAt : profile?.stravaLastSyncAt;
+  const since = lastSyncAt
+    ? new Date(lastSyncAt.getTime() - OVERLAP_MS)
+    : new Date(Date.now() - DEFAULT_LOOKBACK_MS);
+  const after = Math.floor(since.getTime() / 1000);
+
+  let page = 1;
+  let newCount = 0;
+  let totalChecked = 0;
+  const newActivities: Activity[] = [];
+  const MAX_PAGES = 3; // safety cap; an incremental sync should rarely need more than one
+
+  while (page <= MAX_PAGES) {
+    const activities = await fetchStravaActivities(token, page, 200, after);
+    if (!activities || activities.length === 0) break;
+
+    for (const activity of activities) {
+      try {
+        totalChecked++;
+        const stravaId = String(activity.id);
+        const existing = await prisma.activity.findUnique({
+          where: { userId_stravaId: { userId, stravaId } },
+          select: { id: true },
+        });
+        const stored = await storeStravaActivity(userId, activity, timezone);
+        if (!existing) {
+          newCount++;
+          newActivities.push(stored);
+        }
+      } catch (err) {
+        console.error(`Failed to store activity ${activity.id}:`, err);
+      }
+    }
+
+    if (activities.length < 200) break;
+    page++;
+  }
+
+  await prisma.userProfile.update({
+    where: { userId },
+    data: { stravaLastSyncAt: new Date() },
+  });
+
+  return { newCount, totalChecked, newActivities };
 }
 
 /**

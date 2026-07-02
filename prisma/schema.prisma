@@ -24,6 +24,11 @@ model User {
   adjustmentLog     PlanAdjustmentLog[]
   createdInvites    InviteCode[]        @relation("CreatedInvites")
   usedInvite        InviteCode?         @relation("UsedInvite")
+  events            Event[]
+  todos             Todo[]
+  taskLists         TaskList[]
+  notes             Note[]
+  dailyBriefings    DailyBriefing[]
 
   @@map("users")
 }
@@ -41,8 +46,12 @@ model UserProfile {
   stravaRefreshToken    String?  @map("strava_refresh_token")
   stravaAthleteId       String?  @map("strava_athlete_id")
   stravaTokenExpiresAt  DateTime? @map("strava_token_expires_at")
+  stravaLastSyncAt      DateTime? @map("strava_last_sync_at")
+  hrMaxBpm              Int?     @map("hr_max_bpm")
   coachingNotes         Json     @default("{}") @map("coaching_notes") @db.JsonB
   aiPreferences         Json?    @map("ai_preferences") @db.JsonB
+  // Life-planner feature toggles ({calendar, tasks, notes}); null = all enabled
+  features              Json?    @db.JsonB
   onboardingCompleted   Boolean  @default(false) @map("onboarding_completed")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")
@@ -203,6 +212,7 @@ model Activity {
   startDateLocal    DateTime      @map("start_date_local")
   splits            Json?         @db.JsonB
   rawData           Json?         @map("raw_data") @db.JsonB
+  activityAnalysis  Json?         @map("activity_analysis") @db.JsonB
   createdAt         DateTime      @default(now()) @map("created_at")
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -365,6 +375,137 @@ enum TaskCategory {
 enum TaskStatus {
   pending
   done
+}
+
+// ============================================================
+// Life planner — all tables below are additive (June 2026).
+// Times on events/todos are stored as the user's local wall-clock
+// time (no TZ conversion), matching the start_date_local convention.
+// ============================================================
+
+model Event {
+  id                 String         @id @default(uuid()) @db.Uuid
+  userId             String         @map("user_id") @db.Uuid
+  title              String
+  location           String?
+  notes              String?
+  category           EventCategory  @default(other)
+  startAt            DateTime       @map("start_at")
+  endAt              DateTime?      @map("end_at")
+  allDay             Boolean        @default(false) @map("all_day")
+  recurrence         RecurrenceFreq @default(none)
+  recurrenceInterval Int            @default(1) @map("recurrence_interval")
+  recurrenceUntil    DateTime?      @map("recurrence_until") @db.Date
+  recurrenceCount    Int?           @map("recurrence_count")
+  // ISO dates ("yyyy-MM-dd") of occurrences deleted from a recurring series
+  exdates            Json           @default("[]") @db.JsonB
+  reminderMinutes    Int?           @map("reminder_minutes")
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startAt])
+  @@map("events")
+}
+
+enum EventCategory {
+  work
+  family
+  training
+  social
+  health
+  birthday
+  other
+}
+
+enum RecurrenceFreq {
+  none
+  daily
+  weekly
+  monthly
+  yearly
+}
+
+model TaskList {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  name      String
+  emoji     String?
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  todos Todo[]
+
+  @@map("task_lists")
+}
+
+// Named Todo to avoid colliding with the existing WeeklyTask training checklist.
+model Todo {
+  id                 String         @id @default(uuid()) @db.Uuid
+  userId             String         @map("user_id") @db.Uuid
+  listId             String?        @map("list_id") @db.Uuid
+  parentId           String?        @map("parent_id") @db.Uuid
+  title              String
+  notes              String?
+  dueDate            DateTime?      @map("due_date") @db.Date
+  dueTime            String?        @map("due_time")
+  priority           TodoPriority?
+  recurrence         RecurrenceFreq @default(none)
+  recurrenceInterval Int            @default(1) @map("recurrence_interval")
+  // First due date of the series — regeneration is computed from here so a
+  // "31st of every month" todo recovers to the 31st after short months.
+  recurrenceAnchor   DateTime?      @map("recurrence_anchor") @db.Date
+  done               Boolean        @default(false)
+  completedAt        DateTime?      @map("completed_at")
+  position           Int            @default(0)
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  list     TaskList? @relation(fields: [listId], references: [id], onDelete: SetNull)
+  parent   Todo?     @relation("Subtasks", fields: [parentId], references: [id], onDelete: Cascade)
+  subtasks Todo[]    @relation("Subtasks")
+
+  @@index([userId, done, dueDate])
+  @@map("todos")
+}
+
+enum TodoPriority {
+  low
+  medium
+  high
+}
+
+model Note {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  title     String
+  body      String   @default("")
+  tags      String[] @default([])
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+  @@map("notes")
+}
+
+model DailyBriefing {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  date           DateTime @db.Date
+  content        String
+  lastActivityId String?  @map("last_activity_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("daily_briefings")
 }
 
 model InviteCode {

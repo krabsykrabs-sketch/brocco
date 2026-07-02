@@ -79,6 +79,7 @@ export async function GET(
       startDate: activity.startDate,
       startDateLocal: activity.startDateLocal,
       splits: activity.splits,
+      activityAnalysis: activity.activityAnalysis,
       matchedWorkout,
     },
   });
