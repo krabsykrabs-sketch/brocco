@@ -120,6 +120,8 @@ export interface EventOccurrence {
   category: string;
   allDay: boolean;
   recurring: boolean;
+  /** True on the 2nd..Nth day of a multi-day event (start is on an earlier date) */
+  continuation: boolean;
   reminderMinutes: number | null;
 }
 
@@ -189,16 +191,32 @@ export function expandEvent(event: Event, rangeStart: string, rangeEnd: string):
       category: event.category,
       allDay: event.allDay,
       recurring: event.recurrence !== "none",
+      continuation: false,
       reminderMinutes: event.reminderMinutes,
     };
   };
 
   if (event.recurrence === "none") {
-    const date = wallDateString(event.startAt);
-    const endDate = event.endAt ? wallDateString(event.endAt) : date;
-    // Include if the event overlaps the range
-    if (endDate >= rangeStart && date <= rangeEnd) return [toOccurrence(event.startAt)];
-    return [];
+    const startDate = wallDateString(event.startAt);
+    const endDate = event.endAt ? wallDateString(event.endAt) : startDate;
+    if (endDate < rangeStart || startDate > rangeEnd) return [];
+
+    // Multi-day events appear on every day they span (a 3-day trip shows
+    // Fri, Sat AND Sun), flagged as continuations after day one so the UI
+    // can render them differently. The range clamp keeps this bounded.
+    const occurrences: EventOccurrence[] = [];
+    let d = startDate >= rangeStart ? startDate : rangeStart;
+    const last = endDate <= rangeEnd ? endDate : rangeEnd;
+    while (d <= last) {
+      occurrences.push({
+        ...toOccurrence(event.startAt),
+        occurrenceKey: `${event.id}:${d}`,
+        date: d,
+        continuation: d !== startDate,
+      });
+      d = wallDateString(addDaysWall(parseWall(d), 1));
+    }
+    return occurrences;
   }
 
   const interval = Math.max(1, event.recurrenceInterval);
@@ -399,7 +417,10 @@ export function renderAgendaText(agenda: Agenda): string {
     const time = e.allDay ? "all-day" : `${formatTimeShort(e.start)}${e.end ? `-${formatTimeShort(e.end)}` : ""}`;
     const loc = e.location ? ` @ ${e.location}` : "";
     const rec = e.recurring ? " (recurring)" : "";
-    push(e.date, `[event:${e.category}] ${time} ${e.title}${loc}${rec} (event_id: ${e.eventId})`);
+    // Continuation days of one multi-day event — don't let the model read
+    // them as separate events
+    const cont = e.continuation ? ` (continues, started ${e.start.slice(0, 10)})` : "";
+    push(e.date, `[event:${e.category}] ${time} ${e.title}${loc}${rec}${cont} (event_id: ${e.eventId})`);
   }
   for (const w of agenda.workouts) {
     const parts = [

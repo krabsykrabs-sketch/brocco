@@ -11,7 +11,7 @@ import { useScreenContext, useDataChanged } from "@/lib/capture-context";
 interface EventOccurrence {
   eventId: string; occurrenceKey: string; date: string; start: string; end: string | null;
   title: string; location: string | null; notes: string | null; category: string;
-  allDay: boolean; recurring: boolean;
+  allDay: boolean; recurring: boolean; continuation: boolean;
 }
 interface WorkoutItem {
   workoutId: string; date: string; title: string; workoutType: string;
@@ -151,16 +151,23 @@ function SwipePager({
 
 function EventChip({ event, onTap }: { event: EventOccurrence; onTap: () => void }) {
   const meta = categoryMeta(event.category);
+  const isLastDay = event.end?.slice(0, 10) === event.date;
   return (
-    <button onClick={onTap} className={`w-full flex items-center gap-2.5 border rounded-lg px-2.5 py-1.5 text-left transition-colors hover:brightness-110 ${meta.bg}`}>
+    <button onClick={onTap} className={`w-full flex items-center gap-2.5 border rounded-lg px-2.5 py-1.5 text-left transition-colors hover:brightness-110 ${event.continuation ? "opacity-80" : ""} ${meta.bg}`}>
       <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{ backgroundColor: meta.color }} />
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium text-gray-100 truncate">
-          {event.category === "birthday" ? "🎂 " : ""}{event.title}
+          {event.continuation ? "⟶ " : event.category === "birthday" ? "🎂 " : ""}{event.title}
           {event.recurring && <span className="text-gray-600 ml-1">↻</span>}
         </p>
         <p className="text-[10px] text-gray-500 truncate">
-          {event.allDay ? "all day" : `${event.start.slice(11, 16)}${event.end ? `–${event.end.slice(11, 16)}` : ""}`}
+          {event.continuation
+            ? isLastDay && !event.allDay
+              ? `until ${event.end!.slice(11, 16)}`
+              : "continues"
+            : event.allDay
+            ? "all day"
+            : `${event.start.slice(11, 16)}${event.end ? `–${event.end.slice(11, 16)}` : ""}`}
           {event.location ? ` · ${event.location}` : ""}
         </p>
       </div>
@@ -189,7 +196,7 @@ function WorkoutChip({ workout }: { workout: WorkoutItem }) {
 
 interface EventFormData {
   id?: string;
-  title: string; date: string; time: string; endTime: string; allDay: boolean;
+  title: string; date: string; time: string; endDate: string; endTime: string; allDay: boolean;
   category: string; location: string; notes: string;
   recurrence: string; recurrenceInterval: number; recurrenceUntil: string;
   reminderMinutes: string;
@@ -197,7 +204,7 @@ interface EventFormData {
 
 function emptyForm(date: string): EventFormData {
   return {
-    title: "", date, time: "", endTime: "", allDay: false, category: "other",
+    title: "", date, time: "", endDate: "", endTime: "", allDay: false, category: "other",
     location: "", notes: "", recurrence: "none", recurrenceInterval: 1, recurrenceUntil: "", reminderMinutes: "",
   };
 }
@@ -219,10 +226,20 @@ function EventFormModal({
     if (!form.title.trim() || !form.date) return;
     setSaving(true);
     const allDay = form.allDay || !form.time;
+    // Multi-day support: an end date different from the start date makes the
+    // event span days (trip, overnight travel). All-day multi-day events get
+    // an end of endDate 23:59 so the expansion covers the whole last day.
+    const endDate = form.endDate && form.endDate > form.date ? form.endDate : form.date;
+    let end: string | null = null;
+    if (allDay) {
+      end = endDate !== form.date ? `${endDate}T23:59` : null;
+    } else if (form.endTime || endDate !== form.date) {
+      end = `${endDate}T${form.endTime || form.time}`;
+    }
     const payload = {
       title: form.title.trim(),
       start: allDay ? form.date : `${form.date}T${form.time}`,
-      end: !allDay && form.endTime ? `${form.date}T${form.endTime}` : null,
+      end,
       allDay,
       category: form.category,
       location: form.location.trim() || null,
@@ -268,6 +285,21 @@ function EventFormModal({
               <input type="time" value={form.endTime} onChange={(e) => set({ endTime: e.target.value })} className={inputCls} />
             </div>
           )}
+
+          <div className="flex gap-2 items-center">
+            <span className="text-xs text-gray-500 flex-shrink-0 w-14">Ends on</span>
+            <input
+              type="date"
+              value={form.endDate}
+              min={form.date}
+              onChange={(e) => set({ endDate: e.target.value })}
+              className={inputCls}
+              title="Leave empty for a single-day event"
+            />
+            {form.endDate && form.endDate !== form.date && (
+              <button onClick={() => set({ endDate: "" })} className="text-xs text-gray-500 hover:text-gray-300 flex-shrink-0">clear</button>
+            )}
+          </div>
 
           <div className="flex flex-wrap gap-1.5">
             {Object.entries(EVENT_CATEGORY_META).map(([key, meta]) => (
@@ -351,6 +383,7 @@ function EventDetailSheet({
       title: event.title,
       date: event.start.slice(0, 10),
       time: event.allDay ? "" : event.start.slice(11, 16),
+      endDate: event.end && event.end.slice(0, 10) !== event.start.slice(0, 10) ? event.end.slice(0, 10) : "",
       endTime: event.end ? event.end.slice(11, 16) : "",
       allDay: event.allDay,
       category: event.category,
@@ -636,24 +669,41 @@ function MonthGrid({
           {week.map((date) => {
             const inMonth = date.slice(0, 7) === anchorMonth;
             const data = byDate.get(date);
-            const dots = [
-              ...(data?.events || []).map((e) => categoryMeta(e.category).color),
-              ...(data?.workouts || []).map((w) => getWorkoutTypeColor(w.workoutType)),
-            ].slice(0, 4);
+            const items = [
+              ...(data?.events || []).map((e) => ({
+                title: `${e.continuation ? "⟶ " : ""}${e.title}`,
+                color: categoryMeta(e.category).color,
+              })),
+              ...(data?.workouts || []).map((w) => ({ title: w.title, color: getWorkoutTypeColor(w.workoutType) })),
+            ];
+            const dots = items.slice(0, 4);
             const isToday = date === today;
             return (
               <button
                 key={date}
                 onClick={() => onDayTap(date)}
-                className={`aspect-square flex flex-col items-center justify-start pt-1.5 rounded-lg transition-colors hover:bg-gray-900 ${!inMonth ? "opacity-30" : ""}`}
+                className={`aspect-square md:aspect-[4/5] flex flex-col items-center md:items-stretch justify-start pt-1.5 md:px-1 rounded-lg transition-colors hover:bg-gray-900 overflow-hidden ${!inMonth ? "opacity-30" : ""}`}
               >
-                <span className={`text-sm w-7 h-7 flex items-center justify-center rounded-full ${isToday ? "bg-green-600 text-white font-bold" : "text-gray-300"}`}>
+                <span className={`text-sm w-7 h-7 flex items-center justify-center rounded-full md:self-center flex-shrink-0 ${isToday ? "bg-green-600 text-white font-bold" : "text-gray-300"}`}>
                   {toDate(date).getDate()}
                 </span>
-                <div className="flex gap-0.5 mt-0.5">
-                  {dots.map((c, i) => (
-                    <span key={i} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: c }} />
+                {/* Mobile: color dots (cells too small for text) */}
+                <div className="flex gap-0.5 mt-0.5 md:hidden justify-center">
+                  {dots.map((it, i) => (
+                    <span key={i} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: it.color }} />
                   ))}
+                </div>
+                {/* Desktop: truncated titles */}
+                <div className="hidden md:block w-full space-y-0.5 mt-0.5">
+                  {items.slice(0, 2).map((it, i) => (
+                    <div key={i} className="flex items-center gap-1 min-w-0">
+                      <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ backgroundColor: it.color }} />
+                      <span className="text-[10px] text-gray-400 truncate text-left">{it.title}</span>
+                    </div>
+                  ))}
+                  {items.length > 2 && (
+                    <p className="text-[9px] text-gray-600 text-left pl-2">+{items.length - 2} more</p>
+                  )}
                 </div>
               </button>
             );

@@ -70,7 +70,23 @@ expect(
   ["2026-06-29", "2026-07-13"]
 );
 
-// 6. occurrenceAt sanity for todos (anchor-based regeneration)
+// 6. Multi-day non-recurring event: one occurrence per day, continuations flagged
+const trip = fakeEvent({
+  startAt: parseWall("2026-07-10T14:00"), endAt: parseWall("2026-07-12T11:00"),
+  recurrence: "none", allDay: false,
+});
+expect(
+  "3-day trip: appears Fri/Sat/Sun, days 2-3 are continuations",
+  expandEvent(trip, "2026-07-06", "2026-07-19").map((o) => `${o.date}:${o.continuation}`),
+  ["2026-07-10:false", "2026-07-11:true", "2026-07-12:true"]
+);
+expect(
+  "3-day trip queried mid-span: only overlapping days, still continuations",
+  expandEvent(trip, "2026-07-11", "2026-07-11").map((o) => `${o.date}:${o.continuation}`),
+  ["2026-07-11:true"]
+);
+
+// 7. occurrenceAt sanity for todos (anchor-based regeneration)
 expect(
   "todo anchor Jan-31 monthly: occurrence 1=Feb 28, 2=Mar 31",
   [1, 2].map((n) => occurrenceAt(parseWall("2026-01-31"), "monthly", 1, n).toISOString().slice(0, 10)),

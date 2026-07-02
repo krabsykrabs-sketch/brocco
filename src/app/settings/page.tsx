@@ -28,6 +28,61 @@ interface ProfileData {
   inviteCodes: InviteCodeData[];
 }
 
+/**
+ * IANA timezone picker — a select instead of a free-text input, because one
+ * typo ("Europe/berlin") silently breaks every "today" computation for the
+ * user. Falls back to a text input on browsers without supportedValuesOf.
+ */
+function TimezonePicker({ value, onChange }: { value: string; onChange: (tz: string) => void }) {
+  const [zones, setZones] = useState<string[] | null>(null);
+  const [deviceTz, setDeviceTz] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const supported = (Intl as any).supportedValuesOf?.("timeZone") as string[] | undefined;
+      setZones(supported && supported.length > 0 ? supported : null);
+    } catch {
+      setZones(null);
+    }
+    try {
+      setDeviceTz(Intl.DateTimeFormat().resolvedOptions().timeZone || null);
+    } catch { /* leave null */ }
+  }, []);
+
+  const inputCls = "w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500";
+
+  return (
+    <div className="space-y-1">
+      {zones ? (
+        <select value={value} onChange={(e) => onChange(e.target.value)} className={inputCls}>
+          {/* Keep a stored-but-unknown value selectable rather than silently jumping */}
+          {value && !zones.includes(value) && <option value={value}>{value}</option>}
+          {zones.map((z) => (
+            <option key={z} value={z}>{z.replace(/_/g, " ")}</option>
+          ))}
+        </select>
+      ) : (
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="e.g. Europe/Berlin"
+          className={inputCls}
+        />
+      )}
+      {deviceTz && deviceTz !== value && (
+        <button
+          type="button"
+          onClick={() => onChange(deviceTz)}
+          className="text-xs text-green-400 hover:text-green-300 underline underline-offset-2"
+        >
+          Use device timezone ({deviceTz})
+        </button>
+      )}
+    </div>
+  );
+}
+
 function SettingsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -256,12 +311,7 @@ function SettingsContent() {
           </div>
           <div>
             <label className="text-xs text-gray-500 block mb-1">Timezone</label>
-            <input
-              value={editTimezone}
-              onChange={(e) => setEditTimezone(e.target.value)}
-              placeholder="e.g. Europe/Berlin"
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
-            />
+            <TimezonePicker value={editTimezone} onChange={setEditTimezone} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

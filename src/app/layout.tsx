@@ -6,6 +6,7 @@ import { BottomTabBar } from "./bottom-tabs";
 import { PWAInstallBanner } from "./pwa-banner";
 import { QuickCapture } from "./quick-capture";
 import { StravaAutoSync } from "./strava-auto-sync";
+import { ReminderWatcher } from "./reminder-watcher";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -55,6 +56,7 @@ export default function RootLayout({
         <BottomTabBar />
         <QuickCapture />
         <StravaAutoSync />
+        <ReminderWatcher />
         <PWAInstallBanner />
         <script
           dangerouslySetInnerHTML={{

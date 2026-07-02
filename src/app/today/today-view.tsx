@@ -11,7 +11,7 @@ import { useScreenContext, useDataChanged } from "@/lib/capture-context";
 interface EventOccurrence {
   eventId: string; occurrenceKey: string; date: string; start: string; end: string | null;
   title: string; location: string | null; notes: string | null; category: string;
-  allDay: boolean; recurring: boolean;
+  allDay: boolean; recurring: boolean; continuation: boolean;
 }
 interface WorkoutItem {
   workoutId: string; date: string; title: string; workoutType: string; activityType: string;
@@ -54,10 +54,13 @@ function formatHeaderDate(dateStr: string): string {
 
 function EventRow({ event }: { event: EventOccurrence }) {
   const meta = categoryMeta(event.category);
+  const isLastDay = event.end?.slice(0, 10) === event.date;
   return (
-    <div className={`flex items-center gap-3 border rounded-xl px-3.5 py-2.5 ${meta.bg}`}>
+    <div className={`flex items-center gap-3 border rounded-xl px-3.5 py-2.5 ${event.continuation ? "opacity-80" : ""} ${meta.bg}`}>
       <div className="w-12 flex-shrink-0 text-right">
-        {event.allDay ? (
+        {event.continuation ? (
+          <span className="text-sm text-gray-500" title="Continues from an earlier day">⟶</span>
+        ) : event.allDay ? (
           <span className="text-[10px] uppercase font-bold text-gray-500">{event.category === "birthday" ? "🎂" : "all day"}</span>
         ) : (
           <span className="text-sm font-semibold text-gray-200">{timeOf(event)}</span>
@@ -67,8 +70,14 @@ function EventRow({ event }: { event: EventOccurrence }) {
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-gray-100 truncate">{event.title}</p>
         <p className="text-xs text-gray-500 truncate">
-          {!event.allDay && event.end ? `until ${event.end.slice(11, 16)}` : ""}
-          {event.location ? `${!event.allDay && event.end ? " · " : ""}${event.location}` : ""}
+          {event.continuation
+            ? isLastDay && !event.allDay
+              ? `ends ${event.end!.slice(11, 16)}`
+              : "continues all day"
+            : !event.allDay && event.end
+            ? `until ${event.end.slice(11, 16)}`
+            : ""}
+          {event.location ? `${event.continuation || (!event.allDay && event.end) ? " · " : ""}${event.location}` : ""}
         </p>
       </div>
       {event.recurring && <span className="text-xs text-gray-600" title="Recurring">↻</span>}
@@ -258,9 +267,12 @@ export default function TodayView() {
     );
   }
 
-  // Sort agenda: all-day events + birthdays → timed items (events/tasks with time) by time → workout → undated tasks
-  const allDayEvents = data.events.filter((e) => e.allDay);
-  const timedEvents = data.events.filter((e) => !e.allDay);
+  // Sort agenda: all-day events + birthdays + multi-day continuations →
+  // timed items (events/tasks with time) by time → workout → undated tasks.
+  // Continuations sort with all-day items — their start time belongs to a
+  // previous day and would mis-position them in today's timeline.
+  const allDayEvents = data.events.filter((e) => e.allDay || e.continuation);
+  const timedEvents = data.events.filter((e) => !e.allDay && !e.continuation);
   const openTodos = data.todos.filter((t) => !t.done || t.dueDate === data.date);
   const timedTodos = openTodos.filter((t) => t.dueTime);
   const untimedTodos = openTodos.filter((t) => !t.dueTime);

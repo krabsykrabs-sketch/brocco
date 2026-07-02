@@ -32,8 +32,10 @@ export function QuickCapture() {
   const [clarify, setClarify] = useState<string | null>(null);
   const [clarifyInput, setClarifyInput] = useState("");
   const [micSupported, setMicSupported] = useState(false);
+  const [transcript, setTranscript] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const discardedRef = useRef(false);
   const phaseRef = useRef<Phase>("idle");
   phaseRef.current = phase;
 
@@ -78,6 +80,7 @@ export function QuickCapture() {
   const sendCapture = useCallback(
     async (text: string) => {
       setPhase("thinking");
+      setTranscript(text);
       try {
         const res = await fetch("/api/capture", {
           method: "POST",
@@ -101,6 +104,7 @@ export function QuickCapture() {
         pushToast("Connection problem — try again.", "error");
       } finally {
         setPhase("idle");
+        setTranscript(null);
       }
     },
     [pushToast]
@@ -121,6 +125,11 @@ export function QuickCapture() {
 
       recorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
+        if (discardedRef.current) {
+          discardedRef.current = false;
+          setPhase("idle");
+          return;
+        }
         const chunks = audioChunksRef.current;
         if (chunks.length === 0) {
           setPhase("idle");
@@ -159,8 +168,15 @@ export function QuickCapture() {
       return;
     }
     if (phaseRef.current !== "idle") return;
+    discardedRef.current = false;
     startRecording();
   }, [startRecording]);
+
+  const handleDiscard = useCallback(() => {
+    if (phaseRef.current !== "recording") return;
+    discardedRef.current = true;
+    mediaRecorderRef.current?.stop();
+  }, []);
 
   if (HIDDEN_ON.some((p) => pathname.startsWith(p))) return null;
 
@@ -237,12 +253,37 @@ export function QuickCapture() {
         </div>
       )}
 
+      {/* Transcript chip while Brocco processes — shows what Whisper heard,
+          so a mis-transcription is immediately visible instead of surfacing
+          as a mysteriously wrong toast */}
+      {phase === "thinking" && transcript && (
+        <div
+          className="fixed z-[60] right-4 md:right-6 max-w-[70vw] md:max-w-sm bg-gray-900/95 border border-gray-700 rounded-xl px-3 py-2 shadow-lg"
+          style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 8.5rem)" }}
+        >
+          <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Heard</p>
+          <p className="text-xs text-gray-200 italic">&ldquo;{transcript}&rdquo;</p>
+        </div>
+      )}
+
+      {/* Discard button while recording */}
+      {phase === "recording" && (
+        <button
+          onClick={handleDiscard}
+          aria-label="Discard recording"
+          className="fixed z-[60] w-10 h-10 rounded-full bg-gray-800 border border-gray-600 hover:bg-gray-700 shadow-lg flex items-center justify-center transition-colors"
+          style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 5rem)", right: "calc(1rem + 4.25rem)" }}
+        >
+          <span className="text-gray-300 text-lg leading-none">&times;</span>
+        </button>
+      )}
+
       {/* FAB */}
       {micSupported && (
         <button
           onClick={handleMicTap}
           disabled={busy}
-          aria-label={phase === "recording" ? "Stop recording" : "Speak to Brocco"}
+          aria-label={phase === "recording" ? "Stop recording and send" : "Speak to Brocco"}
           className={`fixed z-[60] right-4 md:right-6 w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all ${
             phase === "recording"
               ? "bg-red-600 scale-110 animate-pulse"
