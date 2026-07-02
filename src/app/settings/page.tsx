@@ -108,6 +108,11 @@ function SettingsContent() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
 
+  // ICS calendar feed
+  const [icsUrl, setIcsUrl] = useState<string | null>(null);
+  const [icsBusy, setIcsBusy] = useState(false);
+  const [icsCopied, setIcsCopied] = useState(false);
+
   // Invite
   const [generatingInvite, setGeneratingInvite] = useState(false);
 
@@ -138,6 +143,7 @@ function SettingsContent() {
           setEditGoalDate(data.goalRaceDate ? data.goalRaceDate.split("T")[0] : "");
           setEditHrMax(data.hrMaxBpm ? String(data.hrMaxBpm) : "");
           if (data.features) setFeatureFlags(data.features);
+          setIcsUrl(data.icsFeedUrl || null);
         }
       } catch {
         // ignore
@@ -191,6 +197,36 @@ function SettingsContent() {
       fetch("/api/briefing?refresh=1").catch(() => {});
     } catch {
       setFeatureFlags(featureFlags); // roll back
+    }
+  }
+
+  async function handleIcsToken(rotate: boolean) {
+    setIcsBusy(true);
+    try {
+      const res = await fetch("/api/calendar/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rotate }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setIcsUrl(data.url);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIcsBusy(false);
+    }
+  }
+
+  async function handleIcsCopy() {
+    if (!icsUrl) return;
+    try {
+      await navigator.clipboard.writeText(icsUrl);
+      setIcsCopied(true);
+      setTimeout(() => setIcsCopied(false), 2000);
+    } catch {
+      // clipboard unavailable — the URL is selectable in the input
     }
   }
 
@@ -433,6 +469,56 @@ function SettingsContent() {
           ))}
         </div>
       </section>
+
+      {/* Calendar feed */}
+      {featureFlags.calendar && (
+        <section>
+          <h2 className="text-lg font-semibold mb-1">Calendar feed</h2>
+          <p className="text-xs text-gray-500 mb-3">
+            Subscribe from Google or Apple Calendar to see your brocco events and workouts there (read-only).
+          </p>
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+            {icsUrl ? (
+              <>
+                <div className="flex gap-2">
+                  <input
+                    readOnly
+                    value={icsUrl}
+                    onFocus={(e) => e.target.select()}
+                    className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-xs text-gray-300 focus:outline-none"
+                  />
+                  <button
+                    onClick={handleIcsCopy}
+                    className="px-3 py-2 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-lg transition-colors flex-shrink-0"
+                  >
+                    {icsCopied ? "Copied ✓" : "Copy"}
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-600">
+                  Google Calendar: Other calendars → + → From URL. Apple Calendar: File → New Calendar Subscription.
+                  Anyone with this link can read your calendar —{" "}
+                  <button
+                    onClick={() => handleIcsToken(true)}
+                    disabled={icsBusy}
+                    className="text-gray-500 hover:text-gray-300 underline underline-offset-2 disabled:opacity-50"
+                  >
+                    regenerate it
+                  </button>{" "}
+                  if it ever leaks (the old link stops working).
+                </p>
+              </>
+            ) : (
+              <button
+                onClick={() => handleIcsToken(false)}
+                disabled={icsBusy}
+                className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-200 rounded-lg transition-colors"
+              >
+                {icsBusy ? "Creating..." : "Create subscribe link"}
+              </button>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Strava */}
       <section>

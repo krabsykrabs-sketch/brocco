@@ -48,6 +48,7 @@ export async function GET() {
       weeklyKmBaseline: profile.weeklyKmBaseline ? Number(profile.weeklyKmBaseline) : null,
       hrMaxBpm: profile.hrMaxBpm,
       features: resolveFeatures(profile.features),
+      icsFeedUrl: profile.icsToken ? `${process.env.BASE_URL}/api/calendar/ics?token=${profile.icsToken}` : null,
       stravaConnected: !!profile.stravaAccessToken,
       stravaAthleteId: profile.stravaAthleteId,
       onboardingCompleted: profile.onboardingCompleted,
