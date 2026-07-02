@@ -31,6 +31,7 @@ model User {
   dailyBriefings    DailyBriefing[]
   passwordResets    PasswordResetToken[]
   weeklyReviews     WeeklyReview[]
+  pushSubscriptions PushSubscription[]
 
   @@map("users")
 }
@@ -540,6 +541,22 @@ model WeeklyReview {
 
   @@unique([userId, weekStart])
   @@map("weekly_reviews")
+}
+
+// One row per device/browser the user enabled notifications on
+model PushSubscription {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 
 model InviteCode {
