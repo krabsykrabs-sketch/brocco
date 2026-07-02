@@ -46,6 +46,7 @@ model UserProfile {
   stravaRefreshToken    String?  @map("strava_refresh_token")
   stravaAthleteId       String?  @map("strava_athlete_id")
   stravaTokenExpiresAt  DateTime? @map("strava_token_expires_at")
+  stravaLastSyncAt      DateTime? @map("strava_last_sync_at")
   coachingNotes         Json     @default("{}") @map("coaching_notes") @db.JsonB
   aiPreferences         Json?    @map("ai_preferences") @db.JsonB
   onboardingCompleted   Boolean  @default(false) @map("onboarding_completed")

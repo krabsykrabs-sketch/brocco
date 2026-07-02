@@ -29,13 +29,23 @@ export function wallDateString(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Calendar date ("yyyy-MM-dd") of a real UTC instant, as seen in the given
+ * IANA timezone. Use this (not wallDateString) for actual timestamps like
+ * stravaLastSyncAt — wallDateString is only for the naive local-time
+ * convention used by events/todos.
+ */
+export function dateInTimezone(instant: Date, tz: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(instant);
+  } catch {
+    return instant.toISOString().slice(0, 10);
+  }
+}
+
 /** Today's date ("yyyy-MM-dd") in the user's IANA timezone. */
 export function todayInTimezone(tz: string): string {
-  try {
-    return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
-  } catch {
-    return new Date().toISOString().slice(0, 10);
-  }
+  return dateInTimezone(new Date(), tz);
 }
 
 /** Current wall-clock "yyyy-MM-ddTHH:mm" in the user's IANA timezone. */

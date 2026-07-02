@@ -269,6 +269,60 @@ export async function backfillActivities(userId: string): Promise<{ newCount: nu
 }
 
 /**
+ * Incremental sync: fetch only activities since the last sync (with a small
+ * overlap buffer for late-arriving/edited activities), and advance
+ * stravaLastSyncAt. Used by the once-per-day auto-sync — cheap compared to
+ * backfillActivities, which pages through the full 6-month window every call.
+ */
+export async function syncRecentActivities(userId: string): Promise<{ newCount: number; totalChecked: number }> {
+  const token = await getValidToken(userId);
+  const profile = await prisma.userProfile.findUnique({ where: { userId } });
+  const timezone = profile?.timezone || "Europe/Berlin";
+
+  const OVERLAP_MS = 60 * 60 * 1000; // 1 hour, absorbs clock skew / late edits
+  const DEFAULT_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000; // first auto-sync: 30 days
+  const since = profile?.stravaLastSyncAt
+    ? new Date(profile.stravaLastSyncAt.getTime() - OVERLAP_MS)
+    : new Date(Date.now() - DEFAULT_LOOKBACK_MS);
+  const after = Math.floor(since.getTime() / 1000);
+
+  let page = 1;
+  let newCount = 0;
+  let totalChecked = 0;
+  const MAX_PAGES = 3; // safety cap; an incremental sync should rarely need more than one
+
+  while (page <= MAX_PAGES) {
+    const activities = await fetchStravaActivities(token, page, 200, after);
+    if (!activities || activities.length === 0) break;
+
+    for (const activity of activities) {
+      try {
+        totalChecked++;
+        const stravaId = String(activity.id);
+        const existing = await prisma.activity.findUnique({
+          where: { userId_stravaId: { userId, stravaId } },
+          select: { id: true },
+        });
+        await storeStravaActivity(userId, activity, timezone);
+        if (!existing) newCount++;
+      } catch (err) {
+        console.error(`Failed to store activity ${activity.id}:`, err);
+      }
+    }
+
+    if (activities.length < 200) break;
+    page++;
+  }
+
+  await prisma.userProfile.update({
+    where: { userId },
+    data: { stravaLastSyncAt: new Date() },
+  });
+
+  return { newCount, totalChecked };
+}
+
+/**
  * Full historical backfill: fetch ALL activities (no date filter).
  */
 export async function backfillActivitiesFull(userId: string): Promise<{ newCount: number; totalChecked: number }> {
