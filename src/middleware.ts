@@ -13,7 +13,7 @@ const sessionOptions = {
   },
 };
 
-const PUBLIC_PATHS = ["/login", "/signup", "/api/auth/login", "/api/auth/signup", "/api/strava/webhook"];
+const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password", "/reset-password", "/api/auth/login", "/api/auth/signup", "/api/strava/webhook"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

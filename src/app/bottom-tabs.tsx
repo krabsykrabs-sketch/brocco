@@ -138,7 +138,7 @@ function composeTabs(features: Features): Tab[] {
 }
 
 // Pages where tabs should be hidden
-const HIDDEN_ON = ["/login", "/signup", "/legal"];
+const HIDDEN_ON = ["/login", "/signup", "/legal", "/forgot-password", "/reset-password"];
 
 export function BottomTabBar() {
   const pathname = usePathname();

@@ -14,7 +14,7 @@ import { anyLifeFeature } from "@/lib/features";
  */
 
 // No FAB on auth/legal pages; chat has its own mic.
-const HIDDEN_ON = ["/login", "/signup", "/legal", "/chat"];
+const HIDDEN_ON = ["/login", "/signup", "/legal", "/chat", "/forgot-password", "/reset-password"];
 
 interface Toast {
   id: number;

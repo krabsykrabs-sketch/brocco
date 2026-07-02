@@ -104,6 +104,13 @@ function SettingsContent() {
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
 
+  // Email change
+  const [emailEditOpen, setEmailEditOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [emailPw, setEmailPw] = useState("");
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [emailResult, setEmailResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
   // Strava
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string | null>(null);
@@ -172,6 +179,35 @@ function SettingsContent() {
       // ignore
     } finally {
       setProfileSaving(false);
+    }
+  }
+
+  async function handleEmailChange() {
+    setEmailSaving(true);
+    setEmailResult(null);
+    try {
+      const res = await fetch("/api/auth/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newEmail, currentPassword: emailPw }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEmailResult({ ok: true, msg: "Email updated" });
+        if (profile) setProfile({ ...profile, email: data.email });
+        setTimeout(() => {
+          setEmailEditOpen(false);
+          setNewEmail("");
+          setEmailPw("");
+          setEmailResult(null);
+        }, 1500);
+      } else {
+        setEmailResult({ ok: false, msg: data.error || "Failed" });
+      }
+    } catch {
+      setEmailResult({ ok: false, msg: "Something went wrong" });
+    } finally {
+      setEmailSaving(false);
     }
   }
 
@@ -330,7 +366,56 @@ function SettingsContent() {
           </div>
           <div>
             <label className="text-xs text-gray-500 block mb-1">Email</label>
-            <p className="text-sm text-gray-400 px-3 py-2">{profile?.email}</p>
+            {!emailEditOpen ? (
+              <div className="flex items-center justify-between px-3 py-2">
+                <p className="text-sm text-gray-400">{profile?.email}</p>
+                <button
+                  onClick={() => setEmailEditOpen(true)}
+                  className="text-xs text-green-400 hover:text-green-300 underline underline-offset-2"
+                >
+                  Change
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2 bg-gray-800/60 border border-gray-700 rounded-lg p-3">
+                <input
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="new@email.com"
+                  autoFocus
+                  className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+                <input
+                  type="password"
+                  value={emailPw}
+                  onChange={(e) => setEmailPw(e.target.value)}
+                  placeholder="Current password (to confirm)"
+                  className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+                <p className="text-[11px] text-gray-500">
+                  This is your login and where password-reset links go — make sure it&apos;s an inbox you can read.
+                </p>
+                {emailResult && (
+                  <p className={`text-xs ${emailResult.ok ? "text-green-400" : "text-red-400"}`}>{emailResult.msg}</p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setEmailEditOpen(false); setNewEmail(""); setEmailPw(""); setEmailResult(null); }}
+                    className="px-3 py-1.5 text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleEmailChange}
+                    disabled={emailSaving || !newEmail.trim() || !emailPw}
+                    className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white rounded-lg transition-colors"
+                  >
+                    {emailSaving ? "Saving..." : "Save email"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           <div>
             <label className="text-xs text-gray-500 block mb-1">Timezone</label>
