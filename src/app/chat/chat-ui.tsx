@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { DesktopNavLinks } from "@/app/nav";
+import { ChatMarkdown } from "./markdown";
 
 interface Message {
   id: string;
@@ -100,7 +101,7 @@ function MessageBubble({ msg }: { msg: Message }) {
         ))}
         {cleanText && (
           <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5">
-            <p className="text-sm text-gray-200 whitespace-pre-wrap">{cleanText}</p>
+            <ChatMarkdown text={cleanText} />
             {statusType && statusText && (
               <StatusStrip type={statusType} text={statusText} />
             )}
@@ -636,7 +637,7 @@ export default function ChatUI({
                 const { cleanText, statusType, statusText } = parseStatus(streamingText);
                 return (
                   <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5">
-                    <p className="text-sm text-gray-200 whitespace-pre-wrap">{cleanText}</p>
+                    <ChatMarkdown text={cleanText} />
                     {statusType && statusText && (
                       <StatusStrip type={statusType} text={statusText} />
                     )}

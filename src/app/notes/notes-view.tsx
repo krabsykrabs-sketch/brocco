@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { PageHeader } from "../nav";
 import { useScreenContext, useDataChanged } from "@/lib/capture-context";
+import { emitToast } from "@/lib/toast";
 
 interface Note {
   id: string; title: string; body: string; tags: string[]; updatedAt: string;
@@ -40,9 +41,31 @@ function NoteEditor({
   }
 
   async function handleDelete() {
-    if (!note || !confirm("Delete this note?")) return;
+    if (!note) return;
     const res = await fetch(`/api/notes/${note.id}`, { method: "DELETE" });
-    if (res.ok) { onDeleted(); onClose(); }
+    if (!res.ok) {
+      emitToast({ text: "Couldn't delete — try again.", kind: "error" });
+      return;
+    }
+    onDeleted();
+    onClose();
+    // No blocking confirm — deletion is instant but reversible via the toast
+    const snapshot = { title: note.title, body: note.body, tags: note.tags };
+    emitToast({
+      text: `Deleted: ${note.title}`,
+      kind: "info",
+      action: {
+        label: "Undo",
+        run: async () => {
+          await fetch("/api/notes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(snapshot),
+          });
+          onDeleted(); // refetch
+        },
+      },
+    });
   }
 
   const inputCls = "w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-green-500";
