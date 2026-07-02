@@ -9,6 +9,7 @@ import {
   wallDateString,
   formatDateShort,
 } from "@/lib/schedule";
+import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 
 /**
  * Build the coaching context for the AI system prompt.
@@ -37,6 +38,7 @@ export async function buildCoachContext(userId: string): Promise<string> {
         elevationGainM: true,
         perceivedEffort: true,
         startDateLocal: true,
+        activityAnalysis: true,
       },
     }),
     prisma.healthLog.findMany({
@@ -100,7 +102,8 @@ export async function buildCoachContext(userId: string): Promise<string> {
         const hr = a.avgHeartRate ? `HR:${a.avgHeartRate}` : "";
         const elev = a.elevationGainM && Number(a.elevationGainM) > 50 ? `+${Math.round(Number(a.elevationGainM))}m` : "";
         const parts = [dist, dur, pace, hr, elev].filter(Boolean).join(", ");
-        return `- ${date}: ${a.activityType} "${a.name}" — ${parts}`;
+        const intensity = formatIntensityAnnotation(a.activityAnalysis);
+        return `- ${date}: ${a.activityType} "${a.name}" — ${parts}${intensity}`;
       })
       .join("\n");
   }
@@ -161,6 +164,46 @@ async function buildLifeContext(userId: string, timezone: string): Promise<strin
   }
 
   return block;
+}
+
+function formatPaceShort(secPerKm: number): string {
+  const m = Math.floor(secPerKm / 60);
+  const s = secPerKm % 60;
+  return `${m}:${s.toString().padStart(2, "0")}/km`;
+}
+
+/**
+ * Compact intensity annotation appended to a recent-activity line — only
+ * for activities that have something worth flagging (plan mismatch,
+ * meaningful cardiac drift, or a detected hard effort). Unremarkable runs
+ * get no annotation, keeping the 14-day block within the token budget even
+ * though every run may now carry an activity_analysis blob.
+ */
+function formatIntensityAnnotation(raw: unknown): string {
+  if (!raw || typeof raw !== "object") return "";
+  const a = raw as ActivityAnalysis;
+  const parts: string[] = [];
+
+  if (a.effortVsPlanned === "harder_than_planned") parts.push("⚠ ran harder than planned");
+  else if (a.effortVsPlanned === "easier_than_planned") parts.push("⚠ ran easier than planned");
+
+  if (a.decouplingPct != null && Math.abs(a.decouplingPct) >= 5) {
+    parts.push(`cardiac drift ${a.decouplingPct > 0 ? "+" : ""}${a.decouplingPct}%`);
+  }
+
+  if (a.effortSegments.length > 0) {
+    const paces = a.effortSegments.map((s) => s.paceSecPerKm).filter((p): p is number => p != null);
+    const hrs = a.effortSegments.map((s) => s.avgHr).filter((h): h is number => h != null);
+    const avgPace = paces.length ? Math.round(paces.reduce((s, x) => s + x, 0) / paces.length) : null;
+    const avgHr = hrs.length ? Math.round(hrs.reduce((s, x) => s + x, 0) / hrs.length) : null;
+    const label = a.effortSegments.length > 1 ? `${a.effortSegments.length}x hard reps` : "hard block";
+    parts.push(`${label}${avgPace ? ` @${formatPaceShort(avgPace)}` : ""}${avgHr ? ` HR${avgHr}` : ""}`);
+  } else if (a.zones && a.zones.z4Pct + a.zones.z5Pct >= 15 && !parts.some((p) => p.includes("harder"))) {
+    // No distinct effort block, but a meaningful chunk of the run was hard anyway
+    parts.push(`${Math.round(a.zones.z4Pct + a.zones.z5Pct)}% in Z4-5`);
+  }
+
+  return parts.length > 0 ? ` [${parts.join("; ")}]` : "";
 }
 
 async function buildPlanContext(userId: string, now: Date): Promise<string> {

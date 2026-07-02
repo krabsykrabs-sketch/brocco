@@ -47,6 +47,7 @@ model UserProfile {
   stravaAthleteId       String?  @map("strava_athlete_id")
   stravaTokenExpiresAt  DateTime? @map("strava_token_expires_at")
   stravaLastSyncAt      DateTime? @map("strava_last_sync_at")
+  hrMaxBpm              Int?     @map("hr_max_bpm")
   coachingNotes         Json     @default("{}") @map("coaching_notes") @db.JsonB
   aiPreferences         Json?    @map("ai_preferences") @db.JsonB
   onboardingCompleted   Boolean  @default(false) @map("onboarding_completed")
@@ -209,6 +210,7 @@ model Activity {
   startDateLocal    DateTime      @map("start_date_local")
   splits            Json?         @db.JsonB
   rawData           Json?         @map("raw_data") @db.JsonB
+  activityAnalysis  Json?         @map("activity_analysis") @db.JsonB
   createdAt         DateTime      @default(now()) @map("created_at")
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)

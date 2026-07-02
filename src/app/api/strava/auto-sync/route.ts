@@ -3,6 +3,7 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { syncRecentActivities } from "@/lib/strava";
 import { todayInTimezone, dateInTimezone } from "@/lib/schedule";
+import { analyzeEligibleActivities } from "@/lib/activity-analysis";
 
 /**
  * GET /api/strava/auto-sync — silent, once-per-local-day incremental sync.
@@ -33,7 +34,10 @@ export async function GET() {
   }
 
   try {
-    const { newCount, totalChecked } = await syncRecentActivities(session.userId);
+    const { newCount, totalChecked, newActivities } = await syncRecentActivities(session.userId);
+    // Analysis failures are swallowed per-activity inside this call — a bad
+    // streams fetch shouldn't turn a successful sync into an error response.
+    await analyzeEligibleActivities(session.userId, newActivities);
     return NextResponse.json({ ok: true, newCount, totalChecked });
   } catch (err) {
     console.error("Auto-sync error:", err);

@@ -45,6 +45,7 @@ export async function GET() {
       goalRaceDate: profile.goalRaceDate,
       yearsRunning: profile.yearsRunning,
       weeklyKmBaseline: profile.weeklyKmBaseline ? Number(profile.weeklyKmBaseline) : null,
+      hrMaxBpm: profile.hrMaxBpm,
       stravaConnected: !!profile.stravaAccessToken,
       stravaAthleteId: profile.stravaAthleteId,
       onboardingCompleted: profile.onboardingCompleted,
@@ -70,7 +71,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, timezone, goalRace, goalTime, goalRaceDate } = body;
+    const { name, timezone, goalRace, goalTime, goalRaceDate, hrMaxBpm } = body;
 
     if (name !== undefined) {
       await prisma.user.update({
@@ -85,6 +86,10 @@ export async function PUT(request: NextRequest) {
     if (goalTime !== undefined) profileUpdate.goalTime = goalTime || null;
     if (goalRaceDate !== undefined) {
       profileUpdate.goalRaceDate = goalRaceDate ? new Date(goalRaceDate) : null;
+    }
+    if (hrMaxBpm !== undefined) {
+      const n = Number(hrMaxBpm);
+      profileUpdate.hrMaxBpm = hrMaxBpm && n > 0 && n < 250 ? Math.round(n) : null;
     }
 
     if (Object.keys(profileUpdate).length > 0) {

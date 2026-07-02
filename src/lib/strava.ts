@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import crypto from "crypto";
+import type { Activity } from "@prisma/client";
 
 const STRAVA_API = "https://www.strava.com/api/v3";
 const STRAVA_OAUTH = "https://www.strava.com/oauth";
@@ -118,6 +119,32 @@ export async function fetchStravaActivities(
   }
 
   return res.json();
+}
+
+/**
+ * Fetch an activity's raw time-series streams (heartrate, velocity, distance,
+ * moving). Returns null if the activity has no heartrate stream (no HR strap
+ * worn) — nothing to analyze in that case. One Strava API call.
+ */
+export async function fetchActivityStreams(
+  accessToken: string,
+  activityId: string
+): Promise<Record<string, { data: unknown[] }> | null> {
+  const keys = "time,distance,heartrate,velocity_smooth,moving";
+  const res = await fetch(
+    `${STRAVA_API}/activities/${activityId}/streams?keys=${keys}&key_by_type=true`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+
+  if (!res.ok) {
+    throw new Error(`Strava streams fetch failed: ${res.status}`);
+  }
+
+  const data = await res.json();
+  if (!data.heartrate || !data.time || !data.distance || !data.velocity_smooth) {
+    return null; // missing a required stream (most commonly: no HR device)
+  }
+  return data;
 }
 
 /**
@@ -274,7 +301,9 @@ export async function backfillActivities(userId: string): Promise<{ newCount: nu
  * stravaLastSyncAt. Used by the once-per-day auto-sync — cheap compared to
  * backfillActivities, which pages through the full 6-month window every call.
  */
-export async function syncRecentActivities(userId: string): Promise<{ newCount: number; totalChecked: number }> {
+export async function syncRecentActivities(
+  userId: string
+): Promise<{ newCount: number; totalChecked: number; newActivities: Activity[] }> {
   const token = await getValidToken(userId);
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
   const timezone = profile?.timezone || "Europe/Berlin";
@@ -289,6 +318,7 @@ export async function syncRecentActivities(userId: string): Promise<{ newCount: 
   let page = 1;
   let newCount = 0;
   let totalChecked = 0;
+  const newActivities: Activity[] = [];
   const MAX_PAGES = 3; // safety cap; an incremental sync should rarely need more than one
 
   while (page <= MAX_PAGES) {
@@ -303,8 +333,11 @@ export async function syncRecentActivities(userId: string): Promise<{ newCount: 
           where: { userId_stravaId: { userId, stravaId } },
           select: { id: true },
         });
-        await storeStravaActivity(userId, activity, timezone);
-        if (!existing) newCount++;
+        const stored = await storeStravaActivity(userId, activity, timezone);
+        if (!existing) {
+          newCount++;
+          newActivities.push(stored);
+        }
       } catch (err) {
         console.error(`Failed to store activity ${activity.id}:`, err);
       }
@@ -319,7 +352,7 @@ export async function syncRecentActivities(userId: string): Promise<{ newCount: 
     data: { stravaLastSyncAt: new Date() },
   });
 
-  return { newCount, totalChecked };
+  return { newCount, totalChecked, newActivities };
 }
 
 /**

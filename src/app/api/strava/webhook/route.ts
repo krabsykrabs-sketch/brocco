@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getValidToken, fetchStravaActivity, storeStravaActivity } from "@/lib/strava";
+import { isEligibleForAnalysis, analyzeActivity } from "@/lib/activity-analysis";
 
 /**
  * GET: Strava webhook verification (subscription creation).
@@ -67,6 +68,12 @@ export async function POST(request: NextRequest) {
       const stravaActivity = await fetchStravaActivity(token, activityId);
       const stored = await storeStravaActivity(userId, stravaActivity, profile.timezone);
       console.log(`[webhook] Stored activity: strava_id=${activityId}, db_id=${stored.id}, type=${stored.activityType}`);
+
+      if (isEligibleForAnalysis(stored)) {
+        analyzeActivity(userId, stored.id).catch((err) =>
+          console.error(`[webhook] Failed to analyze activity ${stored.id}:`, err)
+        );
+      }
     } catch (err) {
       console.error(`[webhook] Failed to process activity ${activityId} for user ${userId}:`, err);
     }

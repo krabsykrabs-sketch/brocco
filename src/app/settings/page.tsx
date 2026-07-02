@@ -24,6 +24,7 @@ interface ProfileData {
   goalRace: string | null;
   goalTime: string | null;
   goalRaceDate: string | null;
+  hrMaxBpm: number | null;
   inviteCodes: InviteCodeData[];
 }
 
@@ -41,6 +42,7 @@ function SettingsContent() {
   const [editGoalRace, setEditGoalRace] = useState("");
   const [editGoalTime, setEditGoalTime] = useState("");
   const [editGoalDate, setEditGoalDate] = useState("");
+  const [editHrMax, setEditHrMax] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
 
@@ -76,6 +78,7 @@ function SettingsContent() {
           setEditGoalRace(data.goalRace || "");
           setEditGoalTime(data.goalTime || "");
           setEditGoalDate(data.goalRaceDate ? data.goalRaceDate.split("T")[0] : "");
+          setEditHrMax(data.hrMaxBpm ? String(data.hrMaxBpm) : "");
         }
       } catch {
         // ignore
@@ -99,6 +102,7 @@ function SettingsContent() {
           goalRace: editGoalRace,
           goalTime: editGoalTime,
           goalRaceDate: editGoalDate || null,
+          hrMaxBpm: editHrMax || null,
         }),
       });
       if (res.ok) {
@@ -287,6 +291,22 @@ function SettingsContent() {
               onChange={(e) => setEditGoalDate(e.target.value)}
               className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
             />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Max heart rate (bpm)</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={100}
+              max={230}
+              value={editHrMax}
+              onChange={(e) => setEditHrMax(e.target.value)}
+              placeholder="e.g. 188"
+              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+            <p className="text-[11px] text-gray-600 mt-1">
+              Used to compute heart rate zones for intensity analysis. If left blank, Brocco estimates it from your highest recorded heart rate.
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <button
