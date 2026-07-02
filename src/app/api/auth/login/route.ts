@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyPassword } from "@/lib/auth";
 import { getSession } from "@/lib/session";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,6 +12,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Email and password are required" },
         { status: 400 }
+      );
+    }
+
+    // Brute-force protection: 10 attempts per 15 min per email+IP,
+    // plus a wider per-IP cap against email enumeration sweeps.
+    const ip = clientIp(request);
+    const emailKey = `login:${String(email).toLowerCase().trim()}:${ip}`;
+    if (!rateLimit(emailKey, 10, 15 * 60 * 1000) || !rateLimit(`login-ip:${ip}`, 30, 15 * 60 * 1000)) {
+      return NextResponse.json(
+        { error: "Too many attempts. Try again in a few minutes." },
+        { status: 429 }
       );
     }
 

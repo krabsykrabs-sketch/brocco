@@ -4,7 +4,7 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { buildCoachContext, buildSystemPrompt } from "@/lib/coach-context";
 import { toolDefinitions, handleToolCall } from "@/lib/tools";
-import { startOfDay, endOfDay } from "date-fns";
+import { nowInTimezone } from "@/lib/schedule";
 
 const anthropic = new Anthropic();
 
@@ -42,12 +42,22 @@ export async function POST(request: NextRequest) {
   }
 
   // --- Get or create today's general chat session ---
-  const now = new Date();
+  // "Today" in the USER's timezone: derive the instant of their local
+  // midnight from the wall-clock elapsed time, so a morning capture in
+  // Sydney doesn't land in yesterday's session on a UTC server.
+  const profileTz = await prisma.userProfile.findUnique({
+    where: { userId },
+    select: { timezone: true },
+  });
+  const localNow = nowInTimezone(profileTz?.timezone || "Europe/Berlin");
+  const [hh, mm] = localNow.slice(11, 16).split(":").map(Number);
+  const localDayStart = new Date(Date.now() - (hh * 60 + mm) * 60 * 1000);
+
   let chatSession = await prisma.chatSession.findFirst({
     where: {
       userId,
       type: "general",
-      createdAt: { gte: startOfDay(now), lte: endOfDay(now) },
+      createdAt: { gte: localDayStart },
     },
     orderBy: { updatedAt: "desc" },
     select: { id: true },
@@ -85,7 +95,7 @@ export async function POST(request: NextRequest) {
     take: 12,
     select: { role: true, content: true },
   });
-  const messages: Anthropic.MessageParam[] = history
+  const rawMessages = history
     .reverse()
     .filter((m) => m.role === "user" || m.role === "assistant")
     .map((m) => {
@@ -101,13 +111,30 @@ export async function POST(request: NextRequest) {
       return { role: m.role as "user" | "assistant", content: t || "…" };
     });
 
+  // The Anthropic API requires user-first, strictly alternating roles. A
+  // truncated take-N window can start mid-conversation on an assistant
+  // message, and a previously failed capture can leave two user messages in
+  // a row — repair by dropping leading assistants and merging consecutive
+  // same-role messages.
+  const messages: Anthropic.MessageParam[] = [];
+  for (const m of rawMessages) {
+    if (messages.length === 0 && m.role === "assistant") continue;
+    const last = messages[messages.length - 1];
+    if (last && last.role === m.role) {
+      last.content = `${last.content}\n${m.content}`;
+    } else {
+      messages.push({ ...m });
+    }
+  }
+
   // --- Tool loop (non-streaming, small budget — captures must be snappy) ---
   const notifications: Array<{ type: string; message: string; data?: Record<string, unknown> }> = [];
   let finalText = "";
   let currentMessages = [...messages];
 
   try {
-    for (let i = 0; i < 4; i++) {
+    const MAX_ITERATIONS = 4;
+    for (let i = 0; i < MAX_ITERATIONS; i++) {
       const response = await anthropic.messages.create({
         model: "claude-opus-4-6",
         max_tokens: 2000,
@@ -127,6 +154,11 @@ export async function POST(request: NextRequest) {
       finalText = turnText || finalText;
 
       if (toolUses.length === 0) break;
+
+      // Text accompanying a tool call describes an intent, not the outcome.
+      // If this turns out to be the last iteration, returning it as `say`
+      // would misreport what actually happened — the toasts are the truth.
+      if (i === MAX_ITERATIONS - 1) finalText = "";
 
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const tu of toolUses) {

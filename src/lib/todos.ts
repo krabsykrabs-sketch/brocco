@@ -1,17 +1,18 @@
 import { prisma } from "@/lib/db";
 import type { Todo, RecurrenceFreq } from "@prisma/client";
-import { addDays, addWeeks, addMonths, addYears } from "date-fns";
-import { parseWall, wallDateString } from "@/lib/schedule";
+import { parseWall, wallDateString, occurrenceAt } from "@/lib/schedule";
 
-function nextDueDate(current: Date, freq: RecurrenceFreq, interval: number): Date {
-  const i = Math.max(1, interval);
-  switch (freq) {
-    case "daily": return addDays(current, i);
-    case "weekly": return addWeeks(current, i);
-    case "monthly": return addMonths(current, i);
-    case "yearly": return addYears(current, i);
-    default: return current;
+/**
+ * Next occurrence strictly after `current`, computed from the series anchor
+ * (not by stepping from `current`) so month-end clamping doesn't permanently
+ * drift the intended day — see occurrenceAt in schedule.ts.
+ */
+function nextDueDate(anchor: Date, current: Date, freq: RecurrenceFreq, interval: number): Date {
+  for (let n = 1; n < 1000; n++) {
+    const candidate = occurrenceAt(anchor, freq, interval, n);
+    if (candidate.getTime() > current.getTime()) return candidate;
   }
+  return current;
 }
 
 /**
@@ -34,8 +35,11 @@ export async function setTodoDone(
 
   let nextOccurrence: Todo | null = null;
   if (done && !todo.done && todo.recurrence !== "none" && todo.dueDate) {
+    // Anchor: first due date of the series (older rows predate the column —
+    // fall back to the current due date, which is correct for them going forward)
+    const anchor = todo.recurrenceAnchor ?? todo.dueDate;
+    const next = nextDueDate(anchor, todo.dueDate, todo.recurrence, todo.recurrenceInterval);
     // Don't double-spawn if the next occurrence already exists (same title + recurrence, open)
-    const next = nextDueDate(todo.dueDate, todo.recurrence, todo.recurrenceInterval);
     const existing = await prisma.todo.findFirst({
       where: { userId, title: todo.title, done: false, recurrence: todo.recurrence, dueDate: next },
     });
@@ -51,6 +55,7 @@ export async function setTodoDone(
           priority: todo.priority,
           recurrence: todo.recurrence,
           recurrenceInterval: todo.recurrenceInterval,
+          recurrenceAnchor: anchor,
           position: todo.position,
         },
       });

@@ -8,6 +8,7 @@ import {
   parseWall,
   wallDateString,
   formatDateShort,
+  addDaysWall,
 } from "@/lib/schedule";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 
@@ -141,7 +142,7 @@ export async function buildCoachContext(userId: string): Promise<string> {
  */
 async function buildLifeContext(userId: string, timezone: string): Promise<string> {
   const today = todayInTimezone(timezone);
-  const weekOut = wallDateString(addDays(parseWall(today), 7));
+  const weekOut = wallDateString(addDaysWall(parseWall(today), 7));
 
   const [agenda, birthdays, openTaskCount] = await Promise.all([
     getAgenda(userId, today, weekOut, { includeOverdueTodos: true, today }),

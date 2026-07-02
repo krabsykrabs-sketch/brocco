@@ -1066,9 +1066,23 @@ const EVENT_CATEGORIES = ["work", "family", "training", "social", "health", "bir
 const RECURRENCE_FREQS = ["none", "daily", "weekly", "monthly", "yearly"];
 const TODO_PRIORITIES = ["low", "medium", "high"];
 
-function parseStartInput(start: string, allDayFlag?: boolean): { startAt: Date; allDay: boolean } {
+/**
+ * Strict wall-time parse for model-supplied dates. The model occasionally
+ * emits things like "next Tuesday" — that must become a correctable tool
+ * error, not an Invalid Date that explodes inside Prisma and 502s the
+ * whole capture.
+ */
+function parseWallStrict(s: unknown): Date | null {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?/.test(s)) return null;
+  const d = parseWall(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function parseStartInput(start: string, allDayFlag?: boolean): { startAt: Date; allDay: boolean } | null {
+  const startAt = parseWallStrict(start);
+  if (!startAt) return null;
   const allDay = allDayFlag ?? start.length <= 10;
-  return { startAt: parseWall(start), allDay };
+  return { startAt, allDay };
 }
 
 function eventToast(title: string, startAt: Date, allDay: boolean): string {
@@ -1089,7 +1103,15 @@ async function handleManageEvent(
     if (!input.title || !input.start) {
       return { success: false, error: "title and start are required to create an event" };
     }
-    const { startAt, allDay } = parseStartInput(input.start as string, input.all_day as boolean | undefined);
+    const parsed = parseStartInput(input.start as string, input.all_day as boolean | undefined);
+    if (!parsed) {
+      return { success: false, error: `Invalid start "${input.start}" — use 'yyyy-MM-ddTHH:mm' or 'yyyy-MM-dd', resolving relative dates yourself` };
+    }
+    const { startAt, allDay } = parsed;
+    const endAt = input.end ? parseWallStrict(input.end) : null;
+    if (input.end && !endAt) {
+      return { success: false, error: `Invalid end "${input.end}" — use 'yyyy-MM-ddTHH:mm'` };
+    }
     const event = await prisma.event.create({
       data: {
         userId,
@@ -1098,11 +1120,11 @@ async function handleManageEvent(
         notes: (input.notes as string) || null,
         category: (EVENT_CATEGORIES.includes(input.category as string) ? input.category : "other") as EventCategory,
         startAt,
-        endAt: input.end ? parseWall(input.end as string) : null,
+        endAt,
         allDay,
         recurrence: recurrenceFreq,
         recurrenceInterval: rec.interval && rec.interval > 0 ? rec.interval : 1,
-        recurrenceUntil: rec.until ? parseWall(rec.until) : null,
+        recurrenceUntil: rec.until ? parseWallStrict(rec.until) : null,
         recurrenceCount: rec.count || null,
         reminderMinutes: input.reminder_minutes != null ? Number(input.reminder_minutes) : null,
       },
@@ -1128,13 +1150,24 @@ async function handleManageEvent(
     if (input.notes !== undefined) data.notes = input.notes || null;
     if (input.category !== undefined && EVENT_CATEGORIES.includes(input.category as string)) data.category = input.category;
     if (input.start !== undefined) {
-      const { startAt, allDay } = parseStartInput(input.start as string, input.all_day as boolean | undefined);
-      data.startAt = startAt;
-      if (input.all_day !== undefined || (input.start as string).length <= 10) data.allDay = allDay;
+      const parsed = parseStartInput(input.start as string, input.all_day as boolean | undefined);
+      if (!parsed) {
+        return { success: false, error: `Invalid start "${input.start}" — use 'yyyy-MM-ddTHH:mm' or 'yyyy-MM-dd'` };
+      }
+      data.startAt = parsed.startAt;
+      if (input.all_day !== undefined || (input.start as string).length <= 10) data.allDay = parsed.allDay;
     } else if (input.all_day !== undefined) {
       data.allDay = !!input.all_day;
     }
-    if (input.end !== undefined) data.endAt = input.end ? parseWall(input.end as string) : null;
+    if (input.end !== undefined) {
+      if (input.end) {
+        const endAt = parseWallStrict(input.end);
+        if (!endAt) return { success: false, error: `Invalid end "${input.end}" — use 'yyyy-MM-ddTHH:mm'` };
+        data.endAt = endAt;
+      } else {
+        data.endAt = null;
+      }
+    }
     if (input.reminder_minutes !== undefined) data.reminderMinutes = input.reminder_minutes != null ? Number(input.reminder_minutes) : null;
     if (input.recurrence !== undefined) {
       data.recurrence = recurrenceFreq;
@@ -1211,11 +1244,24 @@ async function handleManageTask(
       listName = list.name;
     }
     const dueDate = parseDueDate(input.due_date);
+
+    // A hallucinated/foreign parent id must not link a subtask across users
+    // (the other user deleting their task would cascade-delete this one).
+    let parentId: string | null = null;
+    if (input.parent_task_id) {
+      const parent = await prisma.todo.findFirst({
+        where: { id: input.parent_task_id as string, userId },
+        select: { id: true },
+      });
+      if (!parent) return { success: false, error: "parent_task_id not found" };
+      parentId = parent.id;
+    }
+
     const task = await prisma.todo.create({
       data: {
         userId,
         listId,
-        parentId: (input.parent_task_id as string) || null,
+        parentId,
         title: input.title as string,
         notes: (input.notes as string) || null,
         dueDate,
@@ -1223,6 +1269,7 @@ async function handleManageTask(
         priority: (TODO_PRIORITIES.includes(input.priority as string) ? input.priority : null) as TodoPriority | null,
         recurrence: recurrenceFreq,
         recurrenceInterval: rec.interval && rec.interval > 0 ? rec.interval : 1,
+        recurrenceAnchor: recurrenceFreq !== "none" ? dueDate : null,
       },
     });
     const subtaskTitles = (input.subtasks as string[]) || [];

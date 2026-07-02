@@ -87,18 +87,34 @@ export async function POST(request: NextRequest) {
     listId = (await resolveListByName(session.userId, String(body.listName))).id;
   }
 
+  // Parent must belong to the same user (cross-user link would let another
+  // user's delete cascade into this user's todos)
+  let parentId: string | null = null;
+  if (body.parentId) {
+    const parent = await prisma.todo.findFirst({
+      where: { id: String(body.parentId), userId: session.userId },
+      select: { id: true },
+    });
+    if (!parent) return NextResponse.json({ error: "parentId not found" }, { status: 400 });
+    parentId = parent.id;
+  }
+
+  const dueDate = parseDueDate(body.dueDate);
+  const recurrence = (FREQS.includes(body.recurrence) ? body.recurrence : "none") as RecurrenceFreq;
+
   const task = await prisma.todo.create({
     data: {
       userId: session.userId,
       listId,
-      parentId: body.parentId || null,
+      parentId,
       title: String(body.title).trim(),
       notes: body.notes || null,
-      dueDate: parseDueDate(body.dueDate),
+      dueDate,
       dueTime: body.dueTime || null,
       priority: (PRIORITIES.includes(body.priority) ? body.priority : null) as TodoPriority | null,
-      recurrence: (FREQS.includes(body.recurrence) ? body.recurrence : "none") as RecurrenceFreq,
+      recurrence,
       recurrenceInterval: body.recurrenceInterval > 0 ? Number(body.recurrenceInterval) : 1,
+      recurrenceAnchor: recurrence !== "none" ? dueDate : null,
     },
   });
 

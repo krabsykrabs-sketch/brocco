@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/db";
 import type { Event, RecurrenceFreq } from "@prisma/client";
-import { addDays, addWeeks, addMonths, addYears } from "date-fns";
 
 /**
  * Calendar + tasks + workouts assembly.
@@ -12,6 +11,31 @@ import { addDays, addWeeks, addMonths, addYears } from "date-fns";
  */
 
 // --- Wall-time helpers ---
+
+// UTC-based date arithmetic for wall-anchored Dates. date-fns operates on
+// the LOCAL calendar, so on a non-UTC server its addDays/addMonths can shift
+// a UTC-anchored wall time by an hour across the server zone's DST boundary
+// — silently moving occurrences to the previous/next day. The UTC timeline
+// has no DST, so these are exact.
+
+/** Add whole days to a UTC-anchored wall time (exact — UTC has no DST). */
+export function addDaysWall(d: Date, days: number): Date {
+  return new Date(d.getTime() + days * 86400000);
+}
+
+function daysInUtcMonth(year: number, monthIndex: number): number {
+  // Day 0 of the next month is the last day of this month
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+/** Add calendar months in UTC, clamping the day-of-month (Jan 31 + 1mo = Feb 28/29). */
+export function addMonthsWall(d: Date, months: number): Date {
+  const totalMonths = d.getUTCFullYear() * 12 + d.getUTCMonth() + months;
+  const year = Math.floor(totalMonths / 12);
+  const month = totalMonths - year * 12;
+  const day = Math.min(d.getUTCDate(), daysInUtcMonth(year, month));
+  return new Date(Date.UTC(year, month, day, d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds(), d.getUTCMilliseconds()));
+}
 
 /** Parse a "yyyy-MM-ddTHH:mm" (or date-only) wall-time string into a UTC-anchored Date for storage. */
 export function parseWall(s: string): Date {
@@ -101,14 +125,45 @@ export interface EventOccurrence {
 
 const MAX_EXPANSION_STEPS = 2000;
 
-function advance(d: Date, freq: RecurrenceFreq, interval: number): Date {
+/**
+ * The Nth occurrence of a series, always computed from the anchor (series
+ * start) — never by stepping from the previous occurrence. Stepping
+ * cumulatively permanently loses the intended day after a short-month clamp:
+ * "31st monthly" anchored Jan 31 must clamp to Feb 28 but recover to Mar 31,
+ * and a Feb 29 yearly birthday must land on Feb 29 again in leap years.
+ */
+export function occurrenceAt(anchor: Date, freq: RecurrenceFreq, interval: number, n: number): Date {
+  const step = Math.max(1, interval) * n;
   switch (freq) {
-    case "daily": return addDays(d, interval);
-    case "weekly": return addWeeks(d, interval);
-    case "monthly": return addMonths(d, interval);
-    case "yearly": return addYears(d, interval);
-    default: return d;
+    case "daily": return addDaysWall(anchor, step);
+    case "weekly": return addDaysWall(anchor, step * 7);
+    case "monthly": return addMonthsWall(anchor, step);
+    case "yearly": return addMonthsWall(anchor, step * 12);
+    default: return anchor;
   }
+}
+
+/**
+ * Conservative lower bound for the occurrence index at rangeStart, so
+ * long-lived series (a daily event created years ago) don't burn thousands
+ * of iterations — or silently exhaust MAX_EXPANSION_STEPS — before reaching
+ * the queried range.
+ */
+function estimateStartIndex(anchor: Date, freq: RecurrenceFreq, interval: number, rangeStart: string): number {
+  const targetMs = parseWall(rangeStart).getTime();
+  const anchorMs = anchor.getTime();
+  if (targetMs <= anchorMs) return 0;
+  const i = Math.max(1, interval);
+  const days = (targetMs - anchorMs) / 86400000;
+  let estimate: number;
+  switch (freq) {
+    case "daily": estimate = days / i; break;
+    case "weekly": estimate = days / (7 * i); break;
+    case "monthly": estimate = days / (31 * i); break; // underestimate on purpose
+    case "yearly": estimate = days / (366 * i); break;
+    default: return 0;
+  }
+  return Math.max(0, Math.floor(estimate) - 2);
 }
 
 /**
@@ -148,22 +203,23 @@ export function expandEvent(event: Event, rangeStart: string, rangeEnd: string):
 
   const interval = Math.max(1, event.recurrenceInterval);
   const until = event.recurrenceUntil ? wallDateString(event.recurrenceUntil) : null;
+  // recurrenceCount bounds the occurrence index (exdates still consume an
+  // index — standard RRULE semantics: COUNT applies before EXDATE removal).
   const maxCount = event.recurrenceCount ?? Infinity;
 
   const occurrences: EventOccurrence[] = [];
-  let cursor = event.startAt;
-  let generated = 0;
+  const startIndex = estimateStartIndex(event.startAt, event.recurrence, interval, rangeStart);
 
   for (let step = 0; step < MAX_EXPANSION_STEPS; step++) {
-    const dateStr = wallDateString(cursor);
+    const n = startIndex + step;
+    if (n >= maxCount) break;
+    const occ = occurrenceAt(event.startAt, event.recurrence, interval, n);
+    const dateStr = wallDateString(occ);
     if (dateStr > rangeEnd) break;
     if (until && dateStr > until) break;
-    generated++;
-    if (generated > maxCount) break;
     if (dateStr >= rangeStart && !exdates.has(dateStr)) {
-      occurrences.push(toOccurrence(cursor));
+      occurrences.push(toOccurrence(occ));
     }
-    cursor = advance(cursor, event.recurrence, interval);
   }
 
   return occurrences;
@@ -376,7 +432,7 @@ export async function getUpcomingBirthdays(
   today: string,
   daysAhead = 14
 ): Promise<Array<{ title: string; date: string; daysUntil: number; notes: string | null }>> {
-  const end = wallDateString(addDays(parseWall(today), daysAhead));
+  const end = wallDateString(addDaysWall(parseWall(today), daysAhead));
   const occurrences = await getEventOccurrences(userId, today, end);
   return occurrences
     .filter((o) => o.category === "birthday")

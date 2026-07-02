@@ -33,14 +33,34 @@ export async function GET() {
     return NextResponse.json({ skipped: "already_synced_today", lastSyncAt: profile.stravaLastSyncAt });
   }
 
+  // Optimistic-lock claim: only proceed if stravaLastSyncAt is still the
+  // value we just read — closes the check-then-act race where two devices
+  // opening the app simultaneously both start a sync.
+  const claim = await prisma.userProfile.updateMany({
+    where: { userId: session.userId, stravaLastSyncAt: profile.stravaLastSyncAt },
+    data: { stravaLastSyncAt: new Date() },
+  });
+  if (claim.count === 0) {
+    return NextResponse.json({ skipped: "sync_in_progress" });
+  }
+
   try {
-    const { newCount, totalChecked, newActivities } = await syncRecentActivities(session.userId);
+    const { newCount, totalChecked, newActivities } = await syncRecentActivities(session.userId, {
+      lastSyncAt: profile.stravaLastSyncAt,
+    });
     // Analysis failures are swallowed per-activity inside this call — a bad
     // streams fetch shouldn't turn a successful sync into an error response.
     await analyzeEligibleActivities(session.userId, newActivities);
     return NextResponse.json({ ok: true, newCount, totalChecked });
   } catch (err) {
     console.error("Auto-sync error:", err);
+    // Release the claim so a retry (next app open) isn't blocked until tomorrow
+    await prisma.userProfile
+      .updateMany({
+        where: { userId: session.userId },
+        data: { stravaLastSyncAt: profile.stravaLastSyncAt },
+      })
+      .catch(() => {});
     return NextResponse.json({ skipped: "error" });
   }
 }

@@ -65,13 +65,18 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      await tx.inviteCode.update({
-        where: { code: inviteCode },
+      // Atomic redemption: the usedBy:null condition closes the race where
+      // two concurrent signups both passed the pre-check above.
+      const redeemed = await tx.inviteCode.updateMany({
+        where: { code: inviteCode, usedBy: null },
         data: {
           usedBy: newUser.id,
           usedAt: new Date(),
         },
       });
+      if (redeemed.count !== 1) {
+        throw new Error("INVITE_ALREADY_USED");
+      }
 
       return newUser;
     });
@@ -83,7 +88,13 @@ export async function POST(request: NextRequest) {
     await session.save();
 
     return NextResponse.json({ ok: true, userId: user.id });
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.message === "INVITE_ALREADY_USED") {
+      return NextResponse.json(
+        { error: "Invalid or already used invite code" },
+        { status: 400 }
+      );
+    }
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

@@ -14,7 +14,10 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get("state");
   const error = searchParams.get("error");
 
-  const returnTo = request.cookies.get("strava_return_to")?.value || "/settings";
+  // Re-validate on the way out too (defense in depth — the cookie is
+  // httpOnly but the value originated from a query parameter).
+  const rawReturnTo = request.cookies.get("strava_return_to")?.value || "/settings";
+  const returnTo = rawReturnTo.startsWith("/") && !rawReturnTo.startsWith("//") ? rawReturnTo : "/settings";
 
   if (error) {
     const response = NextResponse.redirect(new URL(`${returnTo}?strava=denied`, process.env.BASE_URL));

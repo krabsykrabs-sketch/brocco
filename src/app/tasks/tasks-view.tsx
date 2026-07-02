@@ -142,13 +142,19 @@ export default function TasksView() {
   async function handleToggle(task: Task) {
     const newDone = !task.done;
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: newDone } : t)));
-    await fetch(`/api/tasks/${task.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ done: newDone }),
-    });
-    // Recurring tasks spawn a successor; refresh shortly after to show it
-    if (task.recurrence !== "none" || newDone) setTimeout(refetchAll, 400);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ done: newDone }),
+      });
+      if (!res.ok) throw new Error();
+      // Recurring tasks spawn a successor; refresh shortly after to show it
+      if (task.recurrence !== "none" || newDone) setTimeout(refetchAll, 400);
+    } catch {
+      // Roll back the optimistic toggle so the UI doesn't lie about server state
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, done: task.done } : t)));
+    }
   }
 
   async function handleDelete(task: Task) {

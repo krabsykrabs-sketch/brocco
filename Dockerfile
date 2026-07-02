@@ -27,6 +27,9 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# Wall-time convention (src/lib/schedule.ts) relies on date arithmetic being
+# server-TZ independent — pin UTC so this is an invariant, not an accident.
+ENV TZ=UTC
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs

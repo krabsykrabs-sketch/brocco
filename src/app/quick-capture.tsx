@@ -39,6 +39,19 @@ export function QuickCapture() {
     setMicSupported(typeof window !== "undefined" && !!window.MediaRecorder);
   }, []);
 
+  // If the user navigates away (e.g. to /chat, where the FAB unmounts) while
+  // recording, stop the recorder and release the mic — otherwise the browser
+  // keeps the recording indicator on with no visible way to stop it.
+  useEffect(() => {
+    return () => {
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        recorder.stream.getTracks().forEach((t) => t.stop());
+        try { recorder.stop(); } catch { /* already stopped */ }
+      }
+    };
+  }, []);
+
   const pushToast = useCallback((text: string, kind: Toast["kind"] = "success") => {
     const id = ++toastId;
     setToasts((prev) => [...prev.slice(-3), { id, text, kind }]);

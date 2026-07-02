@@ -53,9 +53,24 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (body.allDay !== undefined) data.allDay = !!body.allDay;
   if (body.recurrence !== undefined) {
     data.recurrence = (FREQS.includes(body.recurrence) ? body.recurrence : "none") as RecurrenceFreq;
+  }
+  // until/count/interval only change when explicitly sent — the edit form
+  // always includes `recurrence`, and blanket-resetting these would silently
+  // turn a voice-created "next 10 Mondays" into an infinite series on any edit.
+  if (body.recurrenceInterval !== undefined) {
     data.recurrenceInterval = body.recurrenceInterval > 0 ? Number(body.recurrenceInterval) : 1;
+  }
+  if (body.recurrenceUntil !== undefined) {
     data.recurrenceUntil = body.recurrenceUntil ? parseWall(String(body.recurrenceUntil)) : null;
+  }
+  if (body.recurrenceCount !== undefined) {
     data.recurrenceCount = body.recurrenceCount ? Number(body.recurrenceCount) : null;
+  }
+  // Clearing recurrence entirely does drop the rule's parameters
+  if (body.recurrence === "none") {
+    data.recurrenceInterval = 1;
+    data.recurrenceUntil = null;
+    data.recurrenceCount = null;
   }
   if (body.reminderMinutes !== undefined) {
     data.reminderMinutes = body.reminderMinutes != null ? Number(body.reminderMinutes) : null;

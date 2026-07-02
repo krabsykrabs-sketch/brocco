@@ -191,7 +191,14 @@ export default function TodayView() {
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(() => {
-    fetch("/api/today").then((r) => r.json()).then(setData).catch(() => {}).finally(() => setLoading(false));
+    fetch("/api/today")
+      .then((r) => {
+        if (!r.ok) throw new Error(`today fetch failed: ${r.status}`);
+        return r.json();
+      })
+      .then(setData)
+      .catch(() => {}) // keeps previous data on refetch failure; initial failure -> error state below
+      .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
@@ -219,12 +226,22 @@ export default function TodayView() {
       ...data,
       todos: data.todos.map((t) => (t.todoId === task.todoId ? { ...t, done: newDone } : t)),
     });
-    await fetch(`/api/tasks/${task.todoId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ done: newDone }),
-    });
-    if (task.recurrence !== "none") fetchData(); // next occurrence may appear
+    try {
+      const res = await fetch(`/api/tasks/${task.todoId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ done: newDone }),
+      });
+      if (!res.ok) throw new Error();
+      if (task.recurrence !== "none") fetchData(); // next occurrence may appear
+    } catch {
+      // Roll back the optimistic toggle (offline PWA, expired session, ...)
+      setData((prev) =>
+        prev
+          ? { ...prev, todos: prev.todos.map((t) => (t.todoId === task.todoId ? { ...t, done: task.done } : t)) }
+          : prev
+      );
+    }
   }
 
   async function handleUndoAdjustment(id: string) {

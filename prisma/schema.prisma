@@ -452,6 +452,9 @@ model Todo {
   priority           TodoPriority?
   recurrence         RecurrenceFreq @default(none)
   recurrenceInterval Int            @default(1) @map("recurrence_interval")
+  // First due date of the series — regeneration is computed from here so a
+  // "31st of every month" todo recovers to the 31st after short months.
+  recurrenceAnchor   DateTime?      @map("recurrence_anchor") @db.Date
   done               Boolean        @default(false)
   completedAt        DateTime?      @map("completed_at")
   position           Int            @default(0)

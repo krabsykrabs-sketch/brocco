@@ -302,7 +302,8 @@ export async function backfillActivities(userId: string): Promise<{ newCount: nu
  * backfillActivities, which pages through the full 6-month window every call.
  */
 export async function syncRecentActivities(
-  userId: string
+  userId: string,
+  opts: { lastSyncAt?: Date | null } = {}
 ): Promise<{ newCount: number; totalChecked: number; newActivities: Activity[] }> {
   const token = await getValidToken(userId);
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
@@ -310,8 +311,12 @@ export async function syncRecentActivities(
 
   const OVERLAP_MS = 60 * 60 * 1000; // 1 hour, absorbs clock skew / late edits
   const DEFAULT_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000; // first auto-sync: 30 days
-  const since = profile?.stravaLastSyncAt
-    ? new Date(profile.stravaLastSyncAt.getTime() - OVERLAP_MS)
+  // The caller may have already claimed the sync slot by writing
+  // stravaLastSyncAt (optimistic lock) — in that case it passes the
+  // pre-claim value here so we don't compute `since` from our own claim.
+  const lastSyncAt = opts.lastSyncAt !== undefined ? opts.lastSyncAt : profile?.stravaLastSyncAt;
+  const since = lastSyncAt
+    ? new Date(lastSyncAt.getTime() - OVERLAP_MS)
     : new Date(Date.now() - DEFAULT_LOOKBACK_MS);
   const after = Math.floor(since.getTime() / 1000);
 
