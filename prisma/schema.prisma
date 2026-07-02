@@ -49,6 +49,9 @@ model UserProfile {
   stravaTokenExpiresAt  DateTime? @map("strava_token_expires_at")
   stravaLastSyncAt      DateTime? @map("strava_last_sync_at")
   hrMaxBpm              Int?     @map("hr_max_bpm")
+  // Secret for the read-only ICS calendar feed URL; null until the user
+  // creates a subscribe link in Settings
+  icsToken              String?  @unique @map("ics_token")
   coachingNotes         Json     @default("{}") @map("coaching_notes") @db.JsonB
   aiPreferences         Json?    @map("ai_preferences") @db.JsonB
   // Life-planner feature toggles ({calendar, tasks, notes}); null = all enabled
