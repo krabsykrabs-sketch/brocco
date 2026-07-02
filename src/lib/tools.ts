@@ -436,6 +436,29 @@ export const toolDefinitions: Anthropic.Tool[] = [
   },
 ];
 
+// --- Feature-gated tool selection ---
+
+import type { Features } from "@/lib/features";
+
+const TOOL_FEATURE_GATES: Record<string, (f: Features) => boolean> = {
+  manage_event: (f) => f.calendar,
+  manage_task: (f) => f.tasks,
+  manage_note: (f) => f.notes,
+  query_schedule: (f) => f.calendar || f.tasks,
+};
+
+/**
+ * The tool set Brocco gets for a request, respecting the user's feature
+ * toggles — with everything disabled this is exactly the classic coaching
+ * tool set, so Brocco can't create events/tasks/notes the user opted out of.
+ */
+export function toolsForFeatures(features: Features): Anthropic.Tool[] {
+  return toolDefinitions.filter((t) => {
+    const gate = TOOL_FEATURE_GATES[t.name];
+    return gate ? gate(features) : true;
+  });
+}
+
 // --- Tool handlers ---
 
 interface ToolResult {

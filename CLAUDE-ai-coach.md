@@ -18,6 +18,7 @@
 - **Notes (`/notes`)** — title + body + tags, searchable (ILIKE), generalizes the coaching_notes pattern; `coaching_notes` itself is untouched.
 - **Wall-time convention:** event/task timestamps are stored as the user's local wall-clock time in naive timestamps, read/written through UTC accessors (`parseWall`/`wallString` in `src/lib/schedule.ts`) so the server TZ never shifts them. "Today" is computed in the user's IANA timezone via `todayInTimezone`.
 - **Cross-domain conflict awareness** is Brocco's signature feature: the system prompt includes a 7-day schedule block, and `query_schedule` returns the merged events+workouts+tasks view so Brocco flags collisions ("long run Saturday vs. 7am flight").
+- **Feature toggles:** `user_profiles.features` jsonb ({calendar, tasks, notes}; null = all on, so existing users are unaffected). Settings has switches; disabling adapts navigation (Plan/History reclaim tab-bar slots — all-off yields the classic Today · Chat · Plan · History · More layout), hides the floating mic when all are off, filters Brocco's tools/prompt/context per request (`toolsForFeatures` in tools.ts; all-off = classic coach persona), empties disabled domains from /api/today and the briefing, and server-redirects /calendar,/tasks,/notes to /today (`requireFeature` in lib/feature-guard.ts). Client side: FeaturesProvider (localStorage-cached, `brocco:features-changed` event).
 - **Out of scope this phase:** external calendar sync, AI time-blocking, push notifications, TTS.
 
 ## Tech Stack

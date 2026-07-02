@@ -7,6 +7,7 @@ import { PWAInstallBanner } from "./pwa-banner";
 import { QuickCapture } from "./quick-capture";
 import { StravaAutoSync } from "./strava-auto-sync";
 import { ReminderWatcher } from "./reminder-watcher";
+import { FeaturesProvider } from "./features-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -51,13 +52,15 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
-        {children}
-        <AppFooter />
-        <BottomTabBar />
-        <QuickCapture />
-        <StravaAutoSync />
-        <ReminderWatcher />
-        <PWAInstallBanner />
+        <FeaturesProvider>
+          {children}
+          <AppFooter />
+          <BottomTabBar />
+          <QuickCapture />
+          <StravaAutoSync />
+          <ReminderWatcher />
+          <PWAInstallBanner />
+        </FeaturesProvider>
         <script
           dangerouslySetInnerHTML={{
             __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').then(function(r){console.log('SW registered, scope:',r.scope)}).catch(function(e){console.error('SW registration failed:',e)})}`,

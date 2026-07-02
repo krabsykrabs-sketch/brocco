@@ -5,6 +5,8 @@ import Link from "next/link";
 import { PageHeader } from "../nav";
 import { categoryMeta, getWorkoutTypeColor } from "@/lib/categories";
 import { useScreenContext, useDataChanged } from "@/lib/capture-context";
+import { useFeatures } from "../features-provider";
+import { anyLifeFeature } from "@/lib/features";
 
 // --- Types (mirror /api/today) ---
 
@@ -193,6 +195,7 @@ function WeekCard({ data }: { data: TodayData }) {
 // --- Main ---
 
 export default function TodayView() {
+  const features = useFeatures();
   const [data, setData] = useState<TodayData | null>(null);
   const [briefing, setBriefing] = useState<string | null>(null);
   const [briefingLoading, setBriefingLoading] = useState(true);
@@ -379,8 +382,14 @@ export default function TodayView() {
         {isEmptyDay && (
           <div className="text-center py-10">
             <p className="text-4xl mb-3">🌤️</p>
-            <p className="text-gray-400 text-sm font-medium">Clear day ahead</p>
-            <p className="text-gray-600 text-xs mt-1">Tap the mic and tell Brocco what&apos;s coming up.</p>
+            <p className="text-gray-400 text-sm font-medium">
+              {anyLifeFeature(features) ? "Clear day ahead" : "No training today"}
+            </p>
+            <p className="text-gray-600 text-xs mt-1">
+              {anyLifeFeature(features)
+                ? "Tap the mic and tell Brocco what's coming up."
+                : "Rest up, or chat with Brocco about the week."}
+            </p>
           </div>
         )}
       </section>

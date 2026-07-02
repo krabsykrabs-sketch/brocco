@@ -1,18 +1,26 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/session";
+import { prisma } from "@/lib/db";
+import { resolveFeatures } from "@/lib/features";
 import { PageHeader } from "../nav";
-
-const items = [
-  { name: "Training Plan", href: "/plan", emoji: "📅", desc: "Phases, weeks, and workouts" },
-  { name: "History", href: "/history", emoji: "🏃", desc: "All past activities" },
-  { name: "Notes", href: "/notes", emoji: "📝", desc: "Quick facts, lists, and references" },
-  { name: "Settings", href: "/settings", emoji: "⚙️", desc: "Profile, Strava, invites" },
-];
 
 export default async function MorePage() {
   const session = await getSession();
   if (!session.userId) redirect("/login");
+
+  const profile = await prisma.userProfile.findUnique({
+    where: { userId: session.userId },
+    select: { features: true },
+  });
+  const features = resolveFeatures(profile?.features);
+
+  const items = [
+    { name: "Training Plan", href: "/plan", emoji: "📅", desc: "Phases, weeks, and workouts" },
+    { name: "History", href: "/history", emoji: "🏃", desc: "All past activities" },
+    ...(features.notes ? [{ name: "Notes", href: "/notes", emoji: "📝", desc: "Quick facts, lists, and references" }] : []),
+    { name: "Settings", href: "/settings", emoji: "⚙️", desc: "Profile, features, Strava, invites" },
+  ];
 
   return (
     <main className="min-h-screen max-w-2xl mx-auto px-4">

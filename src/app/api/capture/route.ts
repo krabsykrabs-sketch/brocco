@@ -3,7 +3,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { buildCoachContext, buildSystemPrompt } from "@/lib/coach-context";
-import { toolDefinitions, handleToolCall } from "@/lib/tools";
+import { toolsForFeatures, handleToolCall } from "@/lib/tools";
+import { resolveFeatures } from "@/lib/features";
 import { nowInTimezone } from "@/lib/schedule";
 
 const anthropic = new Anthropic();
@@ -47,8 +48,9 @@ export async function POST(request: NextRequest) {
   // Sydney doesn't land in yesterday's session on a UTC server.
   const profileTz = await prisma.userProfile.findUnique({
     where: { userId },
-    select: { timezone: true },
+    select: { timezone: true, features: true },
   });
+  const tools = toolsForFeatures(resolveFeatures(profileTz?.features));
   const localNow = nowInTimezone(profileTz?.timezone || "Europe/Berlin");
   const [hh, mm] = localNow.slice(11, 16).split(":").map(Number);
   const localDayStart = new Date(Date.now() - (hh * 60 + mm) * 60 * 1000);
@@ -140,7 +142,7 @@ export async function POST(request: NextRequest) {
         max_tokens: 2000,
         system: systemPrompt,
         messages: currentMessages,
-        tools: toolDefinitions,
+        tools,
       });
 
       const toolUses = response.content.filter(

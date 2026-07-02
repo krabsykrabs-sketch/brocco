@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { InstallInstructions } from "@/app/pwa-banner";
 import { DesktopNavLinks } from "@/app/nav";
+import { FEATURES_CHANGED_EVENT } from "@/app/features-provider";
+import { ALL_FEATURES, type Features } from "@/lib/features";
 import { Suspense } from "react";
 
 interface InviteCodeData {
@@ -98,6 +100,7 @@ function SettingsContent() {
   const [editGoalTime, setEditGoalTime] = useState("");
   const [editGoalDate, setEditGoalDate] = useState("");
   const [editHrMax, setEditHrMax] = useState("");
+  const [featureFlags, setFeatureFlags] = useState<Features>(ALL_FEATURES);
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
 
@@ -134,6 +137,7 @@ function SettingsContent() {
           setEditGoalTime(data.goalTime || "");
           setEditGoalDate(data.goalRaceDate ? data.goalRaceDate.split("T")[0] : "");
           setEditHrMax(data.hrMaxBpm ? String(data.hrMaxBpm) : "");
+          if (data.features) setFeatureFlags(data.features);
         }
       } catch {
         // ignore
@@ -168,6 +172,25 @@ function SettingsContent() {
       // ignore
     } finally {
       setProfileSaving(false);
+    }
+  }
+
+  async function handleToggleFeature(key: keyof Features) {
+    const next = { ...featureFlags, [key]: !featureFlags[key] };
+    setFeatureFlags(next); // optimistic — the switch flips immediately
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ features: next }),
+      });
+      if (!res.ok) throw new Error();
+      // Navigation & global components re-read the flags; the cached
+      // briefing predates the toggle, so force a regeneration in background
+      window.dispatchEvent(new Event(FEATURES_CHANGED_EVENT));
+      fetch("/api/briefing?refresh=1").catch(() => {});
+    } catch {
+      setFeatureFlags(featureFlags); // roll back
     }
   }
 
@@ -370,6 +393,44 @@ function SettingsContent() {
               <span className="text-sm text-green-400">Saved</span>
             )}
           </div>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section>
+        <h2 className="text-lg font-semibold mb-1">Features</h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Switch off what you don&apos;t use — navigation, the Today screen, and Brocco adapt.
+          With everything off you get the classic running-coach experience. Your data is kept, just hidden.
+        </p>
+        <div className="bg-gray-900 border border-gray-800 rounded-lg divide-y divide-gray-800">
+          {([
+            ["calendar", "Calendar", "Events, birthdays, and reminders"],
+            ["tasks", "Tasks", "To-dos, lists, and recurring chores"],
+            ["notes", "Notes", "Quick facts and reference lists"],
+          ] as Array<[keyof Features, string, string]>).map(([key, label, desc]) => (
+            <div key={key} className="flex items-center gap-3 px-4 py-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-200">{label}</p>
+                <p className="text-xs text-gray-500">{desc}</p>
+              </div>
+              <button
+                role="switch"
+                aria-checked={featureFlags[key]}
+                aria-label={`${label} ${featureFlags[key] ? "enabled" : "disabled"}`}
+                onClick={() => handleToggleFeature(key)}
+                className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
+                  featureFlags[key] ? "bg-green-600" : "bg-gray-700"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
+                    featureFlags[key] ? "translate-x-[22px]" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </div>
+          ))}
         </div>
       </section>
 

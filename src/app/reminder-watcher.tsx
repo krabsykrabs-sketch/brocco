@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { emitToast } from "@/lib/toast";
 import { useDataChanged } from "@/lib/capture-context";
+import { useFeatures } from "./features-provider";
 
 /**
  * In-app reminder surfacing: while the app is open, events with a reminder
@@ -65,8 +66,10 @@ function markFired(key: string, date: string) {
 
 export function ReminderWatcher() {
   const pathname = usePathname();
+  const features = useFeatures();
   const eventsRef = useRef<Occurrence[]>([]);
-  const enabled = !HIDDEN_ON.some((p) => pathname.startsWith(p));
+  // Reminders come from calendar events — off when the calendar feature is off
+  const enabled = features.calendar && !HIDDEN_ON.some((p) => pathname.startsWith(p));
 
   // Fetch today's events periodically (and when a capture changes the calendar)
   useEffect(() => {

@@ -50,6 +50,8 @@ model UserProfile {
   hrMaxBpm              Int?     @map("hr_max_bpm")
   coachingNotes         Json     @default("{}") @map("coaching_notes") @db.JsonB
   aiPreferences         Json?    @map("ai_preferences") @db.JsonB
+  // Life-planner feature toggles ({calendar, tasks, notes}); null = all enabled
+  features              Json?    @db.JsonB
   onboardingCompleted   Boolean  @default(false) @map("onboarding_completed")
   createdAt             DateTime @default(now()) @map("created_at")
   updatedAt             DateTime @updatedAt @map("updated_at")

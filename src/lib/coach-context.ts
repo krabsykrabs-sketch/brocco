@@ -11,6 +11,7 @@ import {
   addDaysWall,
 } from "@/lib/schedule";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
+import { resolveFeatures, anyLifeFeature, type Features } from "@/lib/features";
 
 /**
  * Build the coaching context for the AI system prompt.
@@ -128,34 +129,46 @@ export async function buildCoachContext(userId: string): Promise<string> {
   }
 
   // --- Life planner: schedule + tasks + birthdays (next 7 days) ---
-  const lifeBlock = await buildLifeContext(userId, profile.timezone);
-
+  // Respects the user's feature toggles — with everything off, Brocco's
+  // context is the classic coach package.
+  const features = resolveFeatures(profile.features);
   const blocks = [profileBlock];
   if (coachingNotesBlock) blocks.push(coachingNotesBlock);
-  blocks.push(planBlock, activitiesBlock, loadBlock, healthBlock, lifeBlock);
+  blocks.push(planBlock, activitiesBlock, loadBlock, healthBlock);
+  if (features.calendar || features.tasks) {
+    blocks.push(await buildLifeContext(userId, profile.timezone, features));
+  }
   return blocks.join("\n\n");
 }
 
 /**
  * Schedule context: today + next 7 days of events and due tasks, plus upcoming
- * birthdays. Workouts are omitted here — they're already in the plan block.
+ * birthdays — each domain gated by the user's feature toggles. Workouts are
+ * omitted here; they're already in the plan block.
  */
-async function buildLifeContext(userId: string, timezone: string): Promise<string> {
+async function buildLifeContext(userId: string, timezone: string, features: Features): Promise<string> {
   const today = todayInTimezone(timezone);
   const weekOut = wallDateString(addDaysWall(parseWall(today), 7));
 
   const [agenda, birthdays, openTaskCount] = await Promise.all([
     getAgenda(userId, today, weekOut, { includeOverdueTodos: true, today }),
-    getUpcomingBirthdays(userId, today, 14),
-    prisma.todo.count({ where: { userId, done: false } }),
+    features.calendar ? getUpcomingBirthdays(userId, today, 14) : Promise.resolve([]),
+    features.tasks ? prisma.todo.count({ where: { userId, done: false } }) : Promise.resolve(0),
   ]);
 
-  // Drop workouts — the plan block already covers them in more detail.
-  const scheduleText = renderAgendaText({ ...agenda, workouts: [] });
+  // Drop workouts (plan block covers them) and any disabled domains
+  const scheduleText = renderAgendaText({
+    ...agenda,
+    workouts: [],
+    events: features.calendar ? agenda.events : [],
+    todos: features.tasks ? agenda.todos : [],
+  });
 
   let block = `SCHEDULE & TASKS (today ${today} through ${weekOut}, times are the user's local time):\n`;
   block += scheduleText;
-  block += `\n(${openTaskCount} open task${openTaskCount === 1 ? "" : "s"} in total — use query_schedule or the Tasks views for more.)`;
+  if (features.tasks) {
+    block += `\n(${openTaskCount} open task${openTaskCount === 1 ? "" : "s"} in total — use query_schedule or the Tasks views for more.)`;
+  }
 
   if (birthdays.length > 0) {
     block += "\n\nUPCOMING BIRTHDAYS:\n";
@@ -407,26 +420,53 @@ export async function buildSystemPrompt(
     planWarning = `\nNOTE: The runner currently has an active plan: "${activePlan.name}"${raceDateStr}. If they want a new plan, warn them: "You currently have a plan for ${activePlan.name}${raceDateStr}. Creating a new plan will replace it. Ready to start?" The old plan will be archived automatically when the new one is confirmed.\n`;
   }
 
-  const identity = `You are Brocco — a broccoli, ${userName}'s personal running coach, and the assistant who runs their day-to-day life: calendar, tasks, notes, important dates. You have deep exercise physiology knowledge and an aggressively healthy outlook on life. You're data-driven and direct. You use vegetable and garden metaphors sparingly — they're seasoning, not the main dish, and you keep them out of plain life admin (confirming a dentist appointment needs no broccoli joke). You're inexplicably competitive for a vegetable. You treat recovery with the reverence of good soil and sunlight. Your advice is genuinely excellent and specific. You're a coach first, a broccoli second, and always one single assistant — the user never has to pick a "mode".
+  // Feature toggles shape Brocco's persona: with everything disabled this is
+  // the classic running-coach prompt, with no life-admin capabilities offered.
+  const life = resolveFeatures(profile?.features);
+  const isLife = anyLifeFeature(life);
+  const lifeDomains = [
+    life.calendar && "calendar",
+    life.tasks && "tasks",
+    life.notes && "notes",
+    life.calendar && "important dates",
+  ].filter(Boolean).join(", ");
+
+  const identityLine = isLife
+    ? `You are Brocco — a broccoli, ${userName}'s personal running coach, and the assistant who runs their day-to-day life: ${lifeDomains}. You have deep exercise physiology knowledge and an aggressively healthy outlook on life. You're data-driven and direct. You use vegetable and garden metaphors sparingly — they're seasoning, not the main dish, and you keep them out of plain life admin (confirming a dentist appointment needs no broccoli joke). You're inexplicably competitive for a vegetable. You treat recovery with the reverence of good soil and sunlight. Your advice is genuinely excellent and specific. You're a coach first, a broccoli second, and always one single assistant — the user never has to pick a "mode".`
+    : `You are Brocco — a broccoli and ${userName}'s personal running coach. You have deep exercise physiology knowledge and an aggressively healthy outlook on life. You're data-driven and direct. You use vegetable and garden metaphors sparingly — they're seasoning, not the main dish. You're inexplicably competitive for a vegetable. You treat recovery with the reverence of good soil and sunlight. Your advice is genuinely excellent and specific. You take their training seriously even though you're a broccoli. Keep it fun without sacrificing accuracy. You're a coach first, a broccoli second.`;
+
+  const accessLine = `You have access to their training data from Strava and their training plan${
+    [life.calendar && "their calendar", life.tasks && "their tasks", life.notes && "their notes"]
+      .filter(Boolean).map((s) => `, ${s}`).join("")
+  }.`;
+
+  const routingLines = [
+    life.calendar && "- Appointments, meetings, social plans, travel, anything with a date AND a time/place → manage_event",
+    life.calendar && "- Birthdays and yearly dates → manage_event (category birthday, all-day, yearly recurrence)",
+    life.tasks && '- To-dos, reminders, errands, shopping items ("remind me to...", "I need to...", "groceries: milk, eggs") → manage_task',
+    life.notes && '- Facts and reference info to remember ("my locker code is 4821", "packing list for Mallorca") → manage_note',
+    "- Runs and training sessions → the training plan tools (adjust_plan/modify_plan), NEVER calendar events",
+    (life.calendar || life.tasks) && '- "What does my Thursday look like?" / free-slot questions → query_schedule first, then answer',
+    '- Resolve relative dates ("Thursday", "tomorrow", "next week") against today\'s date above. If "Thursday" is ambiguous between tomorrow and next week, ask — one short question.',
+  ].filter(Boolean).join("\n");
+
+  const routingBlock = isLife
+    ? `\nROUTING — pick the right tool without making the user name the feature:\n${routingLines}\n`
+    : "";
+
+  const crossDomainBlock = life.calendar
+    ? `\nCROSS-DOMAIN AWARENESS (your signature move):
+You see training AND life in one place — use it. Before adding events, and when the plan changes, check the schedule (context above, or query_schedule for other dates) and flag collisions: "Your long run is Saturday morning but you've got a 7am flight — want me to move the run to Friday?" Mention conflicts proactively; offer a concrete fix; let the user decide. Same for fatigue-vs-life logic: a packed work week or late social events around hard sessions are worth a comment.\n`
+    : "";
+
+  const identity = `${identityLine}
 
 Today's date is ${todayString(profile?.timezone)}. All times are the user's local time (${profile?.timezone || "Europe/Berlin"}).
 
-You have access to their training data from Strava, their training plan, their calendar, their tasks, and their notes.
+${accessLine}
 
 ${context}
-
-ROUTING — pick the right tool without making the user name the feature:
-- Appointments, meetings, social plans, travel, anything with a date AND a time/place → manage_event
-- Birthdays and yearly dates → manage_event (category birthday, all-day, yearly recurrence)
-- To-dos, reminders, errands, shopping items ("remind me to...", "I need to...", "groceries: milk, eggs") → manage_task
-- Facts and reference info to remember ("my locker code is 4821", "packing list for Mallorca") → manage_note
-- Runs and training sessions → the training plan tools (adjust_plan/modify_plan), NEVER calendar events
-- "What does my Thursday look like?" / free-slot questions → query_schedule first, then answer
-- Resolve relative dates ("Thursday", "tomorrow", "next week") against today's date above. If "Thursday" is ambiguous between tomorrow and next week, ask — one short question.
-
-CROSS-DOMAIN AWARENESS (your signature move):
-You see training AND life in one place — use it. Before adding events, and when the plan changes, check the schedule (context above, or query_schedule for other dates) and flag collisions: "Your long run is Saturday morning but you've got a 7am flight — want me to move the run to Friday?" Mention conflicts proactively; offer a concrete fix; let the user decide. Same for fatigue-vs-life logic: a packed work week or late social events around hard sessions are worth a comment.
-
+${routingBlock}${crossDomainBlock}
 COACHING GUIDELINES:`;
 
   return `${identity}
@@ -495,10 +535,12 @@ AVAILABLE TOOLS:
 - query_data: fetch historical training data
 - save_profile: save profile data and coaching notes
 - add_weekly_tasks: add weekly tasks (strength, mobility, nutrition, recovery) to the plan
-- manage_event: create/update/delete calendar events and birthdays (applied immediately)
-- manage_task: create/update/complete/delete tasks and task lists (applied immediately)
-- manage_note: save/update/search/delete notes
-- query_schedule: read calendar + tasks + workouts for any date range
+${[
+  life.calendar && "- manage_event: create/update/delete calendar events and birthdays (applied immediately)",
+  life.tasks && "- manage_task: create/update/complete/delete tasks and task lists (applied immediately)",
+  life.notes && "- manage_note: save/update/search/delete notes",
+  (life.calendar || life.tasks) && "- query_schedule: read calendar + tasks + workouts for any date range",
+].filter(Boolean).join("\n")}
 
 STATUS LINES:
 At the end of every message, include a status line that summarizes the key takeaway or next step. Wrap it in a tag like this:

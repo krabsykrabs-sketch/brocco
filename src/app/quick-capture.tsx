@@ -4,6 +4,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import { getScreenContext, emitDataChanged } from "@/lib/capture-context";
 import { TOAST_EVENT, type AppToast } from "@/lib/toast";
+import { useFeatures } from "./features-provider";
+import { anyLifeFeature } from "@/lib/features";
 
 /**
  * Floating mic — the primary input method of the whole app.
@@ -27,6 +29,7 @@ let toastId = 0;
 
 export function QuickCapture() {
   const pathname = usePathname();
+  const features = useFeatures();
   const [phase, setPhase] = useState<Phase>("idle");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [clarify, setClarify] = useState<string | null>(null);
@@ -181,6 +184,10 @@ export function QuickCapture() {
   if (HIDDEN_ON.some((p) => pathname.startsWith(p))) return null;
 
   const busy = phase === "transcribing" || phase === "thinking";
+  // With all life features disabled the floating mic disappears (classic
+  // coach experience — voice stays available inside the chat). The toast
+  // surface stays mounted: undo toasts and reminders render through it.
+  const micEnabled = anyLifeFeature(features);
 
   return (
     <>
@@ -256,7 +263,7 @@ export function QuickCapture() {
       {/* Transcript chip while Brocco processes — shows what Whisper heard,
           so a mis-transcription is immediately visible instead of surfacing
           as a mysteriously wrong toast */}
-      {phase === "thinking" && transcript && (
+      {micEnabled && phase === "thinking" && transcript && (
         <div
           className="fixed z-[60] right-4 md:right-6 max-w-[70vw] md:max-w-sm bg-gray-900/95 border border-gray-700 rounded-xl px-3 py-2 shadow-lg"
           style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 8.5rem)" }}
@@ -267,7 +274,7 @@ export function QuickCapture() {
       )}
 
       {/* Discard button while recording */}
-      {phase === "recording" && (
+      {micEnabled && phase === "recording" && (
         <button
           onClick={handleDiscard}
           aria-label="Discard recording"
@@ -279,7 +286,7 @@ export function QuickCapture() {
       )}
 
       {/* FAB */}
-      {micSupported && (
+      {micSupported && micEnabled && (
         <button
           onClick={handleMicTap}
           disabled={busy}

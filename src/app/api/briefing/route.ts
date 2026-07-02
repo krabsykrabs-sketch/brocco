@@ -10,6 +10,7 @@ import {
   parseWall,
 } from "@/lib/schedule";
 import { RUN_TYPES } from "@/lib/activity-types";
+import { resolveFeatures } from "@/lib/features";
 import { format, startOfWeek, endOfWeek } from "date-fns";
 
 const anthropic = new Anthropic();
@@ -52,15 +53,22 @@ export async function GET(request: NextRequest) {
   const weekStart = startOfWeek(todayDate, { weekStartsOn: 1 });
   const weekEnd = endOfWeek(todayDate, { weekStartsOn: 1 });
 
+  const features = resolveFeatures(profile.features);
+
   const [agenda, birthdays, weekActivities, activePlan] = await Promise.all([
     getAgenda(userId, today, today, { includeOverdueTodos: true, today, includeRestWorkouts: true }),
-    getUpcomingBirthdays(userId, today, 7),
+    features.calendar ? getUpcomingBirthdays(userId, today, 7) : Promise.resolve([]),
     prisma.activity.findMany({
       where: { userId, startDateLocal: { gte: weekStart, lte: weekEnd } },
       select: { activityType: true, distanceKm: true },
     }),
     prisma.plan.findFirst({ where: { userId, status: "active" }, select: { name: true, raceDate: true } }),
   ]);
+
+  // Disabled domains stay out of the briefing — a coach-only user gets a
+  // pure training check-in
+  if (!features.calendar) agenda.events = [];
+  if (!features.tasks) agenda.todos = [];
 
   const weekRunKm = weekActivities
     .filter((a) => RUN_TYPES.includes(a.activityType))

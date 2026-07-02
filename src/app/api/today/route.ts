@@ -3,6 +3,7 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { getAgenda, todayInTimezone, parseWall } from "@/lib/schedule";
 import { isCompatibleType, RUN_TYPES } from "@/lib/activity-types";
+import { resolveFeatures } from "@/lib/features";
 import { format, startOfWeek, endOfWeek, addDays } from "date-fns";
 
 /**
@@ -24,13 +25,18 @@ export async function GET() {
 
     const today = todayInTimezone(profile.timezone);
     const todayDate = parseWall(today);
+    const features = resolveFeatures(profile.features);
 
     // --- Today's agenda: events + workouts (incl. rest) + due/overdue tasks ---
+    // Disabled domains come back empty so the Today screen naturally shows
+    // the classic training-only view.
     const agenda = await getAgenda(userId, today, today, {
       includeOverdueTodos: true,
       today,
       includeRestWorkouts: true,
     });
+    if (!features.calendar) agenda.events = [];
+    if (!features.tasks) agenda.todos = [];
 
     // --- Today's actual activities (to mark the workout as done) ---
     const dayStart = todayDate;
@@ -111,6 +117,7 @@ export async function GET() {
       addDays(todayDate, 3).toISOString().slice(0, 10),
       { includeOverdueTodos: false }
     );
+    if (!features.calendar) upcomingAgenda.events = [];
 
     const activityCount = await prisma.activity.count({ where: { userId } });
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
+import { resolveFeatures } from "@/lib/features";
 
 export async function GET() {
   try {
@@ -46,6 +47,7 @@ export async function GET() {
       yearsRunning: profile.yearsRunning,
       weeklyKmBaseline: profile.weeklyKmBaseline ? Number(profile.weeklyKmBaseline) : null,
       hrMaxBpm: profile.hrMaxBpm,
+      features: resolveFeatures(profile.features),
       stravaConnected: !!profile.stravaAccessToken,
       stravaAthleteId: profile.stravaAthleteId,
       onboardingCompleted: profile.onboardingCompleted,
@@ -71,7 +73,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, timezone, goalRace, goalTime, goalRaceDate, hrMaxBpm } = body;
+    const { name, timezone, goalRace, goalTime, goalRaceDate, hrMaxBpm, features } = body;
 
     if (name !== undefined) {
       await prisma.user.update({
@@ -90,6 +92,11 @@ export async function PUT(request: NextRequest) {
     if (hrMaxBpm !== undefined) {
       const n = Number(hrMaxBpm);
       profileUpdate.hrMaxBpm = hrMaxBpm && n > 0 && n < 250 ? Math.round(n) : null;
+    }
+    if (features !== undefined) {
+      // Normalize through resolveFeatures so only known keys with boolean
+      // values are ever stored
+      profileUpdate.features = resolveFeatures(features) as unknown as object;
     }
 
     if (Object.keys(profileUpdate).length > 0) {

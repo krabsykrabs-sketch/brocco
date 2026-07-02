@@ -2,28 +2,31 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useFeatures } from "./features-provider";
 
 /**
  * Shared navigation. Desktop top-nav mirrors the mobile tab structure:
- * Today · Calendar · Chat · Tasks, plus the "More" pages inline.
+ * Today · Calendar · Chat · Tasks, plus the "More" pages inline. Links for
+ * disabled features are hidden (see features-provider).
  */
 
 const DESKTOP_LINKS = [
   { name: "Today", href: "/today", match: (p: string) => p === "/" || p.startsWith("/today") },
-  { name: "Calendar", href: "/calendar", match: (p: string) => p.startsWith("/calendar") },
+  { name: "Calendar", href: "/calendar", match: (p: string) => p.startsWith("/calendar"), feature: "calendar" as const },
   { name: "Chat", href: "/chat", match: (p: string) => p.startsWith("/chat") },
-  { name: "Tasks", href: "/tasks", match: (p: string) => p.startsWith("/tasks") },
+  { name: "Tasks", href: "/tasks", match: (p: string) => p.startsWith("/tasks"), feature: "tasks" as const },
   { name: "Plan", href: "/plan", match: (p: string) => p.startsWith("/plan") },
   { name: "History", href: "/history", match: (p: string) => p.startsWith("/history") || p.startsWith("/activity") },
-  { name: "Notes", href: "/notes", match: (p: string) => p.startsWith("/notes") },
+  { name: "Notes", href: "/notes", match: (p: string) => p.startsWith("/notes"), feature: "notes" as const },
   { name: "Settings", href: "/settings", match: (p: string) => p.startsWith("/settings") },
 ];
 
 export function DesktopNavLinks() {
   const pathname = usePathname();
+  const features = useFeatures();
   return (
     <div className="hidden md:flex items-center gap-4 text-sm">
-      {DESKTOP_LINKS.map((l) => (
+      {DESKTOP_LINKS.filter((l) => !l.feature || features[l.feature]).map((l) => (
         <Link
           key={l.name}
           href={l.href}

@@ -1,9 +1,7 @@
-import { redirect } from "next/navigation";
-import { getSession } from "@/lib/session";
+import { requireFeature } from "@/lib/feature-guard";
 import CalendarView from "./calendar-view";
 
 export default async function CalendarPage() {
-  const session = await getSession();
-  if (!session.userId) redirect("/login");
+  await requireFeature("calendar");
   return <CalendarView />;
 }
