@@ -29,6 +29,7 @@ model User {
   taskLists         TaskList[]
   notes             Note[]
   dailyBriefings    DailyBriefing[]
+  weeklyReviews     WeeklyReview[]
 
   @@map("users")
 }
@@ -506,6 +507,20 @@ model DailyBriefing {
 
   @@unique([userId, date])
   @@map("daily_briefings")
+}
+
+model WeeklyReview {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  // Monday of the week being reviewed
+  weekStart DateTime @map("week_start") @db.Date
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
+  @@map("weekly_reviews")
 }
 
 model InviteCode {
