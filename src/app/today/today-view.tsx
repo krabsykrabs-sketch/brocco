@@ -158,6 +158,50 @@ function TaskRow({ task, onToggle }: { task: TodoItem; onToggle: (t: TodoItem) =
   );
 }
 
+// --- Weekly review card (Sunday evening / Monday) ---
+
+function WeeklyReviewCard() {
+  const [review, setReview] = useState<{ text: string; weekStart: string } | null>(null);
+  const [dismissed, setDismissed] = useState(true); // assume dismissed until checked
+
+  useEffect(() => {
+    fetch("/api/weekly-review")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d?.available || !d.review) return;
+        const dismissedWeek = localStorage.getItem("brocco_review_dismissed");
+        setDismissed(dismissedWeek === d.weekStart);
+        setReview({ text: d.review, weekStart: d.weekStart });
+      })
+      .catch(() => {});
+  }, []);
+
+  if (!review || dismissed) return null;
+
+  return (
+    <section className="mb-4">
+      <div className="bg-gradient-to-br from-emerald-900/30 to-gray-900 border border-emerald-800/40 rounded-2xl px-4 py-3.5">
+        <div className="flex items-start justify-between gap-2 mb-1.5">
+          <p className="text-[10px] font-bold text-emerald-400/80 uppercase tracking-widest">
+            📋 Your week in review
+          </p>
+          <button
+            onClick={() => {
+              localStorage.setItem("brocco_review_dismissed", review.weekStart);
+              setDismissed(true);
+            }}
+            className="text-gray-600 hover:text-gray-300 leading-none"
+            aria-label="Dismiss weekly review"
+          >
+            &times;
+          </button>
+        </div>
+        <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap">{review.text}</p>
+      </div>
+    </section>
+  );
+}
+
 // --- Week summary (salvaged compact version of the old dashboard card) ---
 
 function WeekCard({ data }: { data: TodayData }) {
@@ -312,6 +356,9 @@ export default function TodayView() {
           )}
         </div>
       </section>
+
+      {/* Weekly review (Sunday evening / Monday only) */}
+      <WeeklyReviewCard />
 
       {/* Plan expired prompt */}
       {data.planExpired && (

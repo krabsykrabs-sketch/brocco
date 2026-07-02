@@ -30,6 +30,7 @@ model User {
   notes             Note[]
   dailyBriefings    DailyBriefing[]
   passwordResets    PasswordResetToken[]
+  weeklyReviews     WeeklyReview[]
 
   @@map("users")
 }
@@ -525,6 +526,20 @@ model PasswordResetToken {
 
   @@index([userId])
   @@map("password_reset_tokens")
+}
+
+model WeeklyReview {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  // Monday of the week being reviewed
+  weekStart DateTime @map("week_start") @db.Date
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
+  @@map("weekly_reviews")
 }
 
 model InviteCode {
