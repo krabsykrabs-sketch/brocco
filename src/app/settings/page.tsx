@@ -696,6 +696,7 @@ function SettingsContent() {
             ["tasks", "Tasks", "To-dos, lists, and recurring chores"],
             ["notes", "Notes", "Quick facts and reference lists"],
             ["journal", "Journal", "Mood check-ins and private diary"],
+            ["kitchen", "Kitchen", "Recipe library, photo scans, cooking ideas"],
           ] as Array<[keyof Features, string, string]>).map(([key, label, desc]) => (
             <div key={key} className="flex items-center gap-3 px-4 py-3">
               <div className="flex-1 min-w-0">

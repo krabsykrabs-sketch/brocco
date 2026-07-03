@@ -34,6 +34,7 @@ model User {
   pushSubscriptions PushSubscription[]
   journalEntries    JournalEntry[]
   guidedWorkouts    GuidedWorkout[]
+  recipes           Recipe[]
 
   @@map("users")
 }
@@ -564,6 +565,30 @@ model JournalEntry {
 
   @@index([userId, day])
   @@map("journal_entries")
+}
+
+// Kitchen helper: recipes scanned from book photos (Claude vision extracts
+// the structured text; the photo itself is not stored), created via chat, or
+// entered by hand. ingredients/steps are JSON string arrays.
+model Recipe {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  title       String
+  ingredients Json     @db.JsonB
+  steps       Json     @db.JsonB
+  tags        String[] @default([])
+  servings    Int?
+  timeMin     Int?     @map("time_min")
+  source      String   @default("manual") // photo | chat | manual
+  notes       String?
+  timesCooked Int      @default(0) @map("times_cooked")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+  @@map("recipes")
 }
 
 // Structured S&C sessions playable in the workout timer. `definition` is a

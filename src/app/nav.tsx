@@ -20,6 +20,7 @@ const DESKTOP_LINKS = [
   { name: "Workouts", href: "/workout", match: (p: string) => p.startsWith("/workout") },
   { name: "Notes", href: "/notes", match: (p: string) => p.startsWith("/notes"), feature: "notes" as const },
   { name: "Journal", href: "/journal", match: (p: string) => p.startsWith("/journal"), feature: "journal" as const },
+  { name: "Kitchen", href: "/kitchen", match: (p: string) => p.startsWith("/kitchen"), feature: "kitchen" as const },
   { name: "Settings", href: "/settings", match: (p: string) => p.startsWith("/settings") },
 ];
 
