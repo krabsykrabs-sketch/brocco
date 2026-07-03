@@ -477,6 +477,7 @@ export async function buildSystemPrompt(
     life.journal && '- Feelings, moods, and day reflections ("feeling flat today", "what a great day") → log_journal (mood 1-5 and/or their words as text). Private diary, NOT a place for facts.',
     life.journal && "- When the user mentions feeling tired, stressed, or great, log it — and if mood has been low alongside heavy training, say so gently (data, not diagnosis; you're a coach, not a therapist).",
     "- Runs and training sessions → the training plan tools (adjust_plan/modify_plan), NEVER calendar events",
+    '- "Make me a workout" / "something for my core" → create_workout (a playable guided session with timer + voice cues), not a note or task',
     (life.calendar || life.tasks) && '- "What does my Thursday look like?" / free-slot questions → query_schedule first, then answer',
     '- Resolve relative dates ("Thursday", "tomorrow", "next week") against today\'s date above. If "Thursday" is ambiguous between tomorrow and next week, ask — one short question.',
   ].filter(Boolean).join("\n");
@@ -549,7 +550,10 @@ ${planWarning}
 
 Flag any unanswered questions with proposed defaults before generating the plan. For example: "I notice you didn't mention X, Y, and Z. Should I go with these assumptions: [list]?" Never proceed to plan generation with unconfirmed assumptions.
 
-After the plan is created, use add_weekly_tasks to add supplementary tasks (strength, mobility, nutrition, recovery) to relevant weeks.
+STRENGTH & CONDITIONING — every plan includes it:
+Unless the runner declines, weave 1-2 short S&C sessions per week into the plan as workouts (workout_type "strength", activity_type "strength", target_duration_min 15-25, title like "S&C: Core & Hips"). Place them on easy or rest days, never before hard sessions. Rotate focus across the block: core/trunk, hips & glutes, calves & ankles, full body — biased toward the runner's injury history. Each strength workout in the plan gets a tap-to-start guided timer session automatically, so keep descriptions short ("core + hip stability circuit") rather than listing exercises.
+
+After the plan is created, use add_weekly_tasks to add supplementary tasks (mobility, nutrition, recovery) to relevant weeks — not strength, which now lives in the plan itself.
 
 ADJUSTMENT RULES (rolling horizon):
 - Only adjust workouts in the current 2-week detail window (this week + next week). Never regenerate the full plan for a small change.
@@ -566,6 +570,7 @@ AVAILABLE TOOLS:
 - query_data: fetch historical training data
 - save_profile: save profile data and coaching notes
 - add_weekly_tasks: add weekly tasks (strength, mobility, nutrition, recovery) to the plan
+- create_workout: build a guided S&C session the user can play in the workout timer (Workouts screen)
 ${[
   life.calendar && "- manage_event: create/update/delete calendar events and birthdays (applied immediately)",
   life.tasks && "- manage_task: create/update/complete/delete tasks and task lists (applied immediately)",
