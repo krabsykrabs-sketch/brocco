@@ -12,6 +12,7 @@ import {
 } from "@/lib/schedule";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 import { resolveFeatures, anyLifeFeature, type Features } from "@/lib/features";
+import { renderJournalText, averageMood } from "@/lib/journal";
 
 /**
  * Build the coaching context for the AI system prompt.
@@ -138,7 +139,34 @@ export async function buildCoachContext(userId: string): Promise<string> {
   if (features.calendar || features.tasks) {
     blocks.push(await buildLifeContext(userId, profile.timezone, features));
   }
+  if (features.journal) {
+    const journalBlock = await buildJournalContext(userId, profile.timezone);
+    if (journalBlock) blocks.push(journalBlock);
+  }
   return blocks.join("\n\n");
+}
+
+/**
+ * Recent mood/journal signal (last 7 days) so Brocco can connect how the
+ * user feels with how they're training. Omitted entirely when there are no
+ * entries — no block is better than an empty one.
+ */
+async function buildJournalContext(userId: string, timezone: string): Promise<string | null> {
+  const today = todayInTimezone(timezone);
+  const weekAgo = wallDateString(addDaysWall(parseWall(today), -7));
+  const entries = await prisma.journalEntry.findMany({
+    where: { userId, day: { gte: weekAgo } },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    select: { day: true, mood: true, tags: true, text: true },
+  });
+  if (entries.length === 0) return null;
+
+  const avg = averageMood(entries);
+  let block = `MOOD & JOURNAL (private, last 7 days, 1=rough..5=great${avg != null ? `, average ${avg}/5` : ""}):\n`;
+  block += renderJournalText(entries);
+  block += `\n(Use log_journal to record new moods/reflections. Reference this gently — it's their diary, not a metric to optimize.)`;
+  return block;
 }
 
 /**
@@ -428,6 +456,7 @@ export async function buildSystemPrompt(
     life.calendar && "calendar",
     life.tasks && "tasks",
     life.notes && "notes",
+    life.journal && "mood journal",
     life.calendar && "important dates",
   ].filter(Boolean).join(", ");
 
@@ -436,7 +465,7 @@ export async function buildSystemPrompt(
     : `You are Brocco — a broccoli and ${userName}'s personal running coach. You have deep exercise physiology knowledge and an aggressively healthy outlook on life. You're data-driven and direct. You use vegetable and garden metaphors sparingly — they're seasoning, not the main dish. You're inexplicably competitive for a vegetable. You treat recovery with the reverence of good soil and sunlight. Your advice is genuinely excellent and specific. You take their training seriously even though you're a broccoli. Keep it fun without sacrificing accuracy. You're a coach first, a broccoli second.`;
 
   const accessLine = `You have access to their training data from Strava and their training plan${
-    [life.calendar && "their calendar", life.tasks && "their tasks", life.notes && "their notes"]
+    [life.calendar && "their calendar", life.tasks && "their tasks", life.notes && "their notes", life.journal && "their mood journal"]
       .filter(Boolean).map((s) => `, ${s}`).join("")
   }.`;
 
@@ -445,6 +474,8 @@ export async function buildSystemPrompt(
     life.calendar && "- Birthdays and yearly dates → manage_event (category birthday, all-day, yearly recurrence)",
     life.tasks && '- To-dos, reminders, errands, shopping items ("remind me to...", "I need to...", "groceries: milk, eggs") → manage_task',
     life.notes && '- Facts and reference info to remember ("my locker code is 4821", "packing list for Mallorca") → manage_note',
+    life.journal && '- Feelings, moods, and day reflections ("feeling flat today", "what a great day") → log_journal (mood 1-5 and/or their words as text). Private diary, NOT a place for facts.',
+    life.journal && "- When the user mentions feeling tired, stressed, or great, log it — and if mood has been low alongside heavy training, say so gently (data, not diagnosis; you're a coach, not a therapist).",
     "- Runs and training sessions → the training plan tools (adjust_plan/modify_plan), NEVER calendar events",
     (life.calendar || life.tasks) && '- "What does my Thursday look like?" / free-slot questions → query_schedule first, then answer',
     '- Resolve relative dates ("Thursday", "tomorrow", "next week") against today\'s date above. If "Thursday" is ambiguous between tomorrow and next week, ask — one short question.',
@@ -539,6 +570,7 @@ ${[
   life.calendar && "- manage_event: create/update/delete calendar events and birthdays (applied immediately)",
   life.tasks && "- manage_task: create/update/complete/delete tasks and task lists (applied immediately)",
   life.notes && "- manage_note: save/update/search/delete notes",
+  life.journal && "- log_journal: log the user's mood (1-5) and private diary reflections, or read recent ones",
   (life.calendar || life.tasks) && "- query_schedule: read calendar + tasks + workouts for any date range",
 ].filter(Boolean).join("\n")}
 

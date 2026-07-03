@@ -18,6 +18,7 @@ const DESKTOP_LINKS = [
   { name: "Plan", href: "/plan", match: (p: string) => p.startsWith("/plan") },
   { name: "History", href: "/history", match: (p: string) => p.startsWith("/history") || p.startsWith("/activity") },
   { name: "Notes", href: "/notes", match: (p: string) => p.startsWith("/notes"), feature: "notes" as const },
+  { name: "Journal", href: "/journal", match: (p: string) => p.startsWith("/journal"), feature: "journal" as const },
   { name: "Settings", href: "/settings", match: (p: string) => p.startsWith("/settings") },
 ];
 
