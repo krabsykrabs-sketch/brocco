@@ -434,6 +434,26 @@ export const toolDefinitions: Anthropic.Tool[] = [
       required: ["date_from", "date_to"],
     },
   },
+  {
+    name: "log_journal",
+    description:
+      "Log the user's mood and private diary entries, or read recent ones. Use action 'log' whenever the user shares how they feel ('feeling flat today', 'so happy after that race') or reflects on their day — mood is 1 (rough) to 5 (great), text captures their reflection in their own words. Mood and text can be logged together or alone. Use action 'recent' before answering questions about how they've been feeling lately. This is a private diary — do NOT store facts or reference info here (use manage_note for that).",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["log", "recent"] },
+        mood: { type: "integer", description: "1 (rough) to 5 (great)" },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Context tags, e.g. ['training', 'work', 'sleep']",
+        },
+        text: { type: "string", description: "The reflection/diary text, close to the user's own words" },
+        days: { type: "integer", description: "For 'recent': how many days back to read. Default 14." },
+      },
+      required: ["action"],
+    },
+  },
 ];
 
 // --- Feature-gated tool selection ---
@@ -445,6 +465,7 @@ const TOOL_FEATURE_GATES: Record<string, (f: Features) => boolean> = {
   manage_task: (f) => f.tasks,
   manage_note: (f) => f.notes,
   query_schedule: (f) => f.calendar || f.tasks,
+  log_journal: (f) => f.journal,
 };
 
 /**
@@ -504,6 +525,8 @@ export async function handleToolCall(
       return handleManageNote(input, userId);
     case "query_schedule":
       return handleQuerySchedule(input, userId);
+    case "log_journal":
+      return handleLogJournal(input, userId);
     default:
       return { success: false, error: `Unknown tool: ${toolName}` };
   }
@@ -1081,8 +1104,11 @@ import {
   getAgenda,
   renderAgendaText,
   todayInTimezone,
+  wallDateString,
+  addDaysWall,
 } from "@/lib/schedule";
 import { setTodoDone, resolveListByName, parseDueDate } from "@/lib/todos";
+import { moodEmoji, moodLabel, renderJournalText, averageMood } from "@/lib/journal";
 import type { EventCategory, RecurrenceFreq, TodoPriority } from "@prisma/client";
 
 const EVENT_CATEGORIES = ["work", "family", "training", "social", "health", "birthday", "other"];
@@ -1520,6 +1546,70 @@ async function handleQuerySchedule(
     success: true,
     data: { schedule: renderAgendaText(agenda), today },
   };
+}
+
+// --- log_journal ---
+
+async function handleLogJournal(
+  input: Record<string, unknown>,
+  userId: string
+): Promise<ToolResult> {
+  const action = input.action as string;
+
+  if (action === "log") {
+    const mood = input.mood == null ? null : Number(input.mood);
+    const text = input.text != null ? String(input.text).trim() : null;
+    if (mood == null && !text) {
+      return { success: false, error: "mood or text is required" };
+    }
+    if (mood != null && (!Number.isInteger(mood) || mood < 1 || mood > 5)) {
+      return { success: false, error: "mood must be an integer 1-5" };
+    }
+
+    const profile = await prisma.userProfile.findUnique({ where: { userId }, select: { timezone: true } });
+    const day = todayInTimezone(profile?.timezone || "Europe/Berlin");
+    const tags = Array.isArray(input.tags)
+      ? (input.tags as unknown[]).map((t) => String(t).toLowerCase().trim()).filter(Boolean).slice(0, 10)
+      : [];
+
+    const entry = await prisma.journalEntry.create({
+      data: { userId, day, mood, tags, text: text || null },
+    });
+
+    const message = mood
+      ? `Mood logged: ${moodEmoji(mood)} ${moodLabel(mood)}`
+      : "Journal entry saved";
+    return {
+      success: true,
+      data: { entry_id: entry.id, day, mood, has_text: !!text },
+      notification: { type: "journal_saved", message, data: { id: entry.id, domain: "journal" } },
+    };
+  }
+
+  if (action === "recent") {
+    const days = Math.min(Math.max(Number(input.days) || 14, 1), 90);
+    const profile = await prisma.userProfile.findUnique({ where: { userId }, select: { timezone: true } });
+    const today = todayInTimezone(profile?.timezone || "Europe/Berlin");
+    const fromDay = wallDateString(addDaysWall(parseWall(today), -days));
+
+    const entries = await prisma.journalEntry.findMany({
+      where: { userId, day: { gte: fromDay } },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: { day: true, mood: true, tags: true, text: true },
+    });
+
+    return {
+      success: true,
+      data: {
+        journal: renderJournalText(entries),
+        average_mood: averageMood(entries),
+        entry_count: entries.length,
+      },
+    };
+  }
+
+  return { success: false, error: `Unknown log_journal action: ${action}` };
 }
 
 // --- save_profile ---

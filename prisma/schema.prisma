@@ -32,6 +32,7 @@ model User {
   passwordResets    PasswordResetToken[]
   weeklyReviews     WeeklyReview[]
   pushSubscriptions PushSubscription[]
+  journalEntries    JournalEntry[]
 
   @@map("users")
 }
@@ -541,6 +542,27 @@ model WeeklyReview {
 
   @@unique([userId, weekStart])
   @@map("weekly_reviews")
+}
+
+// Mood check-ins and journal entries share one private timeline. `day` is
+// the user's local wall-clock date ("yyyy-MM-dd") so grouping and the
+// once-a-day mood prompt follow the user's timezone, not the server's.
+model JournalEntry {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  day       String
+  // 1 (rough) … 5 (great); null for text-only journal entries
+  mood      Int?
+  // Context tags on mood check-ins, e.g. ["training", "work", "sleep"]
+  tags      String[] @default([])
+  text      String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, day])
+  @@map("journal_entries")
 }
 
 // One row per device/browser the user enabled notifications on
