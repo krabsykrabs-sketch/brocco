@@ -106,6 +106,36 @@ function WorkoutRow({ workout, activities }: { workout: WorkoutItem; activities:
     workout.targetDurationMin ? `${workout.targetDurationMin}min` : null,
   ].filter(Boolean).join(" · ");
 
+  // Strength sessions are playable: deep-link into the guided workout timer
+  const isStrength = workout.workoutType === "strength" || workout.activityType === "strength";
+  if (isStrength) {
+    return (
+      <Link
+        href={workout.completed ? "/plan" : `/workout?planned=${workout.workoutId}`}
+        className={`flex items-center gap-3 border rounded-xl px-3.5 py-2.5 transition-colors ${
+          workout.completed
+            ? "bg-green-900/25 border-green-700/40"
+            : "bg-gray-900 border-gray-700/60 hover:border-gray-600"
+        }`}
+      >
+        <div className="w-12 flex-shrink-0 text-right">
+          <span className="text-sm">{workout.completed ? "✅" : "💪"}</span>
+        </div>
+        <div className="w-1 self-stretch rounded-full" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className={`text-sm font-medium truncate ${workout.completed ? "text-green-300" : "text-gray-100"}`}>{workout.title}</p>
+            <span className="text-[9px] uppercase font-bold text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded flex-shrink-0">plan</span>
+          </div>
+          <p className="text-xs text-gray-500 truncate">{details || "guided session"}</p>
+        </div>
+        {!workout.completed && (
+          <span className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg flex-shrink-0">Start ▶</span>
+        )}
+      </Link>
+    );
+  }
+
   return (
     <Link href="/plan" className={`flex items-center gap-3 border rounded-xl px-3.5 py-2.5 transition-colors ${
       workout.completed

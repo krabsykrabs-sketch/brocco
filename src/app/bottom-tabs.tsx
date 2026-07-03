@@ -112,7 +112,7 @@ function makeMoreTab(features: Features, surfaced: Tab[]): Tab {
       </svg>
     ),
     match: (p) =>
-      p.startsWith("/more") || p.startsWith("/settings") ||
+      p.startsWith("/more") || p.startsWith("/settings") || p.startsWith("/workout") ||
       (features.notes && p.startsWith("/notes")) ||
       (features.journal && p.startsWith("/journal")) ||
       (!hasPlan && p.startsWith("/plan")) ||

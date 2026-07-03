@@ -18,6 +18,7 @@ export default async function MorePage() {
   const items = [
     { name: "Training Plan", href: "/plan", emoji: "📅", desc: "Phases, weeks, and workouts" },
     { name: "History", href: "/history", emoji: "🏃", desc: "All past activities" },
+    { name: "Workouts", href: "/workout", emoji: "💪", desc: "Guided S&C sessions and interval timers" },
     ...(features.notes ? [{ name: "Notes", href: "/notes", emoji: "📝", desc: "Quick facts, lists, and references" }] : []),
     ...(features.journal ? [{ name: "Journal", href: "/journal", emoji: "📓", desc: "Mood check-ins and private diary" }] : []),
     { name: "Settings", href: "/settings", emoji: "⚙️", desc: "Profile, features, Strava, invites" },

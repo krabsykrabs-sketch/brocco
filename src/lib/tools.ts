@@ -435,6 +435,56 @@ export const toolDefinitions: Anthropic.Tool[] = [
     },
   },
   {
+    name: "create_workout",
+    description:
+      'Create a guided S&C (strength & conditioning) session the user can play in the workout timer (big countdown, voice cues). Use when the user asks for a workout to DO now or to save for later ("make me a 20-minute core workout", "something for my hips, no equipment"). Design for runners: bodyweight by default, 10-30 min, left/right sides as separate entries, short form cues in notes. Prefer mode "time" (30-45s work) for flow; "reps" only where counting matters. Respect active injuries from the health context. After creating, tell the user it\'s ready in the Workouts screen.',
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        title: { type: "string", description: "e.g. 'Core Stability 15'" },
+        focus: { type: "string", description: "e.g. 'core', 'hips & glutes', 'full body'" },
+        definition: {
+          type: "object",
+          description:
+            "The workout structure. Shape: {warmupSec?, cooldownSec?, blocks: [{label?, rounds (1-10), restBetweenRoundsSec?, exercises: [{name, mode: 'time'|'reps', workSec? (5-600, for time), reps? (1-100, for reps), restSec? (0-600), note?}]}]} — 1-3 blocks, 3-8 exercises each.",
+          properties: {
+            warmupSec: { type: "integer" },
+            cooldownSec: { type: "integer" },
+            blocks: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  label: { type: "string" },
+                  rounds: { type: "integer" },
+                  restBetweenRoundsSec: { type: "integer" },
+                  exercises: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        name: { type: "string" },
+                        mode: { type: "string", enum: ["time", "reps"] },
+                        workSec: { type: "integer" },
+                        reps: { type: "integer" },
+                        restSec: { type: "integer" },
+                        note: { type: "string" },
+                      },
+                      required: ["name", "mode"],
+                    },
+                  },
+                },
+                required: ["rounds", "exercises"],
+              },
+            },
+          },
+          required: ["blocks"],
+        },
+      },
+      required: ["title", "definition"],
+    },
+  },
+  {
     name: "log_journal",
     description:
       "Log the user's mood and private diary entries, or read recent ones. Use action 'log' whenever the user shares how they feel ('feeling flat today', 'so happy after that race') or reflects on their day — mood is 1 (rough) to 5 (great), text captures their reflection in their own words. Mood and text can be logged together or alone. Use action 'recent' before answering questions about how they've been feeling lately. This is a private diary — do NOT store facts or reference info here (use manage_note for that).",
@@ -527,6 +577,8 @@ export async function handleToolCall(
       return handleQuerySchedule(input, userId);
     case "log_journal":
       return handleLogJournal(input, userId);
+    case "create_workout":
+      return handleCreateWorkout(input, userId);
     default:
       return { success: false, error: `Unknown tool: ${toolName}` };
   }
@@ -1109,6 +1161,7 @@ import {
 } from "@/lib/schedule";
 import { setTodoDone, resolveListByName, parseDueDate } from "@/lib/todos";
 import { moodEmoji, moodLabel, renderJournalText, averageMood } from "@/lib/journal";
+import { validateWorkoutDefinition, estimateDurationMin } from "@/lib/guided-workout";
 import type { EventCategory, RecurrenceFreq, TodoPriority } from "@prisma/client";
 
 const EVENT_CATEGORIES = ["work", "family", "training", "social", "health", "birthday", "other"];
@@ -1610,6 +1663,41 @@ async function handleLogJournal(
   }
 
   return { success: false, error: `Unknown log_journal action: ${action}` };
+}
+
+// --- create_workout ---
+
+async function handleCreateWorkout(
+  input: Record<string, unknown>,
+  userId: string
+): Promise<ToolResult> {
+  const title = String(input.title || "").trim();
+  if (!title || title.length > 80) return { success: false, error: "title is required (max 80 chars)" };
+
+  const validated = validateWorkoutDefinition(input.definition);
+  if (!validated.ok) return { success: false, error: `Invalid definition: ${validated.error}` };
+
+  const durationMin = estimateDurationMin(validated.def);
+  const workout = await prisma.guidedWorkout.create({
+    data: {
+      userId,
+      title,
+      focus: input.focus ? String(input.focus).slice(0, 60) : null,
+      durationMin,
+      definition: validated.def as object,
+      source: "brocco",
+    },
+  });
+
+  return {
+    success: true,
+    data: { workout_id: workout.id, title, duration_min: durationMin, start_url: `/workout?start=${workout.id}` },
+    notification: {
+      type: "workout_created",
+      message: `Workout ready: ${title} (~${durationMin} min)`,
+      data: { id: workout.id, domain: "workout" },
+    },
+  };
 }
 
 // --- save_profile ---

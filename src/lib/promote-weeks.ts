@@ -95,7 +95,7 @@ ${context}
 
 Each workout object must have: date (ISO), title, workout_type (easy/long/tempo/interval/race_pace/recovery/rest/cross_training/strength/race), target_distance_km (number), target_pace (string like "5:00-5:15/km"), description (string with warm-up, main set, cool-down details).
 
-Generate one workout per day (Mon-Sun). Include rest days.`,
+Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a race or taper week, include 1-2 short S&C sessions (workout_type "strength", activity_type "strength", target_duration_min 15-25, title like "S&C: Core & Hips", short description like "core + hip stability circuit") on easy or rest days, never the day before a hard session — these get a guided timer session in the app automatically.`,
           messages: [{ role: "user", content: "Generate the detailed workouts for this week as a JSON array." }],
         })
         .finalMessage();
