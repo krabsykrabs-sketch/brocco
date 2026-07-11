@@ -226,7 +226,8 @@ export function QuickCapture() {
         <div className="fixed left-4 right-4 md:left-auto md:right-6 md:w-96 z-[70] bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-3.5"
           style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 8.5rem)" }}>
           <div className="flex items-start gap-2.5">
-            <span className="text-lg mt-0.5">&#x1F966;</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons/icon-64.png" alt="" className="w-6 h-6 mt-0.5" />
             <p className="text-sm text-gray-200 flex-1">{clarify}</p>
             <button onClick={() => { setClarify(null); setClarifyInput(""); }} className="text-gray-500 hover:text-white text-lg leading-none">&times;</button>
           </div>

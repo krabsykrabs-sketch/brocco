@@ -599,7 +599,8 @@ function Nav() {
     <nav className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm -mx-4 px-4 mb-6">
       <div className="hidden md:flex items-center justify-between pb-6">
         <div className="flex items-center gap-2">
-          <span className="text-2xl">&#x1F966;</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/icon-64.png" alt="Brocco" className="w-8 h-8" />
           <span className="font-bold text-lg">brocco.run</span>
         </div>
         <DesktopNavLinks />
@@ -612,7 +613,8 @@ function MobileNav({ planName, onNewPlan, starting }: { planName: string; onNewP
   return (
     <nav className="safe-top flex items-center justify-between px-4 pb-2 border-b border-gray-800 bg-gray-950/95 backdrop-blur-sm flex-shrink-0">
       <div className="flex items-center gap-2 min-w-0">
-        <span className="text-lg">&#x1F966;</span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6" />
         <span className="font-semibold text-sm text-gray-300 truncate">{planName}</span>
       </div>
       <button onClick={onNewPlan} disabled={starting} className="text-xs text-gray-500 hover:text-white transition-colors flex-shrink-0">
@@ -670,7 +672,8 @@ function PlanPageContent() {
       <main className="min-h-screen max-w-2xl mx-auto px-4 py-6">
         <Nav />
         <div className="text-center py-16">
-          <p className="text-5xl mb-4">&#x1F966;</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/brocco-runner.png" alt="" className="h-32 mx-auto mb-4" />
           <p className="text-gray-400 text-lg font-medium">No training plan yet</p>
           <p className="text-gray-500 text-sm mt-2 mb-4">Let Brocco build you a personalized plan.</p>
           <button onClick={handleNewPlan} disabled={startingPlan} className="px-6 py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors">
