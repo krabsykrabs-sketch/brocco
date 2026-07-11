@@ -1,4 +1,5 @@
-const CACHE_NAME = 'brocco-v1';
+// v2: new logo icon set — bump busts cached old icons on installed PWAs
+const CACHE_NAME = 'brocco-v2';
 const SHELL_URLS = ['/', '/chat', '/plan', '/history', '/settings', '/legal'];
 
 self.addEventListener('install', (event) => {

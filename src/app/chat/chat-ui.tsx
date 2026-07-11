@@ -90,10 +90,17 @@ function MessageBubble({ msg }: { msg: Message }) {
     ? parseStatus(msg.displayText)
     : { cleanText: null, statusType: null, statusText: null };
 
+  // Placeholder assistant rows with no content (left behind when a stream
+  // died mid-request) render as bare avatars — hide them entirely.
+  if (!cleanText && (!msg.toolNotifications || msg.toolNotifications.length === 0)) {
+    return null;
+  }
+
   return (
     <div className="flex gap-2 mb-3 items-start">
-      <div className="w-7 h-7 rounded-full bg-green-900/50 flex items-center justify-center flex-shrink-0 mt-0.5 text-sm">
-        &#x1F966;
+      <div className="w-7 h-7 rounded-full flex-shrink-0 mt-0.5 overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/icons/icon-64.png" alt="" className="w-full h-full" />
       </div>
       <div className="max-w-[85%] space-y-1">
         {msg.toolNotifications?.map((n, i) => (
@@ -594,7 +601,8 @@ export default function ChatUI({
             &#9776;
           </button>
           <div className="flex items-center gap-2">
-            <span className="text-lg">&#x1F966;</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6" />
             <span className="font-semibold text-sm text-gray-300 md:text-lg md:font-bold md:text-white">brocco.run</span>
           </div>
         </div>
@@ -614,7 +622,8 @@ export default function ChatUI({
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {messages.length === 0 && !streamingText && (
           <div className="text-center py-16">
-            <p className="text-5xl mb-4">&#x1F966;</p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons/icon-192.png" alt="" className="w-16 h-16 mx-auto mb-4" />
             <span className="inline-block w-6 h-6 border-2 border-green-400/30 border-t-green-400 rounded-full animate-spin" />
           </div>
         )}
@@ -626,8 +635,9 @@ export default function ChatUI({
         {/* Streaming indicator */}
         {(streamingText || streamingNotifications.length > 0) && (
           <div className="flex gap-2 mb-3 items-start">
-            <div className="w-7 h-7 rounded-full bg-green-900/50 flex items-center justify-center flex-shrink-0 mt-0.5 text-sm">
-              &#x1F966;
+            <div className="w-7 h-7 rounded-full flex-shrink-0 mt-0.5 overflow-hidden">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/icons/icon-64.png" alt="" className="w-full h-full" />
             </div>
             <div className="max-w-[85%] space-y-1">
               {streamingNotifications.map((n, i) => (
