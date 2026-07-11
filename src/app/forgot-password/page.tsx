@@ -35,7 +35,8 @@ export default function ForgotPasswordPage() {
     <main className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <p className="text-5xl mb-3">&#x1F966;</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/brocco-runner.png" alt="Brocco, running" className="h-32 mx-auto mb-4" />
           <h1 className="text-2xl font-bold">Reset password</h1>
           <p className="text-gray-400 text-sm mt-1">
             Enter your account email and we&apos;ll send you a reset link.

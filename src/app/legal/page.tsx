@@ -6,13 +6,15 @@ export default function LegalPage() {
       <nav className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm -mx-4 px-4 mb-8">
         <div className="hidden md:flex items-center justify-between pb-6">
           <Link href="/" className="flex items-center gap-2">
-            <span className="text-2xl">&#x1F966;</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icons/icon-64.png" alt="Brocco" className="w-8 h-8" />
             <span className="font-bold text-lg">brocco.run</span>
           </Link>
           <Link href="/" className="text-sm text-gray-400 hover:text-white transition-colors">Back</Link>
         </div>
         <div className="md:hidden flex items-center gap-2 pb-2">
-          <span className="text-lg">&#x1F966;</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6" />
           <span className="font-semibold text-sm text-gray-300">Legal</span>
         </div>
       </nav>

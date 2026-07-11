@@ -8,6 +8,7 @@ import { QuickCapture } from "./quick-capture";
 import { StravaAutoSync } from "./strava-auto-sync";
 import { ReminderWatcher } from "./reminder-watcher";
 import { FeaturesProvider } from "./features-provider";
+import { BootSplash } from "./boot-splash";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -48,10 +49,13 @@ export default function RootLayout({
       <head>
         <link rel="icon" href="/icons/icon-192.png" type="image/png" sizes="192x192" />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+        {/* Boot splash artwork must paint immediately on app launch */}
+        <link rel="preload" as="image" href="/brand/brocco-runner.png" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
+        <BootSplash />
         <FeaturesProvider>
           {children}
           <AppFooter />

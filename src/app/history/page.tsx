@@ -133,7 +133,8 @@ export default function HistoryPage() {
       <div className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm -mx-4 px-4 mb-6">
         {/* Mobile */}
         <div className="md:hidden flex items-center gap-2 pb-2">
-          <span className="text-lg">&#x1F966;</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6" />
           <span className="font-semibold text-sm text-gray-300">History</span>
           <span className="text-xs text-gray-500 ml-auto">{total} activities</span>
         </div>

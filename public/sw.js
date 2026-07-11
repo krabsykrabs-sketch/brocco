@@ -1,6 +1,9 @@
-// v2: new logo icon set — bump busts cached old icons on installed PWAs
-const CACHE_NAME = 'brocco-v2';
-const SHELL_URLS = ['/', '/chat', '/plan', '/history', '/settings', '/legal'];
+// v3: precache brand assets (boot splash artwork + icons)
+const CACHE_NAME = 'brocco-v3';
+const SHELL_URLS = [
+  '/', '/chat', '/plan', '/history', '/settings', '/legal',
+  '/brand/brocco-runner.png', '/icons/icon-64.png', '/icons/icon-192.png',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -76,7 +79,7 @@ self.addEventListener('fetch', (event) => {
           if (cached) return cached;
           if (event.request.mode === 'navigate') {
             return new Response(
-              '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Brocco</title><style>body{background:#030712;color:#e5e7eb;font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;text-align:center}.c{max-width:300px}h1{font-size:3rem;margin-bottom:0.5rem}p{color:#9ca3af;font-size:0.875rem}</style></head><body><div class="c"><h1>&#x1F966;</h1><p>You\'re offline. Check your connection and try again.</p></div></body></html>',
+              '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Brocco</title><style>body{background:#030712;color:#e5e7eb;font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;text-align:center}.c{max-width:300px}img{width:72px;height:72px;margin-bottom:0.75rem}p{color:#9ca3af;font-size:0.875rem}</style></head><body><div class="c"><img src="/icons/icon-192.png" alt=""><p>You\'re offline. Check your connection and try again.</p></div></body></html>',
               { headers: { 'Content-Type': 'text/html' } }
             );
           }

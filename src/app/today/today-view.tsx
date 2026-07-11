@@ -460,7 +460,8 @@ export default function TodayView() {
       {/* Morning briefing */}
       <section className="mb-4">
         <div className="bg-green-900/15 border border-green-800/30 rounded-2xl px-4 py-3.5 flex gap-3">
-          <span className="text-xl flex-shrink-0">&#x1F966;</span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icons/icon-64.png" alt="" className="w-7 h-7 flex-shrink-0" />
           {briefingLoading ? (
             <div className="flex-1 space-y-2 py-1">
               <div className="h-3 bg-gray-800 rounded animate-pulse w-full" />
