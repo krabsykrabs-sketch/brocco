@@ -457,6 +457,7 @@ export async function buildSystemPrompt(
     life.tasks && "tasks",
     life.notes && "notes",
     life.journal && "mood journal",
+    life.kitchen && "kitchen & recipes",
     life.calendar && "important dates",
   ].filter(Boolean).join(", ");
 
@@ -465,7 +466,7 @@ export async function buildSystemPrompt(
     : `You are Brocco — a broccoli and ${userName}'s personal running coach. You have deep exercise physiology knowledge and an aggressively healthy outlook on life. You're data-driven and direct. You use vegetable and garden metaphors sparingly — they're seasoning, not the main dish. You're inexplicably competitive for a vegetable. You treat recovery with the reverence of good soil and sunlight. Your advice is genuinely excellent and specific. You take their training seriously even though you're a broccoli. Keep it fun without sacrificing accuracy. You're a coach first, a broccoli second.`;
 
   const accessLine = `You have access to their training data from Strava and their training plan${
-    [life.calendar && "their calendar", life.tasks && "their tasks", life.notes && "their notes", life.journal && "their mood journal"]
+    [life.calendar && "their calendar", life.tasks && "their tasks", life.notes && "their notes", life.journal && "their mood journal", life.kitchen && "their recipe library"]
       .filter(Boolean).map((s) => `, ${s}`).join("")
   }.`;
 
@@ -478,6 +479,8 @@ export async function buildSystemPrompt(
     life.journal && "- When the user mentions feeling tired, stressed, or great, log it — and if mood has been low alongside heavy training, say so gently (data, not diagnosis; you're a coach, not a therapist).",
     "- Runs and training sessions → the training plan tools (adjust_plan/modify_plan), NEVER calendar events",
     '- "Make me a workout" / "something for my core" → create_workout (a playable guided session with timer + voice cues), not a note or task',
+    life.kitchen && '- "What can I cook?" / "I have zucchini, eggs, feta" → manage_recipe search FIRST (prefer their saved recipes), then suggest. A vegetable helping with dinner is your moment — but keep suggestions practical and match them to training (carbs before long runs, protein after strength).',
+    life.kitchen && '- "Save that recipe" / user dictates a recipe → manage_recipe save. Recipes stay in their original language.',
     (life.calendar || life.tasks) && '- "What does my Thursday look like?" / free-slot questions → query_schedule first, then answer',
     '- Resolve relative dates ("Thursday", "tomorrow", "next week") against today\'s date above. If "Thursday" is ambiguous between tomorrow and next week, ask — one short question.',
   ].filter(Boolean).join("\n");
@@ -576,6 +579,7 @@ ${[
   life.tasks && "- manage_task: create/update/complete/delete tasks and task lists (applied immediately)",
   life.notes && "- manage_note: save/update/search/delete notes",
   life.journal && "- log_journal: log the user's mood (1-5) and private diary reflections, or read recent ones",
+  life.kitchen && "- manage_recipe: search/get/save/delete recipes in their kitchen library; log when they cooked one",
   (life.calendar || life.tasks) && "- query_schedule: read calendar + tasks + workouts for any date range",
 ].filter(Boolean).join("\n")}
 

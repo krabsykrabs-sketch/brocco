@@ -485,6 +485,27 @@ export const toolDefinitions: Anthropic.Tool[] = [
     },
   },
   {
+    name: "manage_recipe",
+    description:
+      "The user's recipe library (kitchen helper). Actions: 'search' recipes by ingredient/title/tag (ALWAYS search before suggesting meals — prefer their own saved recipes), 'get' full ingredients+steps by id, 'save' a new recipe (when the user asks to keep one you suggested, or dictates one), 'cooked' to log that they made it, 'delete'. When the user lists ingredients they have (\"I have zucchini, eggs, feta\"), search the library for matches first, then suggest — and consider their training: carb-forward before long runs, protein after strength sessions.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["search", "get", "save", "cooked", "delete"] },
+        recipe_id: { type: "string", description: "For get/cooked/delete" },
+        query: { type: "string", description: "For search — ingredient, title, or tag" },
+        title: { type: "string" },
+        ingredients: { type: "array", items: { type: "string" }, description: "One entry per ingredient, with quantity" },
+        steps: { type: "array", items: { type: "string" } },
+        tags: { type: "array", items: { type: "string" } },
+        servings: { type: "integer" },
+        time_min: { type: "integer" },
+        notes: { type: "string" },
+      },
+      required: ["action"],
+    },
+  },
+  {
     name: "log_journal",
     description:
       "Log the user's mood and private diary entries, or read recent ones. Use action 'log' whenever the user shares how they feel ('feeling flat today', 'so happy after that race') or reflects on their day — mood is 1 (rough) to 5 (great), text captures their reflection in their own words. Mood and text can be logged together or alone. Use action 'recent' before answering questions about how they've been feeling lately. This is a private diary — do NOT store facts or reference info here (use manage_note for that).",
@@ -516,6 +537,7 @@ const TOOL_FEATURE_GATES: Record<string, (f: Features) => boolean> = {
   manage_note: (f) => f.notes,
   query_schedule: (f) => f.calendar || f.tasks,
   log_journal: (f) => f.journal,
+  manage_recipe: (f) => f.kitchen,
 };
 
 /**
@@ -579,6 +601,8 @@ export async function handleToolCall(
       return handleLogJournal(input, userId);
     case "create_workout":
       return handleCreateWorkout(input, userId);
+    case "manage_recipe":
+      return handleManageRecipe(input, userId);
     default:
       return { success: false, error: `Unknown tool: ${toolName}` };
   }
@@ -1162,6 +1186,7 @@ import {
 import { setTodoDone, resolveListByName, parseDueDate } from "@/lib/todos";
 import { moodEmoji, moodLabel, renderJournalText, averageMood } from "@/lib/journal";
 import { validateWorkoutDefinition, estimateDurationMin } from "@/lib/guided-workout";
+import { validateRecipeInput, recipeMatches } from "@/lib/recipes";
 import type { EventCategory, RecurrenceFreq, TodoPriority } from "@prisma/client";
 
 const EVENT_CATEGORIES = ["work", "family", "training", "social", "health", "birthday", "other"];
@@ -1698,6 +1723,117 @@ async function handleCreateWorkout(
       data: { id: workout.id, domain: "workout" },
     },
   };
+}
+
+// --- manage_recipe ---
+
+async function handleManageRecipe(
+  input: Record<string, unknown>,
+  userId: string
+): Promise<ToolResult> {
+  const action = input.action as string;
+
+  if (action === "search") {
+    const query = String(input.query || "").trim().toLowerCase();
+    // In-JS filtering: Prisma JSON filters can't substring-match inside a
+    // JSONB string array, and personal libraries are small.
+    const all = await prisma.recipe.findMany({
+      where: { userId },
+      orderBy: [{ timesCooked: "desc" }, { updatedAt: "desc" }],
+      take: 300,
+      select: { id: true, title: true, tags: true, servings: true, timeMin: true, timesCooked: true, ingredients: true },
+    });
+    const recipes = (query ? all.filter((r) => recipeMatches(r, query)) : all).slice(0, 10);
+    return {
+      success: true,
+      data: {
+        recipes: recipes.map((r) => ({
+          recipe_id: r.id,
+          title: r.title,
+          tags: r.tags,
+          servings: r.servings,
+          time_min: r.timeMin,
+          times_cooked: r.timesCooked,
+          ingredients: ((r.ingredients as string[]) || []).slice(0, 12),
+        })),
+        count: recipes.length,
+        hint: recipes.length === 0 ? "No matches in the library — suggest something from general knowledge instead." : "Use action 'get' for full steps.",
+      },
+    };
+  }
+
+  if (action === "get") {
+    const recipe = await prisma.recipe.findFirst({ where: { id: input.recipe_id as string, userId } });
+    if (!recipe) return { success: false, error: "Recipe not found" };
+    return {
+      success: true,
+      data: {
+        recipe_id: recipe.id,
+        title: recipe.title,
+        servings: recipe.servings,
+        time_min: recipe.timeMin,
+        tags: recipe.tags,
+        ingredients: recipe.ingredients,
+        steps: recipe.steps,
+        notes: recipe.notes,
+      },
+    };
+  }
+
+  if (action === "save") {
+    const validated = validateRecipeInput({
+      title: input.title,
+      ingredients: input.ingredients,
+      steps: input.steps,
+      tags: input.tags,
+      servings: input.servings,
+      timeMin: input.time_min,
+      notes: input.notes,
+    });
+    if (!validated.ok) return { success: false, error: validated.error };
+    const recipe = await prisma.recipe.create({
+      data: {
+        userId,
+        title: validated.recipe.title,
+        ingredients: validated.recipe.ingredients,
+        steps: validated.recipe.steps,
+        tags: validated.recipe.tags,
+        servings: validated.recipe.servings,
+        timeMin: validated.recipe.timeMin,
+        notes: validated.recipe.notes,
+        source: "chat",
+      },
+    });
+    return {
+      success: true,
+      data: { recipe_id: recipe.id, title: recipe.title },
+      notification: { type: "recipe_saved", message: `Recipe saved: ${recipe.title}`, data: { id: recipe.id, domain: "kitchen" } },
+    };
+  }
+
+  if (action === "cooked") {
+    const recipe = await prisma.recipe.findFirst({ where: { id: input.recipe_id as string, userId } });
+    if (!recipe) return { success: false, error: "Recipe not found" };
+    await prisma.recipe.update({ where: { id: recipe.id }, data: { timesCooked: { increment: 1 } } });
+    return {
+      success: true,
+      data: { recipe_id: recipe.id, times_cooked: recipe.timesCooked + 1 },
+      notification: { type: "recipe_cooked", message: `Enjoy! Logged: ${recipe.title}`, data: { id: recipe.id, domain: "kitchen" } },
+    };
+  }
+
+  if (action === "delete") {
+    const recipe = await prisma.recipe.findFirst({ where: { id: input.recipe_id as string, userId } });
+    if (!recipe) return { success: false, error: "Recipe not found" };
+    await prisma.recipe.delete({ where: { id: recipe.id } });
+    return {
+      success: true,
+      data: { recipe_id: recipe.id, deleted: true },
+      notification: { type: "recipe_deleted", message: `Recipe deleted: ${recipe.title}`, data: { id: recipe.id, domain: "kitchen" } },
+    };
+  }
+
+  return { success: false, error: `Unknown manage_recipe action: ${action}` };
 }
 
 // --- save_profile ---
