@@ -281,13 +281,25 @@ function RecipeSheet({
   );
 }
 
+const MAX_PAGES = 4;
+
 export default function KitchenView() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [open, setOpen] = useState<{ recipe: Recipe; isNewScan: boolean } | null>(null);
+  // Staged cookbook pages: on phones the camera submits after ONE shot, so
+  // multi-page recipes need a tray to collect shots before a single scan.
+  const [pages, setPages] = useState<{ file: File; url: string }[]>([]);
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Release thumbnail object URLs when leaving the page mid-staging
+  useEffect(() => {
+    return () => pagesRef.current.forEach((p) => URL.revokeObjectURL(p.url));
+  }, []);
 
   const fetchRecipes = useCallback(() => {
     fetch(`/api/recipes${query ? `?q=${encodeURIComponent(query)}` : ""}`)
@@ -302,11 +314,45 @@ export default function KitchenView() {
     return () => clearTimeout(t);
   }, [fetchRecipes, query]);
 
-  async function handleFiles(files: FileList | null) {
-    if (!files || files.length === 0) return;
+  function addFiles(files: FileList | null) {
+    // Snapshot NOW: a FileList is a live view into the input, and the value
+    // reset below empties it before React's state updater runs.
+    const picked = files ? Array.from(files) : [];
+    if (fileRef.current) fileRef.current.value = "";
+    if (picked.length === 0) return;
+    setPages((prev) => {
+      const next = [...prev];
+      for (const file of picked) {
+        if (next.length >= MAX_PAGES) {
+          emitToast({ text: `Max ${MAX_PAGES} pages per recipe.`, kind: "info" });
+          break;
+        }
+        next.push({ file, url: URL.createObjectURL(file) });
+      }
+      return next;
+    });
+  }
+
+  function removePage(index: number) {
+    setPages((prev) => {
+      const removed = prev[index];
+      if (removed) URL.revokeObjectURL(removed.url);
+      return prev.filter((_, i) => i !== index);
+    });
+  }
+
+  function clearPages() {
+    setPages((prev) => {
+      prev.forEach((p) => URL.revokeObjectURL(p.url));
+      return [];
+    });
+  }
+
+  async function scanPages() {
+    if (pages.length === 0) return;
     setScanning(true);
     try {
-      const images = await Promise.all(Array.from(files).slice(0, 3).map(resizeImage));
+      const images = await Promise.all(pages.map((p) => resizeImage(p.file)));
       const res = await fetch("/api/recipes/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -315,15 +361,15 @@ export default function KitchenView() {
       const data = await res.json();
       if (!res.ok) {
         emitToast({ text: data.error || "Scan failed — try again.", kind: "error" });
-        return;
+        return; // keep the staged pages so a retry doesn't mean re-photographing
       }
+      clearPages();
       fetchRecipes();
       setOpen({ recipe: data.recipe, isNewScan: true });
     } catch {
-      emitToast({ text: "Couldn't read that photo — try again.", kind: "error" });
+      emitToast({ text: "Couldn't read those photos — try again.", kind: "error" });
     } finally {
       setScanning(false);
-      if (fileRef.current) fileRef.current.value = "";
     }
   }
 
@@ -336,12 +382,12 @@ export default function KitchenView() {
         <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => fileRef.current?.click()}
-            disabled={scanning}
+            disabled={scanning || pages.length >= MAX_PAGES}
             className="flex flex-col items-center gap-1 bg-gray-900 border border-gray-700 hover:border-gray-600 disabled:opacity-60 rounded-xl px-4 py-4 transition-colors"
           >
-            <span className="text-2xl">{scanning ? "⏳" : "📸"}</span>
-            <span className="text-sm font-medium text-white">{scanning ? "Reading…" : "Scan a recipe"}</span>
-            <span className="text-[10px] text-gray-500">Photo a cookbook page</span>
+            <span className="text-2xl">📸</span>
+            <span className="text-sm font-medium text-white">Scan a recipe</span>
+            <span className="text-[10px] text-gray-500">Photo a cookbook page — multi-page works too</span>
           </button>
           <Link
             href={`/chat?msg=${encodeURIComponent("What can I cook tonight? Here's what I have: ")}`}
@@ -358,10 +404,61 @@ export default function KitchenView() {
           accept="image/*"
           capture="environment"
           multiple
-          onChange={(e) => handleFiles(e.target.files)}
+          onChange={(e) => addFiles(e.target.files)}
           className="hidden"
           aria-label="Scan recipe photos"
         />
+
+        {/* Staged pages tray — collect all pages of a recipe, then scan once */}
+        {pages.length > 0 && (
+          <div className="bg-gray-900 border border-green-800/50 rounded-xl p-3" data-testid="scan-tray">
+            <p className="text-xs font-medium text-gray-300 mb-2">
+              📄 Recipe pages ({pages.length}/{MAX_PAGES})
+            </p>
+            <div className="flex gap-2 mb-3 overflow-x-auto">
+              {pages.map((p, i) => (
+                <div key={p.url} className="relative flex-shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.url} alt={`Page ${i + 1}`} className="w-16 h-20 object-cover rounded-lg border border-gray-700" />
+                  <span className="absolute bottom-0.5 left-0.5 px-1 bg-black/70 rounded text-[9px] text-gray-300">{i + 1}</span>
+                  <button
+                    onClick={() => removePage(i)}
+                    disabled={scanning}
+                    aria-label={`Remove page ${i + 1}`}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-800 border border-gray-600 rounded-full text-gray-300 hover:text-red-400 text-xs leading-none"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {pages.length < MAX_PAGES && (
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  disabled={scanning}
+                  className="flex-shrink-0 w-16 h-20 border border-dashed border-gray-600 hover:border-green-500 rounded-lg text-gray-500 hover:text-green-400 text-xs transition-colors"
+                >
+                  + Add<br />page
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={clearPages}
+                disabled={scanning}
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={scanPages}
+                disabled={scanning}
+                className="flex-1 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
+              >
+                {scanning ? "Reading pages…" : `Scan recipe (${pages.length} page${pages.length === 1 ? "" : "s"})`}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Search */}
         <input

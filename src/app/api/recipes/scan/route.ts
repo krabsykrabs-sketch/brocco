@@ -9,12 +9,12 @@ const anthropic = new Anthropic();
 
 // Client resizes to ~1400px JPEG before upload; this is a hard backstop.
 const MAX_IMAGE_B64 = 5_000_000; // ~3.7MB binary
-const MAX_IMAGES = 3;
+const MAX_IMAGES = 4;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 
 /**
  * POST /api/recipes/scan — extract a recipe from photos of a cookbook page.
- * Body: { images: [{ data: <base64>, mediaType: "image/jpeg" }] } (1-3 pages).
+ * Body: { images: [{ data: <base64>, mediaType: "image/jpeg" }] } (1-4 pages).
  * The photo is read by Claude vision and discarded — only the structured
  * recipe is stored (Jan's call, July 2026). Saved immediately with source
  * "photo"; the client shows a review sheet (PUT to fix, DELETE to discard).
