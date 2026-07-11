@@ -101,6 +101,22 @@ export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      // Large tool calls (generate_plan can output 70+ workouts as one JSON
+      // blob) make Claude go silent on the wire for a minute or more while
+      // it generates the arguments — no text streams during that time. A
+      // silent connection reads as dead to the reverse proxy in front of
+      // this app, which then drops it (surfaces to the client as a network
+      // error, not an app error). A periodic SSE comment line keeps bytes
+      // flowing without the client ever seeing it — chat-ui.tsx only acts
+      // on lines starting with "data: ".
+      const heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(`: keepalive\n\n`));
+        } catch {
+          // Controller already closed (client disconnected) — nothing to do
+        }
+      }, 15000);
+
       try {
         // Create placeholder assistant message before tool loop
         // so tools like generate_plan/modify_plan can link to it
@@ -151,10 +167,16 @@ export async function POST(request: NextRequest) {
       } catch (err) {
         console.error("Chat stream error:", err);
         const errorMsg = err instanceof Error ? err.message : "Unknown error";
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ error: errorMsg })}\n\n`)
-        );
-        controller.close();
+        try {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ error: errorMsg })}\n\n`)
+          );
+          controller.close();
+        } catch {
+          // Controller already closed (client disconnected) — nothing to do
+        }
+      } finally {
+        clearInterval(heartbeat);
       }
     },
   });
