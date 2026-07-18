@@ -5,20 +5,18 @@
  * coach-only experience. Stored in user_profiles.features (jsonb);
  * null or missing keys mean enabled, so existing users see no change.
  *
- * Retired July 2026: `tasks` and `journal` were removed from the app
- * entirely (todos/journal_entries tables remain in the DB, untouched).
- * Stale keys in stored feature JSON are simply ignored here.
+ * Retired July 2026: `tasks`, `journal`, and `notes` were removed from the
+ * app entirely (their DB tables remain, untouched). Stale keys in stored
+ * feature JSON are simply ignored here.
  */
 
 export interface Features {
   calendar: boolean;
-  notes: boolean;
   kitchen: boolean;
 }
 
 export const ALL_FEATURES: Features = {
   calendar: true,
-  notes: true,
   kitchen: true,
 };
 
@@ -27,11 +25,10 @@ export function resolveFeatures(raw: unknown): Features {
   const r = raw as Record<string, unknown>;
   return {
     calendar: r.calendar !== false,
-    notes: r.notes !== false,
     kitchen: r.kitchen !== false,
   };
 }
 
 export function anyLifeFeature(f: Features): boolean {
-  return f.calendar || f.notes || f.kitchen;
+  return f.calendar || f.kitchen;
 }

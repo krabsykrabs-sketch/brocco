@@ -827,7 +827,6 @@ function SettingsContent() {
         <div className="bg-gray-900 border border-gray-800 rounded-lg divide-y divide-gray-800">
           {([
             ["calendar", "Calendar", "Events, birthdays, and reminders"],
-            ["notes", "Notes", "Quick facts and reference lists"],
             ["kitchen", "Kitchen", "Recipe library, photo scans, cooking ideas"],
           ] as Array<[keyof Features, string, string]>).map(([key, label, desc]) => (
             <div key={key} className="flex items-center gap-3 px-4 py-3">

@@ -12,6 +12,8 @@ import {
   addDaysWall,
 } from "@/lib/schedule";
 import { groupActivitiesByDay, workoutOutcome, activityDayKey } from "@/lib/plan-progress";
+import { getPaceCurve, formatTimeSec, formatPaceSec } from "@/lib/run-trends";
+import type { StravaLap } from "@/lib/strava";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 import { resolveFeatures, anyLifeFeature, type Features } from "@/lib/features";
 
@@ -44,6 +46,7 @@ export async function buildCoachContext(userId: string): Promise<string> {
         perceivedEffort: true,
         startDateLocal: true,
         activityAnalysis: true,
+        laps: true,
       },
     }),
     prisma.healthLog.findMany({
@@ -108,8 +111,9 @@ export async function buildCoachContext(userId: string): Promise<string> {
         const elev = a.elevationGainM && Number(a.elevationGainM) > 50 ? `+${Math.round(Number(a.elevationGainM))}m` : "";
         const parts = [dist, dur, pace, hr, elev].filter(Boolean).join(", ");
         const intensity = formatIntensityAnnotation(a.activityAnalysis);
+        const lapNote = formatLapAnnotation(a.laps);
         const src = a.source === "strava" ? "strava" : "logged in app";
-        return `- ${date}: ${a.activityType} "${a.name}" — ${parts} (${src})${intensity}`;
+        return `- ${date}: ${a.activityType} "${a.name}" — ${parts} (${src})${intensity}${lapNote}`;
       })
       .join("\n");
     activitiesBlock +=
@@ -219,6 +223,28 @@ function formatIntensityAnnotation(raw: unknown): string {
   }
 
   return parts.length > 0 ? ` [${parts.join("; ")}]` : "";
+}
+
+/**
+ * Watch-recorded lap paces, appended when a run has real lap structure
+ * (3-14 laps — more means km auto-laps, which the splits already cover).
+ * This is the ground truth for interval execution: with a synced structured
+ * workout, each step is one lap.
+ */
+function formatLapAnnotation(raw: unknown): string {
+  if (!Array.isArray(raw) || raw.length < 3 || raw.length > 14) return "";
+  const laps = raw as StravaLap[];
+  const rendered = laps
+    .map((l) => {
+      if (!l.paceSecPerKm) return null;
+      const m = Math.floor(l.paceSecPerKm / 60);
+      const s = l.paceSecPerKm % 60;
+      const dist = l.distanceM >= 1000 ? `${(l.distanceM / 1000).toFixed(1)}k` : `${l.distanceM}m`;
+      return `${dist}@${m}:${String(s).padStart(2, "0")}`;
+    })
+    .filter(Boolean);
+  if (rendered.length < 3) return "";
+  return ` [laps: ${rendered.join(", ")}]`;
 }
 
 async function buildPlanContext(userId: string, timezone: string): Promise<string> {
@@ -441,26 +467,58 @@ async function buildTrainingLoad(userId: string, now: Date): Promise<string> {
     select: {
       distanceKm: true,
       startDateLocal: true,
+      movingTimeMin: true,
+      durationMin: true,
+      activityAnalysis: true,
     },
   });
 
-  let block = "TRAINING LOAD (last 8 weeks, running km):\n";
+  let block = "TRAINING LOAD (last 8 weeks, running km, and % of analyzed time in Z4-5):\n";
   const rows: string[] = [];
 
   for (let i = 7; i >= 0; i--) {
     const ws = subWeeks(weekStart, i);
     const we = endOfWeek(ws, { weekStartsOn: 1 });
     const label = format(ws, "MMM d");
-    const km = activities
-      .filter((a) => {
-        const d = new Date(a.startDateLocal);
-        return d >= ws && d <= we;
-      })
-      .reduce((sum, a) => sum + (a.distanceKm ? Number(a.distanceKm) : 0), 0);
-    rows.push(`${label}: ${km.toFixed(1)} km`);
+    const weekActs = activities.filter((a) => {
+      const d = new Date(a.startDateLocal);
+      return d >= ws && d <= we;
+    });
+    const km = weekActs.reduce((sum, a) => sum + (a.distanceKm ? Number(a.distanceKm) : 0), 0);
+
+    // Intensity distribution — duration-weighted Z4+Z5 share across the
+    // week's analyzed runs (the 80/20 polarization check)
+    let analyzedMin = 0;
+    let hardMin = 0;
+    for (const a of weekActs) {
+      const zones = (a.activityAnalysis as ActivityAnalysis | null)?.zones;
+      if (!zones) continue;
+      const min = Number(a.movingTimeMin ?? a.durationMin);
+      analyzedMin += min;
+      hardMin += (min * (zones.z4Pct + zones.z5Pct)) / 100;
+    }
+    const hard = analyzedMin > 0 ? ` (${Math.round((hardMin / analyzedMin) * 100)}% hard)` : "";
+    rows.push(`${label}: ${km.toFixed(1)} km${hard}`);
   }
 
   block += rows.join(" | ");
+
+  // Rolling best efforts — fitness signal without racing
+  const paceCurve = await getPaceCurve(userId, 90);
+  if (paceCurve.length > 0) {
+    block += "\nBEST EFFORTS (fastest rolling splits, last 90 days): ";
+    block += paceCurve
+      .map((e) => {
+        const trend =
+          e.prevBestTimeSec != null
+            ? e.bestTimeSec < e.prevBestTimeSec
+              ? ` (↑ ${formatTimeSec(e.prevBestTimeSec - e.bestTimeSec)} faster than prior 90d)`
+              : ` (${formatTimeSec(e.bestTimeSec - e.prevBestTimeSec)} slower than prior 90d)`
+            : "";
+        return `${e.label} ${formatTimeSec(e.bestTimeSec)} @${formatPaceSec(e.paceSecPerKm)}${trend}`;
+      })
+      .join(" · ");
+  }
   return block;
 }
 
@@ -508,7 +566,6 @@ export async function buildSystemPrompt(
   const isLife = anyLifeFeature(life);
   const lifeDomains = [
     life.calendar && "calendar",
-    life.notes && "notes",
     life.kitchen && "kitchen & recipes",
     life.calendar && "important dates",
   ].filter(Boolean).join(", ");
@@ -518,14 +575,13 @@ export async function buildSystemPrompt(
     : `You are Brocco — a broccoli and ${userName}'s personal running coach. You have deep exercise physiology knowledge and an aggressively healthy outlook on life. You're data-driven and direct. You use vegetable and garden metaphors sparingly — they're seasoning, not the main dish. You're inexplicably competitive for a vegetable. You treat recovery with the reverence of good soil and sunlight. Your advice is genuinely excellent and specific. You take their training seriously even though you're a broccoli. Keep it fun without sacrificing accuracy. You're a coach first, a broccoli second.`;
 
   const accessLine = `You have access to their training data from Strava and their training plan${
-    [life.calendar && "their calendar", life.notes && "their notes", life.kitchen && "their recipe library"]
+    [life.calendar && "their calendar", life.kitchen && "their recipe library"]
       .filter(Boolean).map((s) => `, ${s}`).join("")
   }.`;
 
   const routingLines = [
     life.calendar && "- Appointments, meetings, social plans, travel, anything with a date AND a time/place → manage_event",
     life.calendar && "- Birthdays and yearly dates → manage_event (category birthday, all-day, yearly recurrence)",
-    life.notes && '- Facts and reference info to remember ("my locker code is 4821", "packing list for Mallorca") → manage_note',
     "- Runs and training sessions → the training plan tools (adjust_plan/modify_plan), NEVER calendar events",
     '- "Make me a workout" / "something for my core" → create_workout (a playable guided session with timer + voice cues), not a note or task',
     life.kitchen && '- "What can I cook?" / "I have zucchini, eggs, feta" → manage_recipe search FIRST (prefer their saved recipes), then suggest. A vegetable helping with dinner is your moment — but keep suggestions practical and match them to training (carbs before long runs, protein after strength).',
@@ -640,7 +696,6 @@ AVAILABLE TOOLS:
 - create_workout: build a guided S&C session the user can play in the workout timer (Workouts screen)
 ${[
   life.calendar && "- manage_event: create/update/delete calendar events and birthdays (applied immediately)",
-  life.notes && "- manage_note: save/update/search/delete notes",
   life.kitchen && "- manage_recipe: search/get/save/delete recipes in their kitchen library; log when they cooked one",
   life.calendar && "- query_schedule: read calendar + workouts for any date range",
 ].filter(Boolean).join("\n")}
@@ -667,7 +722,7 @@ This message is a voice quick-capture, not a chat conversation. The user spoke i
 - Execute the right tool call IMMEDIATELY. Do not ask for confirmation on event/task/note creation — these are instantly editable and low-risk. (Plan generation and structural plan changes still require confirmation — in capture mode, tell the user to open the chat for that.)
 - After the tool call, reply with ONE short sentence at most. Often zero — the toast already confirms the action. Add a sentence only if there's something genuinely worth saying (e.g. a conflict you spotted: "Heads up — that overlaps your long run Saturday.").
 - If the request is ambiguous in a way that matters (which Thursday? which "that"?), do NOT guess and do NOT call a tool. Reply with exactly one short clarifying question and nothing else.
-- If it's a question ("what's my locker code?", "what's tomorrow looking like?"), use the tools to find the answer and reply with the answer in 1-2 short sentences.
+- If it's a question ("when's my next long run?", "what's tomorrow looking like?"), use the tools to find the answer and reply with the answer in 1-2 short sentences.
 - A SCREEN CONTEXT block in the user message tells you what they're looking at. "Move that to 5pm" while viewing a specific event means THAT event. Captures from the calendar default to that visible week.
 - NO status lines, NO greetings, NO follow-up questions, NO vegetable metaphors in capture mode.` : ""}`;
 }

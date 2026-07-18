@@ -230,11 +230,16 @@ model Activity {
   maxHeartRate      Int?          @map("max_heart_rate")
   elevationGainM    Decimal?      @map("elevation_gain_m") @db.Decimal(8, 2)
   avgCadence        Int?          @map("avg_cadence")
+  // Running power (W) from watch/pod, straight off the Strava summary
+  avgWatts          Int?          @map("avg_watts")
   calories          Int?
   perceivedEffort   Int?          @map("perceived_effort")
   startDate         DateTime      @map("start_date")
   startDateLocal    DateTime      @map("start_date_local")
   splits            Json?         @db.JsonB
+  // Watch-recorded laps from the Strava Laps endpoint — ground truth for
+  // interval execution (one lap per structured-workout step)
+  laps              Json?         @db.JsonB
   rawData           Json?         @map("raw_data") @db.JsonB
   activityAnalysis  Json?         @map("activity_analysis") @db.JsonB
   createdAt         DateTime      @default(now()) @map("created_at")

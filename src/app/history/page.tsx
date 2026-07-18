@@ -96,6 +96,107 @@ function ActivityCard({ activity }: { activity: Activity }) {
   );
 }
 
+interface PaceCurveEntry {
+  distanceM: number; label: string; bestTimeSec: number; paceSecPerKm: number;
+  activityName: string; date: string; prevBestTimeSec: number | null;
+}
+interface WeekZoneMix {
+  weekStart: string; label: string; runKm: number; analyzedMin: number;
+  zoneMin: [number, number, number, number, number]; hardPct: number | null;
+}
+
+function fmtSecs(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+const ZONE_COLORS = ["#4b5563", "#4ade80", "#facc15", "#fb923c", "#ef4444"];
+
+/**
+ * 90-day best efforts + 8-week zone mix, computed from stored per-run
+ * analyses. Collapsed into a compact card at the top of History.
+ */
+function TrendsSection() {
+  const [paceCurve, setPaceCurve] = useState<PaceCurveEntry[]>([]);
+  const [weeks, setWeeks] = useState<WeekZoneMix[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/trends")
+      .then((r) => r.json())
+      .then((d) => { setPaceCurve(d.paceCurve || []); setWeeks(d.weeklyZones || []); })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  const hasZones = weeks.some((w) => w.analyzedMin > 0);
+  if (!loaded || (paceCurve.length === 0 && !hasZones)) return null;
+
+  const maxMin = Math.max(...weeks.map((w) => w.zoneMin.reduce((a, b) => a + b, 0)), 1);
+
+  return (
+    <div className="mb-6 space-y-4">
+      {paceCurve.length > 0 && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Best efforts · last 90 days</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {paceCurve.map((e) => {
+              const improved = e.prevBestTimeSec != null && e.bestTimeSec < e.prevBestTimeSec;
+              return (
+                <div key={e.distanceM}>
+                  <p className="text-[10px] text-gray-500 uppercase">{e.label}</p>
+                  <p className="text-base font-semibold text-white font-mono">{fmtSecs(e.bestTimeSec)}</p>
+                  <p className="text-[10px] text-gray-500">
+                    {fmtSecs(e.paceSecPerKm)}/km
+                    {e.prevBestTimeSec != null && (
+                      <span className={improved ? "text-green-400 ml-1" : "text-gray-600 ml-1"}>
+                        {improved ? "▼" : "▲"} {fmtSecs(Math.abs(e.bestTimeSec - e.prevBestTimeSec))}
+                      </span>
+                    )}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[10px] text-gray-600 mt-2">vs. the 90 days before — ▼ faster, ▲ slower</p>
+        </div>
+      )}
+
+      {hasZones && (
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+          <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Weekly intensity mix (Z1–Z5)</p>
+          <div className="flex items-end gap-1.5 h-20">
+            {weeks.map((w) => {
+              const total = w.zoneMin.reduce((a, b) => a + b, 0);
+              return (
+                <div key={w.weekStart} className="flex-1 flex flex-col justify-end h-full" title={`${w.label}: ${w.runKm}km${w.hardPct != null ? `, ${w.hardPct}% hard` : ""}`}>
+                  <div className="w-full flex flex-col-reverse" style={{ height: `${(total / maxMin) * 100}%` }}>
+                    {w.zoneMin.map((min, zi) =>
+                      min > 0 ? (
+                        <div key={zi} style={{ height: `${(min / Math.max(total, 1)) * 100}%`, backgroundColor: ZONE_COLORS[zi] }} className="w-full" />
+                      ) : null
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex gap-1.5 mt-1">
+            {weeks.map((w) => (
+              <p key={w.weekStart} className="flex-1 text-center text-[9px] text-gray-600">{w.label.split(" ")[1]}</p>
+            ))}
+          </div>
+          <p className="text-[10px] text-gray-600 mt-1.5">
+            Hard share (Z4+Z5): {weeks.filter((w) => w.hardPct != null).map((w) => `${w.hardPct}%`).join(" · ") || "–"}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function HistoryPage() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [page, setPage] = useState(1);
@@ -147,6 +248,8 @@ export default function HistoryPage() {
           <DesktopNavLinks />
         </div>
       </div>
+
+      <TrendsSection />
 
       <div className="mb-4">
         <select
