@@ -9,13 +9,6 @@ import { FEATURES_CHANGED_EVENT } from "@/app/features-provider";
 import { ALL_FEATURES, type Features } from "@/lib/features";
 import { Suspense } from "react";
 
-interface InviteCodeData {
-  id: string;
-  code: string;
-  used: boolean;
-  usedByName: string | null;
-  createdAt: string;
-}
 
 interface ProfileData {
   name: string;
@@ -27,7 +20,6 @@ interface ProfileData {
   goalTime: string | null;
   goalRaceDate: string | null;
   hrMaxBpm: number | null;
-  inviteCodes: InviteCodeData[];
 }
 
 /**
@@ -286,8 +278,6 @@ function SettingsContent() {
   const [icsBusy, setIcsBusy] = useState(false);
   const [icsCopied, setIcsCopied] = useState(false);
 
-  // Invite
-  const [generatingInvite, setGeneratingInvite] = useState(false);
 
   // Password
   const [currentPw, setCurrentPw] = useState("");
@@ -450,26 +440,6 @@ function SettingsContent() {
     }
   }
 
-  async function handleGenerateInvite() {
-    setGeneratingInvite(true);
-    try {
-      const res = await fetch("/api/auth/invite", { method: "POST" });
-      const data = await res.json();
-      if (res.ok && profile) {
-        setProfile({
-          ...profile,
-          inviteCodes: [
-            { id: Date.now().toString(), code: data.code, used: false, usedByName: null, createdAt: new Date().toISOString() },
-            ...profile.inviteCodes,
-          ],
-        });
-      }
-    } catch {
-      // ignore
-    } finally {
-      setGeneratingInvite(false);
-    }
-  }
 
   async function handlePasswordChange() {
     if (newPw !== confirmPw) {
@@ -693,9 +663,7 @@ function SettingsContent() {
         <div className="bg-gray-900 border border-gray-800 rounded-lg divide-y divide-gray-800">
           {([
             ["calendar", "Calendar", "Events, birthdays, and reminders"],
-            ["tasks", "Tasks", "To-dos, lists, and recurring chores"],
             ["notes", "Notes", "Quick facts and reference lists"],
-            ["journal", "Journal", "Mood check-ins and private diary"],
             ["kitchen", "Kitchen", "Recipe library, photo scans, cooking ideas"],
           ] as Array<[keyof Features, string, string]>).map(([key, label, desc]) => (
             <div key={key} className="flex items-center gap-3 px-4 py-3">
@@ -815,40 +783,6 @@ function SettingsContent() {
                 </svg>
                 Connect with Strava
               </a>
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Invite Codes */}
-      <section>
-        <h2 className="text-lg font-semibold mb-3">Invite Friends</h2>
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
-          <button
-            onClick={handleGenerateInvite}
-            disabled={generatingInvite}
-            className="px-4 py-2 text-sm bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors"
-          >
-            {generatingInvite ? "Generating..." : "Generate Invite Code"}
-          </button>
-
-          {profile?.inviteCodes && profile.inviteCodes.length > 0 && (
-            <div className="space-y-2 pt-2">
-              {profile.inviteCodes.map((c) => (
-                <div key={c.id} className="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2">
-                  <div>
-                    <span className="font-mono text-sm text-green-400 select-all">{c.code}</span>
-                    {!c.used && (
-                      <span className="ml-2 text-[10px] text-gray-500">
-                        {typeof window !== "undefined" ? `${window.location.origin}/signup?code=${c.code}` : ""}
-                      </span>
-                    )}
-                  </div>
-                  <span className={`text-xs ${c.used ? "text-gray-500" : "text-green-400"}`}>
-                    {c.used ? `Used by ${c.usedByName || "someone"}` : "Available"}
-                  </span>
-                </div>
-              ))}
             </div>
           )}
         </div>

@@ -10,7 +10,7 @@ function SignupForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [inviteCode, setInviteCode] = useState(searchParams.get("code") || "");
+  const [accessCode, setAccessCode] = useState(searchParams.get("code") || "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -23,7 +23,7 @@ function SignupForm() {
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, name, password, inviteCode }),
+        body: JSON.stringify({ email, name, password, accessCode }),
       });
 
       const data = await res.json();
@@ -45,17 +45,17 @@ function SignupForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label htmlFor="invite" className="block text-sm font-medium text-gray-300 mb-1">
-          Invite Code
+        <label htmlFor="access-code" className="block text-sm font-medium text-gray-300 mb-1">
+          Access Code
         </label>
         <input
-          id="invite"
+          id="access-code"
           type="text"
-          value={inviteCode}
-          onChange={(e) => setInviteCode(e.target.value)}
+          value={accessCode}
+          onChange={(e) => setAccessCode(e.target.value)}
           required
           className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-          placeholder="Enter invite code"
+          placeholder="The code you got from your inviter"
         />
       </div>
 

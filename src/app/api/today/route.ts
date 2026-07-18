@@ -36,7 +36,7 @@ export async function GET() {
       includeRestWorkouts: true,
     });
     if (!features.calendar) agenda.events = [];
-    if (!features.tasks) agenda.todos = [];
+    agenda.todos = [];
 
     // --- Today's actual activities (to mark the workout as done) ---
     const dayStart = todayDate;

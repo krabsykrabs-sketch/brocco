@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
-import { startOfDay, endOfDay } from "date-fns";
+import { todayInTimezone, dateInTimezone } from "@/lib/schedule";
 
 export async function GET() {
   try {
@@ -50,22 +50,23 @@ export async function POST(request: NextRequest) {
       forceNew = !!body?.forceNew;
     } catch { /* no body = default behavior */ }
 
-    const now = new Date();
-
     if (!forceNew) {
-      // Reuse today's general session if one exists
-      const todaySession = await prisma.chatSession.findFirst({
-        where: {
-          userId: session.userId,
-          type: "general",
-          createdAt: { gte: startOfDay(now), lte: endOfDay(now) },
-        },
-        orderBy: { updatedAt: "desc" },
-        select: { id: true, title: true },
+      // Reuse today's general session if one exists — "today" in the USER'S
+      // timezone, not the server's (a UTC server rolls the day at 2am Berlin
+      // time and would split one evening into two conversations).
+      const profile = await prisma.userProfile.findUnique({
+        where: { userId: session.userId },
+        select: { timezone: true },
+      });
+      const tz = profile?.timezone || "Europe/Berlin";
+      const latest = await prisma.chatSession.findFirst({
+        where: { userId: session.userId, type: "general" },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, title: true, createdAt: true },
       });
 
-      if (todaySession) {
-        return NextResponse.json({ id: todaySession.id, title: todaySession.title, reused: true });
+      if (latest && dateInTimezone(latest.createdAt, tz) === todayInTimezone(tz)) {
+        return NextResponse.json({ id: latest.id, title: latest.title, reused: true });
       }
     }
 

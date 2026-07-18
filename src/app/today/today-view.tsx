@@ -7,7 +7,6 @@ import { categoryMeta, getWorkoutTypeColor } from "@/lib/categories";
 import { useScreenContext, useDataChanged } from "@/lib/capture-context";
 import { useFeatures } from "../features-provider";
 import { anyLifeFeature } from "@/lib/features";
-import { MOOD_EMOJI, MOOD_LABELS } from "@/lib/journal";
 
 // --- Types (mirror /api/today) ---
 
@@ -190,90 +189,6 @@ function TaskRow({ task, onToggle }: { task: TodoItem; onToggle: (t: TodoItem) =
 }
 
 // --- Mood check-in (one tap, no typing required, dismissible per day) ---
-
-function MoodCheckInCard() {
-  const [state, setState] = useState<"hidden" | "prompt" | "saving" | "saved">("hidden");
-  const [savedMood, setSavedMood] = useState<number | null>(null);
-  const [day, setDay] = useState("");
-
-  useEffect(() => {
-    fetch("/api/journal?limit=1")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!d) return;
-        setDay(d.today || "");
-        const dismissed = localStorage.getItem("brocco_mood_dismissed") === d.today;
-        if (!d.moodToday && !dismissed) setState("prompt");
-      })
-      .catch(() => {});
-  }, []);
-
-  async function logMood(mood: number) {
-    setState("saving");
-    try {
-      const res = await fetch("/api/journal", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mood }),
-      });
-      if (!res.ok) throw new Error();
-      setSavedMood(mood);
-      setState("saved");
-    } catch {
-      setState("prompt");
-    }
-  }
-
-  if (state === "hidden") return null;
-
-  return (
-    <section className="mb-4" data-testid="mood-checkin">
-      <div className="bg-gray-900 border border-gray-800 rounded-2xl px-4 py-3">
-        {state === "saved" ? (
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm text-gray-300">
-              Logged {MOOD_EMOJI[savedMood!]} — thanks for checking in.
-            </p>
-            <Link href="/journal" className="text-xs text-green-400 hover:text-green-300 flex-shrink-0">
-              Add a note ›
-            </Link>
-          </div>
-        ) : (
-          <>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium text-gray-300">How are you feeling today?</p>
-              <button
-                onClick={() => {
-                  localStorage.setItem("brocco_mood_dismissed", day);
-                  setState("hidden");
-                }}
-                className="text-gray-600 hover:text-gray-300 leading-none"
-                aria-label="Dismiss mood check-in"
-              >
-                &times;
-              </button>
-            </div>
-            <div className="flex justify-between gap-1">
-              {[1, 2, 3, 4, 5].map((m) => (
-                <button
-                  key={m}
-                  onClick={() => logMood(m)}
-                  disabled={state === "saving"}
-                  aria-label={MOOD_LABELS[m]}
-                  className="flex-1 py-1.5 text-2xl rounded-xl hover:bg-gray-800 active:scale-110 transition-all disabled:opacity-40"
-                >
-                  {MOOD_EMOJI[m]}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-    </section>
-  );
-}
-
-// --- Weekly review card (Sunday evening / Monday) ---
 
 function WeeklyReviewCard() {
   const [review, setReview] = useState<{ text: string; weekStart: string } | null>(null);
@@ -472,9 +387,6 @@ export default function TodayView() {
           )}
         </div>
       </section>
-
-      {/* Mood check-in (journal feature) */}
-      {features.journal && <MoodCheckInCard />}
 
       {/* Weekly review (Sunday evening / Monday only) */}
       <WeeklyReviewCard />

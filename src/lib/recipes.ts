@@ -76,6 +76,27 @@ export function validateRecipeInput(
 }
 
 /**
+ * Pantry staples — ingredients the user always has in stock, stored on
+ * UserProfile.pantryStaples and assumed available in every recipe suggestion.
+ * Normalize: trim, cap length, dedupe case-insensitively, keep user casing.
+ */
+export function normalizeStaples(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of raw) {
+    const s = String(item).trim().slice(0, 60);
+    if (!s) continue;
+    const key = s.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(s);
+    if (out.length >= 100) break;
+  }
+  return out;
+}
+
+/**
  * Word-wise recipe matcher: every word of the query must appear somewhere in
  * the title, tags, or ingredients. "eggs tomatoes feta" finds shakshuka;
  * a single substring match would find nothing.

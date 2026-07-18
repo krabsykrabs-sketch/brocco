@@ -23,20 +23,6 @@ export async function GET() {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Get invite codes created by this user
-    const inviteCodes = await prisma.inviteCode.findMany({
-      where: { createdBy: session.userId },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        code: true,
-        usedBy: true,
-        createdAt: true,
-        usedAt: true,
-        redeemer: { select: { name: true } },
-      },
-    });
-
     return NextResponse.json({
       name: user.name,
       email: user.email,
@@ -52,14 +38,6 @@ export async function GET() {
       stravaConnected: !!profile.stravaAccessToken,
       stravaAthleteId: profile.stravaAthleteId,
       onboardingCompleted: profile.onboardingCompleted,
-      inviteCodes: inviteCodes.map((c) => ({
-        id: c.id,
-        code: c.code,
-        used: !!c.usedBy,
-        usedByName: c.redeemer?.name || null,
-        createdAt: c.createdAt,
-        usedAt: c.usedAt,
-      })),
     });
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

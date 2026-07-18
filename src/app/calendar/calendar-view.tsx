@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PageHeader } from "../nav";
 import { categoryMeta, EVENT_CATEGORY_META, getWorkoutTypeColor } from "@/lib/categories";
 import { useScreenContext, useDataChanged } from "@/lib/capture-context";
+import { isCompatibleType } from "@/lib/activity-types";
 
 // --- Types ---
 
@@ -14,10 +15,44 @@ interface EventOccurrence {
   allDay: boolean; recurring: boolean; continuation: boolean;
 }
 interface WorkoutItem {
-  workoutId: string; date: string; title: string; workoutType: string;
+  workoutId: string; date: string; title: string; workoutType: string; activityType: string;
   targetDistanceKm: number | null; targetPace: string | null; status: string;
 }
+interface ActivityItem {
+  activityId: string; date: string; name: string; activityType: string;
+  distanceKm: number | null; durationMin: number | null; avgPacePerKm: string | null; source: string;
+}
 type ViewMode = "day" | "week" | "month";
+
+// --- Planned ↔ done reconciliation (same rule as the plan tab) ---
+
+type WorkoutState = "done" | "missed" | "today" | "future";
+
+interface ReconciledDay {
+  rows: { workout: WorkoutItem; matched: ActivityItem | null; state: WorkoutState }[];
+  extras: ActivityItem[];
+}
+
+function reconcileDay(workouts: WorkoutItem[], activities: ActivityItem[], today: string): ReconciledDay {
+  const used = new Set<string>();
+  const rows = workouts.map((w) => {
+    const matched =
+      activities.find((a) => !used.has(a.activityId) && isCompatibleType(w.activityType, a.activityType)) || null;
+    if (matched) used.add(matched.activityId);
+    const done = !!matched || w.status === "completed";
+    const state: WorkoutState = done ? "done" : w.date < today ? "missed" : w.date === today ? "today" : "future";
+    return { workout: w, matched, state };
+  });
+  return { rows, extras: activities.filter((a) => !used.has(a.activityId)) };
+}
+
+function activityDetail(a: ActivityItem): string {
+  if (a.distanceKm) {
+    return `${a.distanceKm.toFixed(1)}km${a.avgPacePerKm ? ` · ${a.avgPacePerKm.replace("/km", "")}` : ""}`;
+  }
+  if (a.durationMin) return `${Math.round(a.durationMin)}min`;
+  return "";
+}
 
 // --- Local date helpers (all on yyyy-MM-dd strings, week starts Monday) ---
 
@@ -175,19 +210,49 @@ function EventChip({ event, onTap }: { event: EventOccurrence; onTap: () => void
   );
 }
 
-function WorkoutChip({ workout }: { workout: WorkoutItem }) {
+function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matched: ActivityItem | null; state: WorkoutState }) {
+  const badge =
+    state === "done" ? (
+      <span className="text-[10px] font-medium text-green-950 bg-green-400/90 px-1.5 py-0.5 rounded-md flex-shrink-0 whitespace-nowrap">
+        ✓ {matched ? activityDetail(matched) || "done" : "done"}
+      </span>
+    ) : state === "missed" ? (
+      <span className="text-[10px] font-medium text-red-300 bg-red-950/70 border border-red-900/60 px-1.5 py-0.5 rounded-md flex-shrink-0 whitespace-nowrap">
+        ✗ missed
+      </span>
+    ) : state === "today" ? (
+      <span className="text-[10px] text-gray-400 bg-gray-800 px-1.5 py-0.5 rounded-md flex-shrink-0 whitespace-nowrap">open</span>
+    ) : (
+      <span className="text-[9px] uppercase font-bold text-gray-600 bg-gray-800 px-1 py-0.5 rounded flex-shrink-0">plan</span>
+    );
+
   return (
     <Link href="/plan" className="w-full flex items-center gap-2.5 bg-gray-900 border border-gray-700/60 rounded-lg px-2.5 py-1.5 hover:border-gray-600 transition-colors">
       <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-gray-100 truncate">
-          {workout.status === "completed" ? "✅ " : "🏃 "}{workout.title}
+        <p className={`text-xs font-medium truncate ${state === "missed" ? "text-gray-400" : "text-gray-100"}`}>
+          {state === "done" ? "✅ " : "🏃 "}{workout.title}
         </p>
         <p className="text-[10px] text-gray-500 truncate">
           {[workout.targetDistanceKm ? `${workout.targetDistanceKm}km` : null, workout.targetPace].filter(Boolean).join(" · ") || "training plan"}
         </p>
       </div>
-      <span className="text-[9px] uppercase font-bold text-gray-600 bg-gray-800 px-1 py-0.5 rounded flex-shrink-0">plan</span>
+      {badge}
+    </Link>
+  );
+}
+
+/** A completed activity with no planned workout behind it (spontaneous run, extra ride, ad-hoc session). */
+function ActivityChip({ activity }: { activity: ActivityItem }) {
+  return (
+    <Link href="/history" className="w-full flex items-center gap-2.5 bg-green-950/40 border border-green-900/50 rounded-lg px-2.5 py-1.5 hover:border-green-700/60 transition-colors">
+      <div className="w-1 self-stretch rounded-full flex-shrink-0 bg-green-400" />
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium text-green-100 truncate">✓ {activity.name}</p>
+        <p className="text-[10px] text-green-700 truncate">
+          {[activityDetail(activity), activity.source === "strava" ? "strava" : "logged"].filter(Boolean).join(" · ")}
+        </p>
+      </div>
     </Link>
   );
 }
@@ -448,6 +513,7 @@ export default function CalendarView() {
   const [anchor, setAnchor] = useState(todayStr());
   const [events, setEvents] = useState<EventOccurrence[]>([]);
   const [workouts, setWorkouts] = useState<WorkoutItem[]>([]);
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [formOpen, setFormOpen] = useState<EventFormData | null>(null);
   const [detail, setDetail] = useState<EventOccurrence | null>(null);
   const today = todayStr();
@@ -470,12 +536,12 @@ export default function CalendarView() {
   const fetchData = useCallback(() => {
     fetch(`/api/events?from=${rangeStart}&to=${rangeEnd}`)
       .then((r) => r.json())
-      .then((d) => { setEvents(d.events || []); setWorkouts(d.workouts || []); })
+      .then((d) => { setEvents(d.events || []); setWorkouts(d.workouts || []); setActivities(d.activities || []); })
       .catch(() => {});
   }, [rangeStart, rangeEnd]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-  useDataChanged(["calendar", "plan"], fetchData);
+  useDataChanged(["calendar", "plan", "activities"], fetchData);
 
   useScreenContext(
     {
@@ -489,18 +555,19 @@ export default function CalendarView() {
   );
 
   const byDate = useMemo(() => {
-    const map = new Map<string, { events: EventOccurrence[]; workouts: WorkoutItem[] }>();
+    const map = new Map<string, { events: EventOccurrence[]; workouts: WorkoutItem[]; activities: ActivityItem[] }>();
     const get = (d: string) => {
-      if (!map.has(d)) map.set(d, { events: [], workouts: [] });
+      if (!map.has(d)) map.set(d, { events: [], workouts: [], activities: [] });
       return map.get(d)!;
     };
     for (const e of events) get(e.date).events.push(e);
     for (const w of workouts) get(w.date).workouts.push(w);
+    for (const a of activities) get(a.date).activities.push(a);
     for (const v of map.values()) {
       v.events.sort((a, b) => (a.allDay === b.allDay ? a.start.localeCompare(b.start) : a.allDay ? -1 : 1));
     }
     return map;
-  }, [events, workouts]);
+  }, [events, workouts, activities]);
 
   const navigate = useCallback((dir: 1 | -1) => {
     // dir 1 = previous, -1 = next
@@ -523,9 +590,9 @@ export default function CalendarView() {
 
   // --- Day section (used by day + week views) ---
   function DaySection({ date, compact }: { date: string; compact?: boolean }) {
-    const data = byDate.get(date) || { events: [], workouts: [] };
+    const data = byDate.get(date) || { events: [], workouts: [], activities: [] };
     const isToday = date === today;
-    const isEmpty = data.events.length === 0 && data.workouts.length === 0;
+    const isEmpty = data.events.length === 0 && data.workouts.length === 0 && data.activities.length === 0;
     if (compact && isEmpty) {
       return (
         <div className="flex items-center gap-3 py-1.5 opacity-50">
@@ -534,12 +601,16 @@ export default function CalendarView() {
         </div>
       );
     }
+    const { rows, extras } = reconcileDay(data.workouts, data.activities, today);
     return (
       <div className="flex gap-3 py-1.5">
         <DayLabel date={date} isToday={isToday} />
         <div className="flex-1 min-w-0 space-y-1">
           {data.events.map((e) => <EventChip key={e.occurrenceKey} event={e} onTap={() => setDetail(e)} />)}
-          {data.workouts.map((w) => <WorkoutChip key={w.workoutId} workout={w} />)}
+          {rows.map(({ workout, matched, state }) => (
+            <WorkoutChip key={workout.workoutId} workout={workout} matched={matched} state={state} />
+          ))}
+          {extras.map((a) => <ActivityChip key={a.activityId} activity={a} />)}
           {!compact && isEmpty && <p className="text-xs text-gray-600 py-2">Nothing scheduled.</p>}
         </div>
       </div>
@@ -648,7 +719,7 @@ function MonthGrid({
   rangeEnd: string;
   anchorMonth: string; // yyyy-MM
   today: string;
-  byDate: Map<string, { events: EventOccurrence[]; workouts: WorkoutItem[] }>;
+  byDate: Map<string, { events: EventOccurrence[]; workouts: WorkoutItem[]; activities: ActivityItem[] }>;
   onDayTap: (date: string) => void;
 }) {
   const days: string[] = [];
@@ -669,12 +740,17 @@ function MonthGrid({
           {week.map((date) => {
             const inMonth = date.slice(0, 7) === anchorMonth;
             const data = byDate.get(date);
+            const reconciled = reconcileDay(data?.workouts || [], data?.activities || [], today);
             const items = [
               ...(data?.events || []).map((e) => ({
                 title: `${e.continuation ? "⟶ " : ""}${e.title}`,
                 color: categoryMeta(e.category).color,
               })),
-              ...(data?.workouts || []).map((w) => ({ title: w.title, color: getWorkoutTypeColor(w.workoutType) })),
+              ...reconciled.rows.map(({ workout, state }) => ({
+                title: `${state === "done" ? "✓ " : state === "missed" ? "✗ " : ""}${workout.title}`,
+                color: state === "done" ? "#4ade80" : state === "missed" ? "#f87171" : getWorkoutTypeColor(workout.workoutType),
+              })),
+              ...reconciled.extras.map((a) => ({ title: `✓ ${a.name}`, color: "#4ade80" })),
             ];
             const dots = items.slice(0, 4);
             const isToday = date === today;

@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
   // Disabled domains stay out of the briefing — a coach-only user gets a
   // pure training check-in
   if (!features.calendar) agenda.events = [];
-  if (!features.tasks) agenda.todos = [];
+  agenda.todos = [];
 
   const weekRunKm = weekActivities
     .filter((a) => RUN_TYPES.includes(a.activityType))

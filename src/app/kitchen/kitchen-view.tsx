@@ -55,7 +55,6 @@ function RecipeSheet({
   const [editing, setEditing] = useState(false);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
-  const [addingList, setAddingList] = useState(false);
   // Edit form state
   const [title, setTitle] = useState(recipe.title);
   const [servings, setServings] = useState(recipe.servings?.toString() || "");
@@ -125,28 +124,6 @@ function RecipeSheet({
     });
   }
 
-  async function handleShoppingList() {
-    const unchecked = recipe.ingredients.filter((_, i) => !checked.has(i));
-    const items = unchecked.length > 0 && unchecked.length < recipe.ingredients.length ? unchecked : recipe.ingredients;
-    setAddingList(true);
-    try {
-      let ok = 0;
-      for (const ing of items) {
-        const res = await fetch("/api/tasks", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: ing, listName: "Groceries" }),
-        });
-        if (res.ok) ok++;
-      }
-      emitToast({
-        text: ok === items.length ? `${ok} ingredient${ok === 1 ? "" : "s"} → Groceries 🛒` : `Added ${ok}/${items.length} — some failed.`,
-        kind: ok === items.length ? "success" : "error",
-      });
-    } finally {
-      setAddingList(false);
-    }
-  }
 
   async function handleCooked() {
     const res = await fetch(`/api/recipes/${recipe.id}`, {
@@ -257,14 +234,6 @@ function RecipeSheet({
               )}
 
               <div className="space-y-2 pt-1">
-                <button
-                  onClick={handleShoppingList}
-                  disabled={addingList}
-                  className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-200 text-sm font-medium rounded-xl transition-colors"
-                >
-                  {addingList ? "Adding…" : `🛒 Add ${checked.size > 0 && checked.size < recipe.ingredients.length ? "missing" : "all"} to shopping list`}
-                </button>
-                <p className="text-[10px] text-gray-600 text-center -mt-1">Tick what you already have — only the rest gets added.</p>
                 <div className="flex gap-2">
                   <button onClick={handleCooked} className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-xl transition-colors">
                     I cooked this 🥦
@@ -282,6 +251,96 @@ function RecipeSheet({
 }
 
 const MAX_PAGES = 4;
+
+/**
+ * "Always in stock" pantry staples — ingredients Brocco assumes are available
+ * in every recipe suggestion without the user listing them (curry paste,
+ * chickpeas, …). Stored on the profile; also editable via chat
+ * (manage_recipe staples_add/staples_remove).
+ */
+function StaplesSection() {
+  const [staples, setStaples] = useState<string[]>([]);
+  const [input, setInput] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/recipes/staples")
+      .then((r) => r.json())
+      .then((d) => setStaples(d.staples || []))
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  async function save(next: string[]) {
+    const prev = staples;
+    setStaples(next);
+    try {
+      const res = await fetch("/api/recipes/staples", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staples: next }),
+      });
+      if (!res.ok) throw new Error();
+      const d = await res.json();
+      setStaples(d.staples || next);
+    } catch {
+      setStaples(prev);
+      emitToast({ text: "Couldn't save staples — try again.", kind: "error" });
+    }
+  }
+
+  function addFromInput() {
+    // Allow comma-separated entry: "curry paste, chickpeas, coconut milk"
+    const items = input.split(",").map((s) => s.trim()).filter(Boolean);
+    if (items.length === 0) return;
+    setInput("");
+    save([...staples, ...items]);
+  }
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+      <p className="text-sm font-medium text-gray-100">🧂 Always in stock</p>
+      <p className="text-[11px] text-gray-500 mt-0.5 mb-2">
+        Brocco assumes these in every recipe idea — no need to list them each time.
+      </p>
+      {loaded && staples.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {staples.map((s) => (
+            <span
+              key={s}
+              className="inline-flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-full pl-2.5 pr-1 py-0.5 text-xs text-gray-200"
+            >
+              {s}
+              <button
+                onClick={() => save(staples.filter((x) => x !== s))}
+                aria-label={`Remove ${s}`}
+                className="w-4 h-4 flex items-center justify-center rounded-full text-gray-500 hover:text-red-400"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") addFromInput(); }}
+          placeholder="curry paste, chickpeas…"
+          className="flex-1 px-3 py-1.5 bg-gray-950 border border-gray-700 rounded-lg text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-green-500"
+        />
+        <button
+          onClick={addFromInput}
+          disabled={!input.trim()}
+          className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-200 text-xs rounded-lg transition-colors"
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function KitchenView() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -459,6 +518,9 @@ export default function KitchenView() {
             </div>
           </div>
         )}
+
+        {/* Pantry staples */}
+        <StaplesSection />
 
         {/* Search */}
         <input

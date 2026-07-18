@@ -27,6 +27,7 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon.ico") ||
+    pathname === "/icon.png" || // Next.js app-router favicon (src/app/icon.png)
     pathname.startsWith("/api/auth/") ||
     pathname === "/manifest.json" ||
     pathname === "/sw.js" ||
