@@ -2,8 +2,44 @@ import { prisma } from "@/lib/db";
 import { startOfWeek, endOfWeek, subWeeks, format, subDays } from "date-fns";
 import type Anthropic from "@anthropic-ai/sdk";
 import { applyPlanGeneration, applyPlanModifications } from "@/lib/apply-plan";
+import { syncWorkoutsInBackground } from "@/lib/intervals-icu";
 
 // --- Tool definitions for the Anthropic API ---
+
+// Structured interval steps for on-watch guidance (synced to the user's
+// watch via intervals.icu). One nesting level: steps, or a repeat block.
+const STEPS_SCHEMA = {
+  type: "array" as const,
+  description:
+    "Structured steps for interval/tempo/race_pace workouts so the watch can guide each rep (warmup / Nx(work, recovery) / cooldown). Each step: {kind: warmup|steady|work|recovery|cooldown, distance_km OR duration_min, pace (e.g. '4:25-4:35/km'), label?}. Repeats: {kind: 'repeat', times, steps: [work, recovery]}. Omit for plain easy/long runs — their distance+pace targets are enough.",
+  items: {
+    type: "object" as const,
+    properties: {
+      kind: { type: "string", enum: ["warmup", "steady", "work", "recovery", "cooldown", "repeat"] },
+      distance_km: { type: "number" },
+      duration_min: { type: "number" },
+      pace: { type: "string", description: "e.g. '4:25-4:35/km' or '6:30/km'" },
+      label: { type: "string", description: "Short cue, e.g. 'stride' or '800m rep'" },
+      times: { type: "integer", description: "For kind=repeat" },
+      steps: {
+        type: "array",
+        description: "For kind=repeat — the steps to repeat",
+        items: {
+          type: "object",
+          properties: {
+            kind: { type: "string", enum: ["work", "recovery", "steady"] },
+            distance_km: { type: "number" },
+            duration_min: { type: "number" },
+            pace: { type: "string" },
+            label: { type: "string" },
+          },
+          required: ["kind"],
+        },
+      },
+    },
+    required: ["kind"],
+  },
+};
 
 export const toolDefinitions: Anthropic.Tool[] = [
   {
@@ -282,6 +318,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
               target_pace: { type: "string", description: "For detailed workouts only, e.g., '4:15-4:30/km'" },
               target_duration_min: { type: "integer" },
               description: { type: "string", description: "For detailed workouts only" },
+              steps: STEPS_SCHEMA,
             },
             required: ["date", "week_number", "title", "workout_type"],
           },
@@ -929,6 +966,8 @@ async function handleAdjustPlan(
     results.push({ workoutId: adj.workout_id, action: adj.action, success: true });
   }
 
+  syncWorkoutsInBackground(userId); // push adjusted targets to the watch calendar
+
   return {
     success: true,
     data: { adjustments: results },
@@ -962,6 +1001,8 @@ async function handleModifyPlan(
 
   // Apply changes directly (Brocco should have asked for verbal confirmation first)
   const results = await applyPlanModifications(userId, changes);
+
+  syncWorkoutsInBackground(userId); // reflect structural changes on the watch calendar
 
   return {
     success: true,
@@ -1009,6 +1050,7 @@ async function handleGeneratePlan(
     target_pace?: string;
     target_duration_min?: number;
     description?: string;
+    steps?: unknown;
   }>;
   const summary = String(input.summary || `New plan: ${planName || "Training plan"}`);
 
@@ -1045,6 +1087,8 @@ async function handleGeneratePlan(
   };
 
   const result = await applyPlanGeneration(userId, payload);
+
+  syncWorkoutsInBackground(userId); // push the fresh plan's first weeks to the watch calendar
 
   return {
     success: true,

@@ -34,6 +34,7 @@ export async function applyPlanGeneration(
     target_pace?: string;
     target_duration_min?: number;
     description?: string;
+    steps?: unknown;
   }>;
 
   const lastWeek = planWeeks.length > 0
@@ -113,6 +114,7 @@ export async function applyPlanGeneration(
         targetPace: w.target_pace || null,
         targetDurationMin: w.target_duration_min ?? null,
         description: w.description || null,
+        steps: w.steps ?? undefined,
         status: "planned" as const,
       })),
     });
@@ -159,6 +161,7 @@ export async function applyPlanModifications(
         if (c.updates.workout_type !== undefined) updateData.workoutType = c.updates.workout_type;
         if (c.updates.title !== undefined) updateData.title = c.updates.title;
         if (c.updates.description !== undefined) updateData.description = c.updates.description;
+        if (c.updates.steps !== undefined) updateData.steps = c.updates.steps;
       }
       updateData.status = "modified";
       const { count } = await prisma.plannedWorkout.updateMany({
@@ -191,6 +194,7 @@ export async function applyPlanModifications(
             targetPace: c.updates.pace ? String(c.updates.pace) : null,
             targetDurationMin: c.updates.duration ? Number(c.updates.duration) : null,
             description: c.updates.description ? String(c.updates.description) : null,
+            steps: (c.updates.steps as object | undefined) ?? undefined,
           },
         });
         results.push({ action: "add", success: true });

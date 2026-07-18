@@ -15,11 +15,175 @@ interface ProfileData {
   email: string;
   stravaConnected: boolean;
   stravaAthleteId: string | null;
+  intervalsConnected: boolean;
+  intervalsAthleteId: string | null;
   timezone: string;
   goalRace: string | null;
   goalTime: string | null;
   goalRaceDate: string | null;
   hrMaxBpm: number | null;
+}
+
+/**
+ * Watch sync via intervals.icu — planned workouts are pushed to the user's
+ * intervals.icu calendar, which forwards them to COROS / Garmin / Wahoo /
+ * Polar / Suunto with full interval structure.
+ */
+function WatchSyncSection({ profile }: { profile: ProfileData }) {
+  const [connected, setConnected] = useState(profile.intervalsConnected);
+  const [connectedId, setConnectedId] = useState(profile.intervalsAthleteId);
+  const [athleteId, setAthleteId] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
+
+  async function handleConnect() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/intervals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ athleteId, apiKey }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMessage(data.error || "Connection failed");
+        return;
+      }
+      const s = data.initialSync;
+      setMessage(
+        `Connected${data.athleteName ? ` as ${data.athleteName}` : ""}.` +
+          (s?.synced ? ` Pushed ${s.created || 0} workout${(s.created || 0) === 1 ? "" : "s"} to your calendar.` : "")
+      );
+      setConnected(true);
+      setConnectedId(athleteId.trim());
+      setAthleteId("");
+      setApiKey("");
+    } catch {
+      setMessage("Connection failed — try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSyncNow() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/intervals/sync", { method: "POST" });
+      const data = await res.json();
+      setMessage(
+        res.ok
+          ? `Synced: ${data.created || 0} new, ${data.updated || 0} updated, ${data.deleted || 0} removed.`
+          : data.error || "Sync failed"
+      );
+    } catch {
+      setMessage("Sync failed — try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    setBusy(true);
+    setMessage(null);
+    await fetch("/api/intervals", { method: "DELETE" }).catch(() => {});
+    setBusy(false);
+    setConnected(false);
+    setConnectedId(null);
+  }
+
+  const inputCls = "w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500";
+
+  return (
+    <section>
+      <h2 className="text-lg font-semibold mb-1">Watch sync</h2>
+      <p className="text-xs text-gray-500 mb-3">
+        Your planned workouts on your COROS or Garmin — intervals, paces, and all — via a free intervals.icu account.
+      </p>
+      <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+        {connected ? (
+          <>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-green-500" />
+              <span className="text-sm text-gray-300">Connected (intervals.icu athlete {connectedId})</span>
+            </div>
+            <p className="text-xs text-gray-500">
+              Upcoming workouts (next 2 weeks) sync automatically whenever your plan changes. Your watch picks them up
+              from intervals.icu — make sure your watch is connected there with &quot;Upload planned workouts&quot; on.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleSyncNow}
+                disabled={busy}
+                className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg transition-colors"
+              >
+                {busy ? "Working…" : "Sync Now"}
+              </button>
+              <button
+                onClick={handleDisconnect}
+                disabled={busy}
+                className="px-4 py-2 text-sm bg-red-900/40 hover:bg-red-900/60 text-red-300 disabled:opacity-50 rounded-lg transition-colors"
+              >
+                Disconnect
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => setShowHelp(!showHelp)}
+              className="text-xs text-green-400 hover:text-green-300 underline underline-offset-2"
+            >
+              {showHelp ? "Hide setup steps" : "How do I set this up? (one-time, ~3 minutes)"}
+            </button>
+            {showHelp && (
+              <ol className="text-xs text-gray-400 space-y-1.5 list-decimal pl-4">
+                <li>
+                  Create a free account at{" "}
+                  <a href="https://intervals.icu" target="_blank" rel="noreferrer" className="text-green-400 underline">intervals.icu</a>
+                </li>
+                <li>
+                  In intervals.icu <b>Settings</b>, scroll to your watch brand (COROS / Garmin / …), connect it, and tick{" "}
+                  <b>&quot;Upload planned workouts&quot;</b>
+                </li>
+                <li>
+                  Still in Settings, open <b>Developer Settings</b> and generate an <b>API key</b>
+                </li>
+                <li>
+                  Your <b>Athlete ID</b> is shown right there (looks like <code className="text-gray-300">i1234567</code>)
+                </li>
+                <li>Paste both below</li>
+              </ol>
+            )}
+            <input
+              value={athleteId}
+              onChange={(e) => setAthleteId(e.target.value)}
+              placeholder="Athlete ID (e.g. i1234567)"
+              className={inputCls}
+            />
+            <input
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="API key"
+              type="password"
+              className={inputCls}
+            />
+            <button
+              onClick={handleConnect}
+              disabled={busy || !athleteId.trim() || !apiKey.trim()}
+              className="px-4 py-2 text-sm bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+            >
+              {busy ? "Checking…" : "Connect & sync"}
+            </button>
+          </>
+        )}
+        {message && <p className="text-sm text-gray-400">{message}</p>}
+      </div>
+    </section>
+  );
 }
 
 /**
@@ -787,6 +951,9 @@ function SettingsContent() {
           )}
         </div>
       </section>
+
+      {/* Watch sync (intervals.icu bridge) */}
+      {profile && <WatchSyncSection profile={profile} />}
 
       {/* Change Password */}
       <section>

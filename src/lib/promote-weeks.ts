@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { buildCoachContext } from "@/lib/coach-context";
 import { format } from "date-fns";
 import { todayInTimezone, parseWall, addDaysWall } from "@/lib/schedule";
+import { syncWorkoutsInBackground } from "@/lib/intervals-icu";
 
 const anthropic = new Anthropic();
 
@@ -93,7 +94,7 @@ ${week.notes ? `Notes: ${week.notes}` : ""}
 
 ${context}
 
-Each workout object must have: date (ISO), title, workout_type (easy/long/tempo/interval/race_pace/recovery/rest/cross_training/strength/race), target_distance_km (number), target_pace (string like "5:00-5:15/km"), description (string with warm-up, main set, cool-down details).
+Each workout object must have: date (ISO), title, workout_type (easy/long/tempo/interval/race_pace/recovery/rest/cross_training/strength/race), target_distance_km (number), target_pace (string like "5:00-5:15/km"), description (string with warm-up, main set, cool-down details). For interval/tempo/race_pace workouts ALSO include steps: an array of structured steps for the watch — [{kind:"warmup",duration_min,pace},{kind:"repeat",times,steps:[{kind:"work",distance_km,pace},{kind:"recovery",duration_min,pace}]},{kind:"cooldown",duration_min,pace}] with pace like "4:25-4:35/km". Omit steps for easy/long/recovery runs.
 
 Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a race or taper week, include 1-2 short S&C sessions (workout_type "strength", activity_type "strength", target_duration_min 15-25, title like "S&C: Core & Hips", short description like "core + hip stability circuit") on easy or rest days, never the day before a hard session — these get a guided timer session in the app automatically.`,
           messages: [{ role: "user", content: "Generate the detailed workouts for this week as a JSON array." }],
@@ -114,6 +115,7 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
         target_pace?: string;
         target_duration_min?: number;
         description?: string;
+        steps?: unknown;
       }>;
 
       if (generatedWorkouts.length === 0) throw new Error("Generation returned zero workouts");
@@ -138,6 +140,7 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
             targetPace: w.target_pace || null,
             targetDurationMin: w.target_duration_min ?? null,
             description: w.description || null,
+            steps: w.steps ?? undefined,
             status: "planned" as const,
           })),
         }),
@@ -231,6 +234,10 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
       where: { id: pw.id },
       data: { actualKm: Math.round(actualKm * 10) / 10 },
     });
+  }
+
+  if (promoted > 0) {
+    syncWorkoutsInBackground(userId); // freshly detailed week → watch calendar
   }
 
   return { promoted };

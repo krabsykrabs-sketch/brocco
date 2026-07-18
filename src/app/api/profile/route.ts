@@ -37,6 +37,8 @@ export async function GET() {
       icsFeedUrl: profile.icsToken ? `${process.env.BASE_URL}/api/calendar/ics?token=${profile.icsToken}` : null,
       stravaConnected: !!profile.stravaAccessToken,
       stravaAthleteId: profile.stravaAthleteId,
+      intervalsConnected: !!profile.intervalsApiKey,
+      intervalsAthleteId: profile.intervalsAthleteId,
       onboardingCompleted: profile.onboardingCompleted,
     });
   } catch {

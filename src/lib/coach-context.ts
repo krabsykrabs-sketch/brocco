@@ -610,6 +610,7 @@ ${planWarning}
       - Weeks 1-2 (detailed): Full specs — date, title, workout_type, target_distance_km, target_pace, description
       - Weeks 3-4 (outline): Just date, title, workout_type, approximate target_distance_km
       - Do NOT generate workouts for week 5+
+      - For interval/tempo/race_pace workouts in detailed weeks, ALSO fill the structured "steps" array (warmup / repeat(work, recovery) / cooldown with paces) — these guide the user's watch through each rep. Plain easy/long runs don't need steps.
    Explain to the runner: "I've planned your first two weeks in detail and outlined weeks 3-4. As each new week starts, I'll fill in the details based on how your training is going."
 
 7) REVIEW — Present a summary showing the phase structure and first 2 weeks of workouts. Ask "Does this look good? Should I create it?" Wait for confirmation before calling generate_plan. The tool applies the plan immediately.

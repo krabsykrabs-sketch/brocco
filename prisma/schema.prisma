@@ -65,6 +65,11 @@ model UserProfile {
   // Kitchen staples the user always has in stock (string[]; considered in
   // every recipe suggestion without being listed each time)
   pantryStaples         Json?    @map("pantry_staples") @db.JsonB
+  // Watch sync via intervals.icu (bridges to COROS/Garmin/…): planned
+  // workouts are pushed to the user's intervals.icu calendar, which their
+  // watch platform pulls. API key is encrypted like the Strava tokens.
+  intervalsAthleteId    String?  @map("intervals_athlete_id")
+  intervalsApiKey       String?  @map("intervals_api_key")
   // Life-planner feature toggles ({calendar, tasks, notes}); null = all enabled
   features              Json?    @db.JsonB
   onboardingCompleted   Boolean  @default(false) @map("onboarding_completed")
@@ -164,6 +169,10 @@ model PlannedWorkout {
   targetPaceSecs    Int?          @map("target_pace_secs")
   targetDurationMin Int?          @map("target_duration_min")
   description       String?
+  // Structured interval steps for on-watch guidance (rendered to the
+  // intervals.icu workout DSL): [{kind, distanceKm?, durationMin?, pace?,
+  // label?} | {kind: "repeat", times, steps: [...]}]
+  steps             Json?         @db.JsonB
   detailLevel       WorkoutDetailLevel @default(detailed) @map("detail_level")
   status            WorkoutStatus @default(planned)
   createdAt         DateTime      @default(now()) @map("created_at")
