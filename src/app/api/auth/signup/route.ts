@@ -3,11 +3,17 @@ import { prisma } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
 import { getSession } from "@/lib/session";
 
+// Shared access code gate. brocco.run isn't indexed or advertised anywhere,
+// so a simple code handed to friends is deliberate — this is a bouncer for
+// drive-by bots, not a security boundary. Override in env if it ever leaks
+// (Coolify: SIGNUP_ACCESS_CODE).
+const ACCESS_CODE = process.env.SIGNUP_ACCESS_CODE || "brocco2026";
+
 export async function POST(request: NextRequest) {
   try {
-    const { email, name, password, inviteCode } = await request.json();
+    const { email, name, password, accessCode } = await request.json();
 
-    if (!email || !name || !password || !inviteCode) {
+    if (!email || !name || !password || !accessCode) {
       return NextResponse.json(
         { error: "All fields are required" },
         { status: 400 }
@@ -21,14 +27,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate invite code
-    const invite = await prisma.inviteCode.findUnique({
-      where: { code: inviteCode },
-    });
-
-    if (!invite || invite.usedBy) {
+    if (String(accessCode).trim().toLowerCase() !== ACCESS_CODE.toLowerCase()) {
       return NextResponse.json(
-        { error: "Invalid or already used invite code" },
+        { error: "Wrong access code — ask the person who invited you" },
         { status: 400 }
       );
     }
@@ -47,14 +48,13 @@ export async function POST(request: NextRequest) {
 
     const passwordHash = await hashPassword(password);
 
-    // Create user + profile + mark invite as used in a transaction
     const user = await prisma.$transaction(async (tx) => {
       const newUser = await tx.user.create({
         data: {
           email: email.toLowerCase().trim(),
           name,
           passwordHash,
-          inviteCode,
+          inviteCode: "access-code",
         },
       });
 
@@ -64,19 +64,6 @@ export async function POST(request: NextRequest) {
           onboardingCompleted: true,
         },
       });
-
-      // Atomic redemption: the usedBy:null condition closes the race where
-      // two concurrent signups both passed the pre-check above.
-      const redeemed = await tx.inviteCode.updateMany({
-        where: { code: inviteCode, usedBy: null },
-        data: {
-          usedBy: newUser.id,
-          usedAt: new Date(),
-        },
-      });
-      if (redeemed.count !== 1) {
-        throw new Error("INVITE_ALREADY_USED");
-      }
 
       return newUser;
     });
@@ -88,13 +75,7 @@ export async function POST(request: NextRequest) {
     await session.save();
 
     return NextResponse.json({ ok: true, userId: user.id });
-  } catch (err) {
-    if (err instanceof Error && err.message === "INVITE_ALREADY_USED") {
-      return NextResponse.json(
-        { error: "Invalid or already used invite code" },
-        { status: 400 }
-      );
-    }
+  } catch {
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

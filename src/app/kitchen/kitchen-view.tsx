@@ -55,7 +55,6 @@ function RecipeSheet({
   const [editing, setEditing] = useState(false);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
-  const [addingList, setAddingList] = useState(false);
   // Edit form state
   const [title, setTitle] = useState(recipe.title);
   const [servings, setServings] = useState(recipe.servings?.toString() || "");
@@ -125,28 +124,6 @@ function RecipeSheet({
     });
   }
 
-  async function handleShoppingList() {
-    const unchecked = recipe.ingredients.filter((_, i) => !checked.has(i));
-    const items = unchecked.length > 0 && unchecked.length < recipe.ingredients.length ? unchecked : recipe.ingredients;
-    setAddingList(true);
-    try {
-      let ok = 0;
-      for (const ing of items) {
-        const res = await fetch("/api/tasks", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: ing, listName: "Groceries" }),
-        });
-        if (res.ok) ok++;
-      }
-      emitToast({
-        text: ok === items.length ? `${ok} ingredient${ok === 1 ? "" : "s"} → Groceries 🛒` : `Added ${ok}/${items.length} — some failed.`,
-        kind: ok === items.length ? "success" : "error",
-      });
-    } finally {
-      setAddingList(false);
-    }
-  }
 
   async function handleCooked() {
     const res = await fetch(`/api/recipes/${recipe.id}`, {
@@ -257,14 +234,6 @@ function RecipeSheet({
               )}
 
               <div className="space-y-2 pt-1">
-                <button
-                  onClick={handleShoppingList}
-                  disabled={addingList}
-                  className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-200 text-sm font-medium rounded-xl transition-colors"
-                >
-                  {addingList ? "Adding…" : `🛒 Add ${checked.size > 0 && checked.size < recipe.ingredients.length ? "missing" : "all"} to shopping list`}
-                </button>
-                <p className="text-[10px] text-gray-600 text-center -mt-1">Tick what you already have — only the rest gets added.</p>
                 <div className="flex gap-2">
                   <button onClick={handleCooked} className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-xl transition-colors">
                     I cooked this 🥦

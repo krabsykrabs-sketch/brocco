@@ -367,43 +367,6 @@ export const toolDefinitions: Anthropic.Tool[] = [
     },
   },
   {
-    name: "manage_task",
-    description:
-      "Create, update, complete, or delete to-dos and task lists. Tasks can have due dates, priority, recurrence ('water plants every Sunday'), subtasks, and a list (e.g. Groceries, House). Tasks without a list land in the Inbox. Reference lists by name — they're created automatically. For multiple items ('groceries: milk, eggs, coffee') create one task per item in the right list.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        action: {
-          type: "string",
-          enum: ["create", "update", "complete", "reopen", "delete", "create_list", "rename_list", "delete_list"],
-        },
-        task_id: { type: "string", description: "For update/complete/reopen/delete" },
-        title: { type: "string" },
-        notes: { type: "string" },
-        due_date: { type: "string", description: "'yyyy-MM-dd' (optional)" },
-        due_time: { type: "string", description: "'HH:mm' local (optional)" },
-        priority: { type: "string", enum: ["low", "medium", "high"] },
-        list: { type: "string", description: "List name; omit for Inbox" },
-        parent_task_id: { type: "string", description: "Make this a subtask of another task" },
-        subtasks: {
-          type: "array",
-          items: { type: "string" },
-          description: "Subtask titles to create alongside (create only)",
-        },
-        recurrence: {
-          type: "object",
-          properties: {
-            freq: { type: "string", enum: ["none", "daily", "weekly", "monthly", "yearly"] },
-            interval: { type: "integer", description: "Every N periods, default 1" },
-          },
-        },
-        list_id: { type: "string", description: "For rename_list/delete_list" },
-        new_name: { type: "string", description: "For rename_list" },
-      },
-      required: ["action"],
-    },
-  },
-  {
     name: "manage_note",
     description:
       "Save, update, search, or delete notes — quick facts ('locker code is 4821'), lists (packing list), reference info. Use search before answering questions about previously stored facts. 'append' adds text to an existing note's body.",
@@ -506,26 +469,6 @@ export const toolDefinitions: Anthropic.Tool[] = [
       required: ["action"],
     },
   },
-  {
-    name: "log_journal",
-    description:
-      "Log the user's mood and private diary entries, or read recent ones. Use action 'log' whenever the user shares how they feel ('feeling flat today', 'so happy after that race') or reflects on their day — mood is 1 (rough) to 5 (great), text captures their reflection in their own words. Mood and text can be logged together or alone. Use action 'recent' before answering questions about how they've been feeling lately. This is a private diary — do NOT store facts or reference info here (use manage_note for that).",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        action: { type: "string", enum: ["log", "recent"] },
-        mood: { type: "integer", description: "1 (rough) to 5 (great)" },
-        tags: {
-          type: "array",
-          items: { type: "string" },
-          description: "Context tags, e.g. ['training', 'work', 'sleep']",
-        },
-        text: { type: "string", description: "The reflection/diary text, close to the user's own words" },
-        days: { type: "integer", description: "For 'recent': how many days back to read. Default 14." },
-      },
-      required: ["action"],
-    },
-  },
 ];
 
 // --- Feature-gated tool selection ---
@@ -534,10 +477,8 @@ import type { Features } from "@/lib/features";
 
 const TOOL_FEATURE_GATES: Record<string, (f: Features) => boolean> = {
   manage_event: (f) => f.calendar,
-  manage_task: (f) => f.tasks,
   manage_note: (f) => f.notes,
-  query_schedule: (f) => f.calendar || f.tasks,
-  log_journal: (f) => f.journal,
+  query_schedule: (f) => f.calendar,
   manage_recipe: (f) => f.kitchen,
 };
 
@@ -592,14 +533,10 @@ export async function handleToolCall(
       return handleAddWeeklyTasks(input, userId);
     case "manage_event":
       return handleManageEvent(input, userId);
-    case "manage_task":
-      return handleManageTask(input, userId);
     case "manage_note":
       return handleManageNote(input, userId);
     case "query_schedule":
       return handleQuerySchedule(input, userId);
-    case "log_journal":
-      return handleLogJournal(input, userId);
     case "create_workout":
       return handleCreateWorkout(input, userId);
     case "manage_recipe":
@@ -1184,11 +1121,9 @@ import {
   wallDateString,
   addDaysWall,
 } from "@/lib/schedule";
-import { setTodoDone, resolveListByName, parseDueDate } from "@/lib/todos";
-import { moodEmoji, moodLabel, renderJournalText, averageMood } from "@/lib/journal";
 import { validateWorkoutDefinition, estimateDurationMin } from "@/lib/guided-workout";
 import { validateRecipeInput, recipeMatches, normalizeStaples } from "@/lib/recipes";
-import type { EventCategory, RecurrenceFreq, TodoPriority } from "@prisma/client";
+import type { EventCategory, RecurrenceFreq } from "@prisma/client";
 
 const EVENT_CATEGORIES = ["work", "family", "training", "social", "health", "birthday", "other"];
 const RECURRENCE_FREQS = ["none", "daily", "weekly", "monthly", "yearly"];
@@ -1354,170 +1289,6 @@ async function handleManageEvent(
   return { success: false, error: `Unknown manage_event action: ${action}` };
 }
 
-async function handleManageTask(
-  input: Record<string, unknown>,
-  userId: string
-): Promise<ToolResult> {
-  const action = input.action as string;
-  const rec = (input.recurrence || {}) as { freq?: string; interval?: number };
-  const recurrenceFreq = (RECURRENCE_FREQS.includes(rec.freq || "") ? rec.freq : "none") as RecurrenceFreq;
-
-  if (action === "create") {
-    if (!input.title) return { success: false, error: "title is required" };
-    let listId: string | null = null;
-    let listName: string | null = null;
-    if (input.list) {
-      const list = await resolveListByName(userId, input.list as string);
-      listId = list.id;
-      listName = list.name;
-    }
-    const dueDate = parseDueDate(input.due_date);
-
-    // A hallucinated/foreign parent id must not link a subtask across users
-    // (the other user deleting their task would cascade-delete this one).
-    let parentId: string | null = null;
-    if (input.parent_task_id) {
-      const parent = await prisma.todo.findFirst({
-        where: { id: input.parent_task_id as string, userId },
-        select: { id: true },
-      });
-      if (!parent) return { success: false, error: "parent_task_id not found" };
-      parentId = parent.id;
-    }
-
-    const task = await prisma.todo.create({
-      data: {
-        userId,
-        listId,
-        parentId,
-        title: input.title as string,
-        notes: (input.notes as string) || null,
-        dueDate,
-        dueTime: (input.due_time as string) || null,
-        priority: (TODO_PRIORITIES.includes(input.priority as string) ? input.priority : null) as TodoPriority | null,
-        recurrence: recurrenceFreq,
-        recurrenceInterval: rec.interval && rec.interval > 0 ? rec.interval : 1,
-        recurrenceAnchor: recurrenceFreq !== "none" ? dueDate : null,
-      },
-    });
-    const subtaskTitles = (input.subtasks as string[]) || [];
-    if (Array.isArray(subtaskTitles) && subtaskTitles.length > 0) {
-      await prisma.todo.createMany({
-        data: subtaskTitles.map((t, i) => ({ userId, parentId: task.id, listId, title: String(t), position: i })),
-      });
-    }
-    const dueLabel = dueDate ? ` — ${formatDateShort(dueDate.toISOString().slice(0, 10))}${input.due_time ? ` ${input.due_time}` : ""}` : "";
-    return {
-      success: true,
-      data: { task_id: task.id, title: task.title, list: listName || "Inbox", subtasks_created: subtaskTitles.length },
-      notification: {
-        type: "task_created",
-        message: `${task.title}${dueLabel}${listName ? ` (${listName})` : ""}`,
-        data: { id: task.id, domain: "tasks" },
-      },
-    };
-  }
-
-  if (action === "complete" || action === "reopen") {
-    const result = await setTodoDone(userId, input.task_id as string, action === "complete");
-    if (!result) return { success: false, error: "Task not found" };
-    const nextInfo = result.nextOccurrence
-      ? ` (next: ${formatDateShort(result.nextOccurrence.dueDate!.toISOString().slice(0, 10))})`
-      : "";
-    return {
-      success: true,
-      data: {
-        task_id: result.todo.id,
-        done: result.todo.done,
-        next_occurrence_id: result.nextOccurrence?.id || null,
-      },
-      notification: {
-        type: action === "complete" ? "task_completed" : "task_reopened",
-        message: action === "complete" ? `Done: ${result.todo.title}${nextInfo}` : `Reopened: ${result.todo.title}`,
-        data: { id: result.todo.id, domain: "tasks" },
-      },
-    };
-  }
-
-  if (action === "update") {
-    const task = await prisma.todo.findFirst({ where: { id: input.task_id as string, userId } });
-    if (!task) return { success: false, error: "Task not found" };
-    const data: Record<string, unknown> = {};
-    if (input.title !== undefined) data.title = input.title;
-    if (input.notes !== undefined) data.notes = input.notes || null;
-    if (input.due_date !== undefined) data.dueDate = parseDueDate(input.due_date);
-    if (input.due_time !== undefined) data.dueTime = input.due_time || null;
-    if (input.priority !== undefined) data.priority = TODO_PRIORITIES.includes(input.priority as string) ? input.priority : null;
-    if (input.list !== undefined) {
-      if (input.list) {
-        const list = await resolveListByName(userId, input.list as string);
-        data.listId = list.id;
-      } else {
-        data.listId = null;
-      }
-    }
-    if (input.recurrence !== undefined) {
-      data.recurrence = recurrenceFreq;
-      data.recurrenceInterval = rec.interval && rec.interval > 0 ? rec.interval : 1;
-    }
-    const updated = await prisma.todo.update({ where: { id: task.id }, data });
-    return {
-      success: true,
-      data: { task_id: updated.id, title: updated.title },
-      notification: {
-        type: "task_updated",
-        message: `Updated: ${updated.title}`,
-        data: { id: updated.id, domain: "tasks" },
-      },
-    };
-  }
-
-  if (action === "delete") {
-    const task = await prisma.todo.findFirst({ where: { id: input.task_id as string, userId } });
-    if (!task) return { success: false, error: "Task not found" };
-    await prisma.todo.delete({ where: { id: task.id } });
-    return {
-      success: true,
-      data: { task_id: task.id, deleted: true },
-      notification: { type: "task_deleted", message: `Deleted: ${task.title}`, data: { id: task.id, domain: "tasks" } },
-    };
-  }
-
-  if (action === "create_list") {
-    if (!input.title && !input.list) return { success: false, error: "Provide the list name in 'list'" };
-    const list = await resolveListByName(userId, (input.list || input.title) as string);
-    return {
-      success: true,
-      data: { list_id: list.id, name: list.name, already_existed: !list.created },
-      notification: { type: "list_created", message: `List: ${list.name}`, data: { id: list.id, domain: "tasks" } },
-    };
-  }
-
-  if (action === "rename_list") {
-    const list = await prisma.taskList.findFirst({ where: { id: input.list_id as string, userId } });
-    if (!list) return { success: false, error: "List not found" };
-    const updated = await prisma.taskList.update({ where: { id: list.id }, data: { name: input.new_name as string } });
-    return {
-      success: true,
-      data: { list_id: updated.id, name: updated.name },
-      notification: { type: "list_updated", message: `List renamed: ${updated.name}`, data: { id: updated.id, domain: "tasks" } },
-    };
-  }
-
-  if (action === "delete_list") {
-    const list = await prisma.taskList.findFirst({ where: { id: input.list_id as string, userId } });
-    if (!list) return { success: false, error: "List not found" };
-    await prisma.taskList.delete({ where: { id: list.id } }); // todos fall back to Inbox via SetNull
-    return {
-      success: true,
-      data: { list_id: list.id, deleted: true },
-      notification: { type: "list_deleted", message: `List deleted: ${list.name} (tasks moved to Inbox)`, data: { id: list.id, domain: "tasks" } },
-    };
-  }
-
-  return { success: false, error: `Unknown manage_task action: ${action}` };
-}
-
 async function handleManageNote(
   input: Record<string, unknown>,
   userId: string
@@ -1627,69 +1398,6 @@ async function handleQuerySchedule(
   };
 }
 
-// --- log_journal ---
-
-async function handleLogJournal(
-  input: Record<string, unknown>,
-  userId: string
-): Promise<ToolResult> {
-  const action = input.action as string;
-
-  if (action === "log") {
-    const mood = input.mood == null ? null : Number(input.mood);
-    const text = input.text != null ? String(input.text).trim() : null;
-    if (mood == null && !text) {
-      return { success: false, error: "mood or text is required" };
-    }
-    if (mood != null && (!Number.isInteger(mood) || mood < 1 || mood > 5)) {
-      return { success: false, error: "mood must be an integer 1-5" };
-    }
-
-    const profile = await prisma.userProfile.findUnique({ where: { userId }, select: { timezone: true } });
-    const day = todayInTimezone(profile?.timezone || "Europe/Berlin");
-    const tags = Array.isArray(input.tags)
-      ? (input.tags as unknown[]).map((t) => String(t).toLowerCase().trim()).filter(Boolean).slice(0, 10)
-      : [];
-
-    const entry = await prisma.journalEntry.create({
-      data: { userId, day, mood, tags, text: text || null },
-    });
-
-    const message = mood
-      ? `Mood logged: ${moodEmoji(mood)} ${moodLabel(mood)}`
-      : "Journal entry saved";
-    return {
-      success: true,
-      data: { entry_id: entry.id, day, mood, has_text: !!text },
-      notification: { type: "journal_saved", message, data: { id: entry.id, domain: "journal" } },
-    };
-  }
-
-  if (action === "recent") {
-    const days = Math.min(Math.max(Number(input.days) || 14, 1), 90);
-    const profile = await prisma.userProfile.findUnique({ where: { userId }, select: { timezone: true } });
-    const today = todayInTimezone(profile?.timezone || "Europe/Berlin");
-    const fromDay = wallDateString(addDaysWall(parseWall(today), -days));
-
-    const entries = await prisma.journalEntry.findMany({
-      where: { userId, day: { gte: fromDay } },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-      select: { day: true, mood: true, tags: true, text: true },
-    });
-
-    return {
-      success: true,
-      data: {
-        journal: renderJournalText(entries),
-        average_mood: averageMood(entries),
-        entry_count: entries.length,
-      },
-    };
-  }
-
-  return { success: false, error: `Unknown log_journal action: ${action}` };
-}
 
 // --- create_workout ---
 

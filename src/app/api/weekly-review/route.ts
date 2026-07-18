@@ -13,7 +13,6 @@ import {
 } from "@/lib/schedule";
 import { isCompatibleType, RUN_TYPES } from "@/lib/activity-types";
 import { resolveFeatures } from "@/lib/features";
-import { renderJournalText, averageMood } from "@/lib/journal";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 import { format } from "date-fns";
 
@@ -79,7 +78,7 @@ export async function GET(request: NextRequest) {
   const weekEndDt = parseWall(`${weekEndStr}T23:59`);
 
   const prevWeekStartStr = wallDateString(addDaysWall(reviewWeekStart, -7));
-  const [activities, planned, agendaNext, tasksDone, journalEntries, prevJournalEntries] = await Promise.all([
+  const [activities, planned, agendaNext] = await Promise.all([
     prisma.activity.findMany({
       where: { userId, startDateLocal: { gte: weekStartDt, lte: weekEndDt } },
       orderBy: { startDateLocal: "asc" },
@@ -96,26 +95,9 @@ export async function GET(request: NextRequest) {
     getAgenda(userId, wallDateString(addDaysWall(reviewWeekStart, 7)), wallDateString(addDaysWall(reviewWeekStart, 13)), {
       includeOverdueTodos: false,
     }),
-    features.tasks
-      ? prisma.todo.count({ where: { userId, done: true, completedAt: { gte: weekStartDt, lte: weekEndDt } } })
-      : Promise.resolve(0),
-    // Mood × training is the journal's payoff — surfaced here, not on a stats page
-    features.journal
-      ? prisma.journalEntry.findMany({
-          where: { userId, day: { gte: weekStartStr, lte: weekEndStr } },
-          orderBy: { createdAt: "asc" },
-          select: { day: true, mood: true, tags: true, text: true },
-        })
-      : Promise.resolve([]),
-    features.journal
-      ? prisma.journalEntry.findMany({
-          where: { userId, day: { gte: prevWeekStartStr, lt: weekStartStr }, mood: { not: null } },
-          select: { day: true, mood: true, tags: true, text: true },
-        })
-      : Promise.resolve([]),
   ]);
   if (!features.calendar) agendaNext.events = [];
-  if (!features.tasks) agendaNext.todos = [];
+  agendaNext.todos = [];
 
   // Recap numbers
   const runs = activities.filter((a) => RUN_TYPES.includes(a.activityType));
@@ -155,13 +137,6 @@ export async function GET(request: NextRequest) {
     dataBlock += `Longest run: "${longest.name}" ${Number(longest.distanceKm).toFixed(1)}km${longest.avgPacePerKm ? ` @ ${longest.avgPacePerKm}` : ""}.\n`;
   }
   if (intensityNotes.length) dataBlock += `Intensity flags: ${intensityNotes.join("; ")}.\n`;
-  if (features.tasks) dataBlock += `Tasks completed this week: ${tasksDone}.\n`;
-  if (features.journal && journalEntries.length > 0) {
-    const avg = averageMood(journalEntries);
-    const prevAvg = averageMood(prevJournalEntries);
-    dataBlock += `\nMOOD & JOURNAL (private check-ins, 1=rough..5=great):\n${renderJournalText(journalEntries)}\n`;
-    if (avg != null) dataBlock += `Average mood: ${avg}/5${prevAvg != null ? ` (previous week: ${prevAvg}/5)` : ""}.\n`;
-  }
   dataBlock += `\nNEXT WEEK:\n${renderAgendaText(agendaNext)}`;
 
   let content: string;
