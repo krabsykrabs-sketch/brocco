@@ -99,7 +99,6 @@ function makeMoreTab(features: Features, surfaced: Tab[]): Tab {
     ),
     match: (p) =>
       p.startsWith("/more") || p.startsWith("/settings") || p.startsWith("/workout") ||
-      (features.notes && p.startsWith("/notes")) ||
       (features.kitchen && p.startsWith("/kitchen")) ||
       (!hasPlan && p.startsWith("/plan")) ||
       (!hasHistory && (p.startsWith("/history") || p.startsWith("/activity"))),

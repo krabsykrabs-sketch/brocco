@@ -130,7 +130,7 @@ export async function fetchActivityStreams(
   accessToken: string,
   activityId: string
 ): Promise<Record<string, { data: unknown[] }> | null> {
-  const keys = "time,distance,heartrate,velocity_smooth,moving";
+  const keys = "time,distance,heartrate,velocity_smooth,moving,cadence,watts";
   const res = await fetch(
     `${STRAVA_API}/activities/${activityId}/streams?keys=${keys}&key_by_type=true`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -141,10 +141,70 @@ export async function fetchActivityStreams(
   }
 
   const data = await res.json();
-  if (!data.heartrate || !data.time || !data.distance || !data.velocity_smooth) {
-    return null; // missing a required stream (most commonly: no HR device)
+  // HR is optional (pace-based metrics still work without a strap);
+  // time/distance/velocity are the required backbone.
+  if (!data.time || !data.distance || !data.velocity_smooth) {
+    return null;
   }
   return data;
+}
+
+/** A watch-recorded lap, trimmed to what analysis and the UI need. */
+export interface StravaLap {
+  lapIndex: number;
+  name: string | null;
+  distanceM: number;
+  movingTimeSec: number;
+  elapsedTimeSec: number;
+  avgHr: number | null;
+  maxHr: number | null;
+  avgCadence: number | null;
+  avgWatts: number | null;
+  paceSecPerKm: number | null;
+}
+
+/**
+ * Fetch the laps the watch recorded for an activity — ground truth for
+ * interval execution (structured workouts produce one lap per step).
+ * Returns null on any failure; laps are a nice-to-have, never a blocker.
+ */
+export async function fetchActivityLaps(accessToken: string, activityId: string): Promise<StravaLap[] | null> {
+  try {
+    const res = await fetch(`${STRAVA_API}/activities/${activityId}/laps`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!res.ok) return null;
+    const raw = (await res.json()) as Array<{
+      lap_index?: number;
+      name?: string;
+      distance?: number;
+      moving_time?: number;
+      elapsed_time?: number;
+      average_heartrate?: number;
+      max_heartrate?: number;
+      average_cadence?: number;
+      average_watts?: number;
+    }>;
+    if (!Array.isArray(raw) || raw.length === 0) return null;
+    return raw.map((l, i) => {
+      const distanceM = Math.round(l.distance || 0);
+      const movingTimeSec = Math.round(l.moving_time || 0);
+      return {
+        lapIndex: l.lap_index ?? i + 1,
+        name: l.name || null,
+        distanceM,
+        movingTimeSec,
+        elapsedTimeSec: Math.round(l.elapsed_time || movingTimeSec),
+        avgHr: l.average_heartrate ? Math.round(l.average_heartrate) : null,
+        maxHr: l.max_heartrate ? Math.round(l.max_heartrate) : null,
+        avgCadence: l.average_cadence ? Math.round(l.average_cadence) : null,
+        avgWatts: l.average_watts ? Math.round(l.average_watts) : null,
+        paceSecPerKm: distanceM >= 100 ? Math.round(movingTimeSec / (distanceM / 1000)) : null,
+      };
+    });
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -178,6 +238,7 @@ export async function storeStravaActivity(userId: string, stravaActivity: Record
     max_heartrate: number | null;
     total_elevation_gain: number;
     average_cadence: number | null;
+    average_watts: number | null;
     calories: number | null;
     perceived_exertion: number | null;
     start_date: string;
@@ -212,6 +273,7 @@ export async function storeStravaActivity(userId: string, stravaActivity: Record
     maxHeartRate: activity.max_heartrate ? Math.round(activity.max_heartrate) : null,
     elevationGainM: activity.total_elevation_gain ?? null,
     avgCadence: activity.average_cadence ? Math.round(activity.average_cadence) : null,
+    avgWatts: activity.average_watts ? Math.round(activity.average_watts) : null,
     calories: activity.calories ? Math.round(activity.calories) : null,
     perceivedEffort: activity.perceived_exertion ? Math.round(activity.perceived_exertion) : null,
     startDate,

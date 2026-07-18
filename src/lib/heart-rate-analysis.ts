@@ -40,14 +40,21 @@ export interface EffortSegment {
 
 export type EffortVerdict = "harder_than_planned" | "easier_than_planned" | "as_planned";
 
+export interface BestEffort {
+  distanceM: number; // target distance (1000, 1609, 5000, 10000)
+  timeSec: number; // fastest rolling time over that distance in this run
+  paceSecPerKm: number;
+}
+
 export interface ActivityAnalysis {
-  version: 1;
+  version: 2;
   maxHrUsed: number;
   zones: ZonePct | null;
   decouplingPct: number | null;
   paceFade: PaceFade | null;
   effortSegments: EffortSegment[];
   effortVsPlanned: EffortVerdict | null;
+  bestEfforts: BestEffort[];
   analyzedAt: string;
 }
 
@@ -295,22 +302,60 @@ export function classifyEffortVsPlanned(
   return null;
 }
 
+/**
+ * Fastest rolling efforts over classic benchmark distances, via two-pointer
+ * sweep over the cumulative distance/time curve. Only distances the run
+ * actually covers are returned. Pure pace — no HR needed.
+ */
+const BEST_EFFORT_TARGETS_M = [1000, 1609, 5000, 10000];
+
+export function computeBestEfforts(points: StreamPoint[]): BestEffort[] {
+  if (points.length < 10) return [];
+  const totalM = points[points.length - 1].distanceM;
+  const out: BestEffort[] = [];
+
+  for (const target of BEST_EFFORT_TARGETS_M) {
+    if (totalM < target) break;
+    let best = Infinity;
+    let j = 0;
+    for (let i = 0; i < points.length; i++) {
+      // advance j until at least `target` meters beyond point i
+      while (j < points.length && points[j].distanceM - points[i].distanceM < target) j++;
+      if (j >= points.length) break;
+      const elapsed = points[j].t - points[i].t;
+      if (elapsed > 0 && elapsed < best) best = elapsed;
+    }
+    if (Number.isFinite(best)) {
+      out.push({
+        distanceM: target,
+        timeSec: Math.round(best),
+        paceSecPerKm: Math.round(best / (target / 1000)),
+      });
+    }
+  }
+  return out;
+}
+
 // --- Orchestrator ---
 
 export function analyzeStreams(
   points: StreamPoint[],
-  maxHr: number,
+  maxHr: number | null,
   workoutType: string | null
 ): ActivityAnalysis {
-  const zones = computeZoneBreakdown(points, maxHr);
+  // HR-dependent metrics need both a max-HR reference and actual HR samples
+  const hrSamples = points.filter((p) => p.hr != null).length;
+  const hasHr = maxHr != null && hrSamples >= points.length * 0.5;
+  const zones = hasHr ? computeZoneBreakdown(points, maxHr) : null;
   return {
-    version: 1,
-    maxHrUsed: maxHr,
+    version: 2,
+    maxHrUsed: maxHr ?? 0,
     zones,
-    decouplingPct: computeCardiacDecoupling(points),
+    decouplingPct: hasHr ? computeCardiacDecoupling(points) : null,
     paceFade: computePaceFade(points),
     effortSegments: detectEffortSegments(points),
-    effortVsPlanned: classifyEffortVsPlanned(workoutType, zones),
+    effortVsPlanned: hasHr ? classifyEffortVsPlanned(workoutType, zones) : null,
+    bestEfforts: computeBestEfforts(points),
     analyzedAt: new Date().toISOString(),
   };
 }

@@ -404,23 +404,6 @@ export const toolDefinitions: Anthropic.Tool[] = [
     },
   },
   {
-    name: "manage_note",
-    description:
-      "Save, update, search, or delete notes — quick facts ('locker code is 4821'), lists (packing list), reference info. Use search before answering questions about previously stored facts. 'append' adds text to an existing note's body.",
-    input_schema: {
-      type: "object" as const,
-      properties: {
-        action: { type: "string", enum: ["create", "update", "append", "search", "delete"] },
-        note_id: { type: "string", description: "For update/append/delete" },
-        title: { type: "string" },
-        body: { type: "string" },
-        tags: { type: "array", items: { type: "string" } },
-        query: { type: "string", description: "Search text (action=search) — matches title, body, tags" },
-      },
-      required: ["action"],
-    },
-  },
-  {
     name: "query_schedule",
     description:
       "Read the unified schedule — calendar events, planned workouts from the training plan, and due tasks — for a date range. Use to answer 'what does my Thursday look like', to find free slots, and ALWAYS before scheduling something new, so you can flag conflicts (e.g. a long run colliding with an early flight).",
@@ -514,7 +497,6 @@ import type { Features } from "@/lib/features";
 
 const TOOL_FEATURE_GATES: Record<string, (f: Features) => boolean> = {
   manage_event: (f) => f.calendar,
-  manage_note: (f) => f.notes,
   query_schedule: (f) => f.calendar,
   manage_recipe: (f) => f.kitchen,
 };
@@ -570,8 +552,6 @@ export async function handleToolCall(
       return handleAddWeeklyTasks(input, userId);
     case "manage_event":
       return handleManageEvent(input, userId);
-    case "manage_note":
-      return handleManageNote(input, userId);
     case "query_schedule":
       return handleQuerySchedule(input, userId);
     case "create_workout":
@@ -1333,91 +1313,6 @@ async function handleManageEvent(
   return { success: false, error: `Unknown manage_event action: ${action}` };
 }
 
-async function handleManageNote(
-  input: Record<string, unknown>,
-  userId: string
-): Promise<ToolResult> {
-  const action = input.action as string;
-
-  if (action === "create") {
-    if (!input.title) return { success: false, error: "title is required" };
-    const note = await prisma.note.create({
-      data: {
-        userId,
-        title: input.title as string,
-        body: (input.body as string) || "",
-        tags: Array.isArray(input.tags) ? (input.tags as string[]).map(String) : [],
-      },
-    });
-    return {
-      success: true,
-      data: { note_id: note.id, title: note.title },
-      notification: { type: "note_saved", message: `Note saved: ${note.title}`, data: { id: note.id, domain: "notes" } },
-    };
-  }
-
-  if (action === "update" || action === "append") {
-    const note = await prisma.note.findFirst({ where: { id: input.note_id as string, userId } });
-    if (!note) return { success: false, error: "Note not found" };
-    const data: Record<string, unknown> = {};
-    if (input.title !== undefined) data.title = input.title;
-    if (input.body !== undefined) {
-      data.body = action === "append" ? `${note.body}\n${input.body}`.trim() : input.body;
-    }
-    if (input.tags !== undefined) data.tags = Array.isArray(input.tags) ? (input.tags as string[]).map(String) : [];
-    const updated = await prisma.note.update({ where: { id: note.id }, data });
-    return {
-      success: true,
-      data: { note_id: updated.id, title: updated.title },
-      notification: { type: "note_saved", message: `Note updated: ${updated.title}`, data: { id: updated.id, domain: "notes" } },
-    };
-  }
-
-  if (action === "search") {
-    const query = (input.query as string) || "";
-    const notes = await prisma.note.findMany({
-      where: {
-        userId,
-        ...(query
-          ? {
-              OR: [
-                { title: { contains: query, mode: "insensitive" } },
-                { body: { contains: query, mode: "insensitive" } },
-                { tags: { has: query.toLowerCase() } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: { updatedAt: "desc" },
-      take: 10,
-      select: { id: true, title: true, body: true, tags: true, updatedAt: true },
-    });
-    return {
-      success: true,
-      data: {
-        notes: notes.map((n) => ({
-          note_id: n.id,
-          title: n.title,
-          body: n.body.length > 500 ? n.body.slice(0, 500) + "…" : n.body,
-          tags: n.tags,
-        })),
-      },
-    };
-  }
-
-  if (action === "delete") {
-    const note = await prisma.note.findFirst({ where: { id: input.note_id as string, userId } });
-    if (!note) return { success: false, error: "Note not found" };
-    await prisma.note.delete({ where: { id: note.id } });
-    return {
-      success: true,
-      data: { note_id: note.id, deleted: true },
-      notification: { type: "note_deleted", message: `Note deleted: ${note.title}`, data: { id: note.id, domain: "notes" } },
-    };
-  }
-
-  return { success: false, error: `Unknown manage_note action: ${action}` };
-}
 
 async function handleQuerySchedule(
   input: Record<string, unknown>,

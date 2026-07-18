@@ -1,23 +1,23 @@
 import { prisma } from "@/lib/db";
 import type { Activity } from "@prisma/client";
-import { getValidToken, fetchActivityStreams } from "@/lib/strava";
+import { getValidToken, fetchActivityStreams, fetchActivityLaps } from "@/lib/strava";
 import { analyzeStreams, type StreamPoint, type ActivityAnalysis } from "@/lib/heart-rate-analysis";
 import { RUN_TYPES } from "@/lib/activity-types";
 
 const MIN_DURATION_SEC_FOR_ANALYSIS = 10 * 60; // 10 minutes — skip trivial jogs/warmups posted standalone
 
 /**
- * Whether a stored activity is worth spending a streams API call on.
+ * Whether a stored activity is worth spending streams + laps API calls on.
  * Deliberately includes ordinary "easy" runs, not just quality sessions —
  * catching an easy run that was secretly run too hard is one of the main
- * points of this feature, and only analyzing pre-flagged hard sessions
- * would miss exactly that case.
+ * points of this feature. HR is NOT required anymore: pace-based metrics
+ * (best efforts, effort segments, pace fade) and laps work without a strap;
+ * HR-dependent metrics (zones, decoupling) are simply omitted.
  */
 export function isEligibleForAnalysis(
   activity: Pick<Activity, "activityType" | "avgHeartRate" | "durationMin">
 ): boolean {
   if (!RUN_TYPES.includes(activity.activityType)) return false;
-  if (!activity.avgHeartRate) return false;
   return Number(activity.durationMin) * 60 >= MIN_DURATION_SEC_FOR_ANALYSIS;
 }
 
@@ -39,7 +39,7 @@ async function resolveMaxHr(userId: string): Promise<number | null> {
 function normalizeStreams(raw: Record<string, { data: unknown[] }>): StreamPoint[] {
   const time = raw.time.data as number[];
   const distance = raw.distance.data as number[];
-  const heartrate = raw.heartrate.data as number[];
+  const heartrate = (raw.heartrate?.data as number[] | undefined) ?? [];
   const velocity = raw.velocity_smooth.data as number[];
   const moving = (raw.moving?.data as boolean[] | undefined) ?? time.map(() => true);
 
@@ -67,10 +67,21 @@ export async function analyzeActivity(userId: string, activityId: string): Promi
   const activity = await prisma.activity.findFirst({ where: { id: activityId, userId } });
   if (!activity || !activity.stravaId) return null;
 
-  const maxHr = await resolveMaxHr(userId);
-  if (!maxHr) return null;
-
   const token = await getValidToken(userId);
+
+  // Laps: ground truth for interval execution, worth storing even when the
+  // streams call fails. Only when there's real structure — a single
+  // whole-run lap says nothing.
+  const laps = await fetchActivityLaps(token, activity.stravaId);
+  if (laps && laps.length >= 2) {
+    await prisma.activity.update({
+      where: { id: activity.id },
+      data: { laps: laps as unknown as object },
+    });
+  }
+
+  const maxHr = await resolveMaxHr(userId);
+
   const raw = await fetchActivityStreams(token, activity.stravaId);
   if (!raw) return null;
 
@@ -88,7 +99,7 @@ export async function analyzeActivity(userId: string, activityId: string): Promi
     select: { workoutType: true },
   });
 
-  const analysis = analyzeStreams(points, maxHr, plannedWorkout?.workoutType ?? null);
+  const analysis = analyzeStreams(points, maxHr ?? null, plannedWorkout?.workoutType ?? null);
 
   await prisma.activity.update({
     where: { id: activity.id },

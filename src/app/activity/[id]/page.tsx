@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
+import type { StravaLap } from "@/lib/strava";
 
 interface Split {
   distance: number;
@@ -39,11 +40,13 @@ interface ActivityDetail {
   maxHeartRate: number | null;
   elevationGainM: number | null;
   avgCadence: number | null;
+  avgWatts: number | null;
   calories: number | null;
   perceivedEffort: number | null;
   startDate: string;
   startDateLocal: string;
   splits: Split[] | null;
+  laps: StravaLap[] | null;
   activityAnalysis: ActivityAnalysis | null;
   matchedWorkout: MatchedWorkout | null;
 }
@@ -81,6 +84,78 @@ function Stat({ label, value }: { label: string; value: string | number }) {
     <div>
       <p className="text-[10px] text-gray-500 uppercase tracking-wider">{label}</p>
       <p className="text-sm font-medium text-white mt-0.5">{value}</p>
+    </div>
+  );
+}
+
+/**
+ * Watch-recorded laps — for structured workouts each step is one lap, so
+ * this table IS the interval execution report. Laps meaningfully faster
+ * than the run's median pace are highlighted as work reps.
+ */
+function LapsTable({ laps }: { laps: StravaLap[] }) {
+  const paces = laps.map((l) => l.paceSecPerKm).filter((p): p is number => p != null).sort((a, b) => a - b);
+  const median = paces.length > 0 ? paces[Math.floor(paces.length / 2)] : null;
+  const hasHr = laps.some((l) => l.avgHr != null);
+  const hasWatts = laps.some((l) => l.avgWatts != null);
+  const fmtTime = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-gray-500 border-b border-gray-800">
+            <th className="text-left py-1.5 pr-3 font-medium">Lap</th>
+            <th className="text-right py-1.5 px-3 font-medium">Dist</th>
+            <th className="text-right py-1.5 px-3 font-medium">Time</th>
+            <th className="text-right py-1.5 px-3 font-medium">Pace</th>
+            {hasHr && <th className="text-right py-1.5 px-3 font-medium">HR</th>}
+            {hasWatts && <th className="text-right py-1.5 pl-3 font-medium">Power</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {laps.map((l) => {
+            const isWork = median != null && l.paceSecPerKm != null && l.paceSecPerKm < median * 0.95;
+            return (
+              <tr key={l.lapIndex} className={`border-b border-gray-900 ${isWork ? "text-white font-medium" : "text-gray-400"}`}>
+                <td className="py-1.5 pr-3">
+                  {isWork && <span className="text-orange-400 mr-1">▸</span>}
+                  {l.name || l.lapIndex}
+                </td>
+                <td className="py-1.5 px-3 text-right font-mono">
+                  {l.distanceM >= 1000 ? `${(l.distanceM / 1000).toFixed(2)}km` : `${l.distanceM}m`}
+                </td>
+                <td className="py-1.5 px-3 text-right font-mono">{fmtTime(l.movingTimeSec)}</td>
+                <td className="py-1.5 px-3 text-right font-mono">{l.paceSecPerKm ? formatPace(l.paceSecPerKm) : "-"}</td>
+                {hasHr && <td className="py-1.5 px-3 text-right">{l.avgHr ?? "-"}</td>}
+                {hasWatts && <td className="py-1.5 pl-3 text-right">{l.avgWatts ? `${l.avgWatts}W` : "-"}</td>}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function BestEffortChips({ efforts }: { efforts: NonNullable<ActivityAnalysis["bestEfforts"]> }) {
+  const fmtTime = (sec: number) =>
+    sec >= 3600
+      ? `${Math.floor(sec / 3600)}:${String(Math.floor((sec % 3600) / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`
+      : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+  const labels: Record<number, string> = { 1000: "1k", 1609: "1 mile", 5000: "5k", 10000: "10k" };
+  return (
+    <div>
+      <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Best efforts in this run</p>
+      <div className="flex flex-wrap gap-2">
+        {efforts.map((e) => (
+          <div key={e.distanceM} className="bg-gray-800 border border-gray-700 rounded-lg px-2.5 py-1.5">
+            <span className="text-[11px] text-gray-500 mr-1.5">{labels[e.distanceM] || `${e.distanceM}m`}</span>
+            <span className="text-xs font-mono text-gray-200">{fmtTime(e.timeSec)}</span>
+            <span className="text-[10px] text-gray-500 ml-1.5">{formatPace(e.paceSecPerKm)}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -280,6 +355,10 @@ function IntensitySection({
               <EffortSegmentsTable segments={analysis.effortSegments} />
             </div>
           )}
+
+          {Array.isArray(analysis.bestEfforts) && analysis.bestEfforts.length > 0 && (
+            <BestEffortChips efforts={analysis.bestEfforts} />
+          )}
         </div>
       )}
     </section>
@@ -424,6 +503,9 @@ export default function ActivityDetailPage() {
         {activity.avgCadence != null && (
           <Stat label="Cadence" value={`${activity.avgCadence} spm`} />
         )}
+        {activity.avgWatts != null && (
+          <Stat label="Avg power" value={`${activity.avgWatts} W`} />
+        )}
         {activity.calories != null && activity.calories > 0 && (
           <Stat label="Calories" value={`${activity.calories} kcal`} />
         )}
@@ -438,6 +520,18 @@ export default function ActivityDetailPage() {
         analysis={activity.activityAnalysis}
         onAnalyzed={(a) => setActivity({ ...activity, activityAnalysis: a })}
       />
+
+      {/* Laps — watch-recorded, one per structured-workout step */}
+      {activity.laps && Array.isArray(activity.laps) && activity.laps.length >= 2 && (
+        <section className="mb-6">
+          <h2 className="text-sm font-medium text-gray-400 uppercase tracking-wider mb-3">
+            Laps
+          </h2>
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+            <LapsTable laps={activity.laps} />
+          </div>
+        </section>
+      )}
 
       {/* Splits */}
       {activity.splits && Array.isArray(activity.splits) && activity.splits.length > 0 && (
