@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { getEventOccurrences, getPlannedWorkouts, parseWall } from "@/lib/schedule";
+import { activityDayKey } from "@/lib/plan-progress";
 import type { EventCategory, RecurrenceFreq } from "@prisma/client";
 
 const CATEGORIES = ["work", "family", "training", "social", "health", "birthday", "other"];
@@ -19,12 +20,49 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "from and to (yyyy-MM-dd) required" }, { status: 400 });
   }
 
-  const [events, workouts] = await Promise.all([
+  const [events, workouts, rawActivities] = await Promise.all([
     getEventOccurrences(session.userId, from, to),
     getPlannedWorkouts(session.userId, from, to, { includeRest: false }),
+    // Completed activities in range (all sources: Strava, chat-logged,
+    // in-app workout player) so the calendar can show done vs. planned.
+    // 1-day pad on the DB filter absorbs timezone offsets; the day-key
+    // filter below trims back to the requested range.
+    prisma.activity.findMany({
+      where: {
+        userId: session.userId,
+        startDateLocal: {
+          gte: new Date(parseWall(from).getTime() - 86400000),
+          lte: new Date(parseWall(to).getTime() + 2 * 86400000),
+        },
+      },
+      orderBy: { startDateLocal: "asc" },
+      select: {
+        id: true,
+        name: true,
+        activityType: true,
+        distanceKm: true,
+        durationMin: true,
+        avgPacePerKm: true,
+        startDateLocal: true,
+        source: true,
+      },
+    }),
   ]);
 
-  return NextResponse.json({ events, workouts });
+  const activities = rawActivities
+    .map((a) => ({
+      activityId: a.id,
+      date: activityDayKey(a.startDateLocal),
+      name: a.name,
+      activityType: a.activityType,
+      distanceKm: a.distanceKm ? Number(a.distanceKm) : null,
+      durationMin: a.durationMin ? Number(a.durationMin) : null,
+      avgPacePerKm: a.avgPacePerKm,
+      source: a.source,
+    }))
+    .filter((a) => a.date >= from && a.date <= to);
+
+  return NextResponse.json({ events, workouts, activities });
 }
 
 /** POST /api/events — create event (manual form) */

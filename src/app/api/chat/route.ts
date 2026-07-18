@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { buildCoachContext, buildSystemPrompt } from "@/lib/coach-context";
 import { toolsForFeatures, handleToolCall } from "@/lib/tools";
 import { resolveFeatures } from "@/lib/features";
+import { ensureFreshStravaData } from "@/lib/strava-fresh";
 
 const anthropic = new Anthropic();
 
@@ -41,6 +42,11 @@ export async function POST(request: NextRequest) {
 
   const model = "claude-opus-4-6";
 
+  // Pull anything new from Strava before building context (no-op if synced
+  // in the last 15 min) — the coach must never claim a workout didn't
+  // happen just because the once-a-day sync hasn't run since it did.
+  await ensureFreshStravaData(session.userId);
+
   // Build context and system prompt
   const user = await prisma.user.findUnique({
     where: { id: session.userId },
@@ -68,13 +74,17 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  // Load conversation history (last 40 messages for this session)
-  const history = await prisma.chatMessage.findMany({
+  // Load conversation history — the LAST 40 messages for this session.
+  // (orderBy asc + take would return the FIRST 40, silently cutting off the
+  // newest messages — including the one just sent — once a long-running
+  // daily session grows past 40.)
+  const historyDesc = await prisma.chatMessage.findMany({
     where: { sessionId },
-    orderBy: { createdAt: "asc" },
+    orderBy: { createdAt: "desc" },
     take: 40,
     select: { role: true, content: true },
   });
+  const history = historyDesc.reverse();
 
   // Build messages array for Anthropic
   const messages: Anthropic.MessageParam[] = history

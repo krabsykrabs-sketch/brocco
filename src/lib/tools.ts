@@ -487,13 +487,14 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: "manage_recipe",
     description:
-      "The user's recipe library (kitchen helper). Actions: 'search' recipes by ingredient/title/tag (ALWAYS search before suggesting meals — prefer their own saved recipes), 'get' full ingredients+steps by id, 'save' a new recipe (when the user asks to keep one you suggested, or dictates one), 'cooked' to log that they made it, 'delete'. When the user lists ingredients they have (\"I have zucchini, eggs, feta\"), search the library for matches first, then suggest — and consider their training: carb-forward before long runs, protein after strength sessions.",
+      "The user's recipe library (kitchen helper). Actions: 'search' recipes by ingredient/title/tag (ALWAYS search before suggesting meals — prefer their own saved recipes), 'get' full ingredients+steps by id, 'save' a new recipe (when the user asks to keep one you suggested, or dictates one), 'cooked' to log that they made it, 'delete'. Pantry staples (ingredients always in stock, e.g. curry paste, chickpeas — assume them available in EVERY suggestion): 'staples_add' / 'staples_remove' with the staples array, 'staples_list' to read. When the user lists ingredients they have (\"I have zucchini, eggs, feta\"), search the library for matches first, then suggest — combining their listed ingredients WITH their pantry staples — and consider their training: carb-forward before long runs, protein after strength sessions.",
     input_schema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["search", "get", "save", "cooked", "delete"] },
+        action: { type: "string", enum: ["search", "get", "save", "cooked", "delete", "staples_add", "staples_remove", "staples_list"] },
         recipe_id: { type: "string", description: "For get/cooked/delete" },
         query: { type: "string", description: "For search — ingredient, title, or tag" },
+        staples: { type: "array", items: { type: "string" }, description: "For staples_add/staples_remove — ingredient names" },
         title: { type: "string" },
         ingredients: { type: "array", items: { type: "string" }, description: "One entry per ingredient, with quantity" },
         steps: { type: "array", items: { type: "string" } },
@@ -1186,7 +1187,7 @@ import {
 import { setTodoDone, resolveListByName, parseDueDate } from "@/lib/todos";
 import { moodEmoji, moodLabel, renderJournalText, averageMood } from "@/lib/journal";
 import { validateWorkoutDefinition, estimateDurationMin } from "@/lib/guided-workout";
-import { validateRecipeInput, recipeMatches } from "@/lib/recipes";
+import { validateRecipeInput, recipeMatches, normalizeStaples } from "@/lib/recipes";
 import type { EventCategory, RecurrenceFreq, TodoPriority } from "@prisma/client";
 
 const EVENT_CATEGORIES = ["work", "family", "training", "social", "health", "birthday", "other"];
@@ -1831,6 +1832,45 @@ async function handleManageRecipe(
       data: { recipe_id: recipe.id, deleted: true },
       notification: { type: "recipe_deleted", message: `Recipe deleted: ${recipe.title}`, data: { id: recipe.id, domain: "kitchen" } },
     };
+  }
+
+  if (action === "staples_add" || action === "staples_remove" || action === "staples_list") {
+    const profile = await prisma.userProfile.findUnique({
+      where: { userId },
+      select: { pantryStaples: true },
+    });
+    let staples = normalizeStaples(profile?.pantryStaples);
+
+    if (action !== "staples_list") {
+      const changes = normalizeStaples(input.staples);
+      if (changes.length === 0) {
+        return { success: false, error: "staples array required (ingredient names)" };
+      }
+      if (action === "staples_add") {
+        staples = normalizeStaples([...staples, ...changes]);
+      } else {
+        const remove = new Set(changes.map((s) => s.toLowerCase()));
+        staples = staples.filter((s) => !remove.has(s.toLowerCase()));
+      }
+      await prisma.userProfile.update({
+        where: { userId },
+        data: { pantryStaples: staples },
+      });
+      return {
+        success: true,
+        data: { staples },
+        notification: {
+          type: "staples_updated",
+          message:
+            action === "staples_add"
+              ? `Pantry staples added: ${changes.join(", ")}`
+              : `Pantry staples removed: ${changes.join(", ")}`,
+          data: { domain: "kitchen" },
+        },
+      };
+    }
+
+    return { success: true, data: { staples } };
   }
 
   return { success: false, error: `Unknown manage_recipe action: ${action}` };

@@ -5,11 +5,13 @@ import {
   renderAgendaText,
   getUpcomingBirthdays,
   todayInTimezone,
+  nowInTimezone,
   parseWall,
   wallDateString,
   formatDateShort,
   addDaysWall,
 } from "@/lib/schedule";
+import { groupActivitiesByDay, workoutOutcome, activityDayKey } from "@/lib/plan-progress";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 import { resolveFeatures, anyLifeFeature, type Features } from "@/lib/features";
 import { renderJournalText, averageMood } from "@/lib/journal";
@@ -33,6 +35,7 @@ export async function buildCoachContext(userId: string): Promise<string> {
       select: {
         name: true,
         activityType: true,
+        source: true,
         distanceKm: true,
         durationMin: true,
         movingTimeMin: true,
@@ -88,8 +91,8 @@ export async function buildCoachContext(userId: string): Promise<string> {
     }
   }
 
-  // --- Current plan (next 14 days) ---
-  const planBlock = await buildPlanContext(userId, now);
+  // --- Current plan (this week reconciled + next 2 weeks) ---
+  const planBlock = await buildPlanContext(userId, profile.timezone);
 
   // --- Recent activities (last 14 days, summarized) ---
   let activitiesBlock = "RECENT TRAINING (last 14 days):\n";
@@ -106,9 +109,12 @@ export async function buildCoachContext(userId: string): Promise<string> {
         const elev = a.elevationGainM && Number(a.elevationGainM) > 50 ? `+${Math.round(Number(a.elevationGainM))}m` : "";
         const parts = [dist, dur, pace, hr, elev].filter(Boolean).join(", ");
         const intensity = formatIntensityAnnotation(a.activityAnalysis);
-        return `- ${date}: ${a.activityType} "${a.name}" — ${parts}${intensity}`;
+        const src = a.source === "strava" ? "strava" : "logged in app";
+        return `- ${date}: ${a.activityType} "${a.name}" — ${parts} (${src})${intensity}`;
       })
       .join("\n");
+    activitiesBlock +=
+      "\n(This list includes EVERY recorded workout regardless of source — Strava, logged via chat, or done with the in-app workout player. Trust it.)";
   }
 
   // --- Training load (last 8 weeks) ---
@@ -248,7 +254,7 @@ function formatIntensityAnnotation(raw: unknown): string {
   return parts.length > 0 ? ` [${parts.join("; ")}]` : "";
 }
 
-async function buildPlanContext(userId: string, now: Date): Promise<string> {
+async function buildPlanContext(userId: string, timezone: string): Promise<string> {
   const plan = await prisma.plan.findFirst({
     where: { userId, status: "active" },
     select: { id: true, name: true },
@@ -265,7 +271,7 @@ async function buildPlanContext(userId: string, now: Date): Promise<string> {
     include: { phase: { select: { name: true } } },
   });
 
-  const todayStr = format(now, "yyyy-MM-dd");
+  const todayStr = todayInTimezone(timezone);
   let currentWeekNum: number | null = null;
   let currentWeekStart: string | null = null;
   let currentWeekEnd: string | null = null;
@@ -333,44 +339,125 @@ async function buildPlanContext(userId: string, now: Date): Promise<string> {
     block += `CURRENT WEEK: Week ${currentWeekNum} of ${totalWeeks} (${currentWeekStart}-${currentWeekEnd}).${phaseStr} ${completedWeeks} week${completedWeeks !== 1 ? "s" : ""} completed.\n\n`;
   }
 
-  // Get workouts for next 2 weeks
-  const twoWeeksOut = new Date(now);
-  twoWeeksOut.setDate(twoWeeksOut.getDate() + 14);
+  // This week (from Monday, INCLUDING days already past) + next week, so the
+  // model sees planned vs. actually-done — not just what's still ahead. The
+  // old `date >= now` query silently dropped TODAY's workout all day long
+  // (workout dates are stored at midnight).
+  const todayWall = parseWall(todayStr);
+  const dow = todayWall.getUTCDay() === 0 ? 7 : todayWall.getUTCDay();
+  const weekStart = addDaysWall(todayWall, -(dow - 1));
+  const rangeEnd = addDaysWall(weekStart, 13);
 
-  const workouts = await prisma.plannedWorkout.findMany({
-    where: {
-      planId: plan.id,
-      date: { gte: now, lte: twoWeeksOut },
-    },
-    orderBy: { date: "asc" },
-    select: {
-      id: true,
-      date: true,
-      title: true,
-      workoutType: true,
-      targetDistanceKm: true,
-      targetPace: true,
-      targetDurationMin: true,
-      description: true,
-      status: true,
-    },
-  });
+  const [workouts, weekActivities] = await Promise.all([
+    prisma.plannedWorkout.findMany({
+      where: { planId: plan.id, date: { gte: weekStart, lte: rangeEnd } },
+      orderBy: { date: "asc" },
+      select: {
+        id: true,
+        date: true,
+        title: true,
+        workoutType: true,
+        activityType: true,
+        targetDistanceKm: true,
+        targetPace: true,
+        targetDurationMin: true,
+        status: true,
+      },
+    }),
+    prisma.activity.findMany({
+      where: {
+        userId,
+        // 1-day pad absorbs timezone offsets around the week boundary
+        startDateLocal: { gte: new Date(weekStart.getTime() - 86400000) },
+      },
+      select: {
+        name: true,
+        activityType: true,
+        distanceKm: true,
+        durationMin: true,
+        avgPacePerKm: true,
+        startDateLocal: true,
+        source: true,
+      },
+    }),
+  ]);
 
-  block += "Upcoming workouts (next 2 weeks):\n";
-  if (workouts.length === 0) {
-    block += "No workouts scheduled in the next 2 weeks.";
-  } else {
-    block += workouts
-      .map((w) => {
-        const date = format(new Date(w.date), "MMM d (EEE)");
-        const dist = w.targetDistanceKm ? `${Number(w.targetDistanceKm)}km` : "";
-        const pace = w.targetPace || "";
-        const dur = w.targetDurationMin ? `${w.targetDurationMin}min` : "";
-        const parts = [dist, pace, dur].filter(Boolean).join(", ");
-        return `- ${date}: ${w.workoutType} "${w.title}" — ${parts} [${w.status}] (id: ${w.id})`;
+  const byDay = groupActivitiesByDay(weekActivities);
+  const matchedActs = new Set<(typeof weekActivities)[number]>();
+
+  const renderTargets = (w: (typeof workouts)[number]) =>
+    [
+      w.targetDistanceKm ? `${Number(w.targetDistanceKm)}km` : "",
+      w.targetPace || "",
+      w.targetDurationMin ? `${w.targetDurationMin}min` : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+  const renderLine = (w: (typeof workouts)[number]) => {
+    const dateStr = wallDateString(w.date);
+    const { outcome, matched } = workoutOutcome(
+      { dateStr, activityType: w.activityType, workoutType: w.workoutType, status: w.status },
+      byDay,
+      todayStr
+    );
+    if (matched) matchedActs.add(matched);
+    let ann: string;
+    switch (outcome) {
+      case "done": {
+        if (matched) {
+          const dist = matched.distanceKm ? `${Number(matched.distanceKm).toFixed(1)}km` : "";
+          const dur = matched.durationMin ? `${Math.round(Number(matched.durationMin))}min` : "";
+          const pace = matched.avgPacePerKm || "";
+          const det = [dist, dur, pace].filter(Boolean).join(", ");
+          ann = `✓ DONE — "${matched.name}"${det ? ` (${det})` : ""}`;
+        } else {
+          ann = "✓ DONE (marked completed)";
+        }
+        break;
+      }
+      case "missed":
+        ann = "✗ NOT DONE";
+        break;
+      case "skipped":
+        ann = "skipped";
+        break;
+      case "today_pending":
+        ann = "TODAY — not done yet (check the current time before commenting; earlier in the day this is expected, not missed)";
+        break;
+      case "rest":
+        ann = "rest day";
+        break;
+      default:
+        ann = "upcoming";
+    }
+    return `- ${formatDateShort(dateStr)}: ${w.workoutType} "${w.title}"${renderTargets(w) ? ` — ${renderTargets(w)}` : ""} [${ann}] (id: ${w.id})`;
+  };
+
+  const thisWeek = workouts.filter((w) => wallDateString(w.date) <= wallDateString(addDaysWall(weekStart, 6)));
+  const nextWeek = workouts.filter((w) => wallDateString(w.date) > wallDateString(addDaysWall(weekStart, 6)));
+
+  block += `THIS WEEK (${formatDateShort(wallDateString(weekStart))} – ${formatDateShort(wallDateString(addDaysWall(weekStart, 6)))}) — planned vs. actual:\n`;
+  block += thisWeek.length > 0 ? thisWeek.map(renderLine).join("\n") : "No workouts planned this week.";
+
+  // Activities this week that don't correspond to any planned workout —
+  // spontaneous runs, extra rides, ad-hoc strength sessions
+  const extras = weekActivities.filter(
+    (a) => !matchedActs.has(a) && activityDayKey(a.startDateLocal) >= wallDateString(weekStart)
+  );
+  if (extras.length > 0) {
+    block += "\nExtra (unplanned) activities this week:\n";
+    block += extras
+      .map((a) => {
+        const dist = a.distanceKm ? `${Number(a.distanceKm).toFixed(1)}km` : "";
+        const dur = a.durationMin ? `${Math.round(Number(a.durationMin))}min` : "";
+        return `- ${format(new Date(a.startDateLocal), "MMM d (EEE)")}: ${a.activityType} "${a.name}" — ${[dist, dur, a.avgPacePerKm].filter(Boolean).join(", ")}`;
       })
       .join("\n");
   }
+
+  block += "\n\nNext week:\n";
+  block += nextWeek.length > 0 ? nextWeek.map(renderLine).join("\n") : "No workouts scheduled yet.";
   return block;
 }
 
@@ -489,19 +576,33 @@ export async function buildSystemPrompt(
     ? `\nROUTING — pick the right tool without making the user name the feature:\n${routingLines}\n`
     : "";
 
+  const pantryStaples =
+    life.kitchen && Array.isArray(profile?.pantryStaples)
+      ? (profile!.pantryStaples as unknown[]).filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+      : [];
+  const staplesBlock =
+    pantryStaples.length > 0
+      ? `\nPANTRY STAPLES (the user ALWAYS has these in stock — assume they're available in every recipe suggestion without being listed): ${pantryStaples.join(", ")}. Manage the list with manage_recipe actions staples_add / staples_remove when the user mentions changes ("I always have harissa now", "we're done with chickpeas").\n`
+      : life.kitchen
+      ? `\n(No pantry staples saved yet. If the user mentions ingredients they always keep in stock, offer to save them with manage_recipe staples_add.)\n`
+      : "";
+
   const crossDomainBlock = life.calendar
     ? `\nCROSS-DOMAIN AWARENESS (your signature move):
 You see training AND life in one place — use it. Before adding events, and when the plan changes, check the schedule (context above, or query_schedule for other dates) and flag collisions: "Your long run is Saturday morning but you've got a 7am flight — want me to move the run to Friday?" Mention conflicts proactively; offer a concrete fix; let the user decide. Same for fatigue-vs-life logic: a packed work week or late social events around hard sessions are worth a comment.\n`
     : "";
 
+  const tz = profile?.timezone || "Europe/Berlin";
+  const nowWall = nowInTimezone(tz);
   const identity = `${identityLine}
 
-Today's date is ${todayString(profile?.timezone)}. All times are the user's local time (${profile?.timezone || "Europe/Berlin"}).
+Today's date is ${todayString(profile?.timezone)} and the CURRENT TIME is ${nowWall.slice(11, 16)}. All times are the user's local time (${tz}).
+Factor the time of day into everything: at 7am, today's workout simply hasn't happened yet — that's normal, not a missed session. A planned workout only counts as missed once its day is over. Never claim the user hasn't trained without checking the reconciled plan (✓/✗ annotations) and recent-training list below — they include workouts from ALL sources (Strava, chat-logged, in-app workout player).
 
 ${accessLine}
 
 ${context}
-${routingBlock}${crossDomainBlock}
+${routingBlock}${staplesBlock}${crossDomainBlock}
 COACHING GUIDELINES:`;
 
   return `${identity}

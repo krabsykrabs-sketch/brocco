@@ -383,86 +383,29 @@ export default function ChatUI({
                   role: m.role as "user" | "assistant",
                   displayText: m.displayText,
                 }));
-
-              if (existingMsgs.length > 0) {
-                setMessages(existingMsgs);
-
-                // Smart trigger check: should we generate a new analysis?
-                const lastOpenerDate = localStorage.getItem("brocco_last_opener_date");
-                const lastOpenerActivityId = localStorage.getItem("brocco_last_opener_activity_id");
-                const todayStr = new Date().toISOString().split("T")[0];
-
-                // Check for new activity
-                let trigger: string | null = null;
-                try {
-                  const actRes = await fetch("/api/strava/activities?limit=1");
-                  if (actRes.ok) {
-                    const actData = await actRes.json();
-                    const latestId = actData.activities?.[0]?.id;
-                    if (latestId && latestId !== lastOpenerActivityId) {
-                      trigger = "new_activity";
-                    }
-                  }
-                } catch { /* non-critical */ }
-
-                if (!trigger && lastOpenerDate !== todayStr) {
-                  trigger = "new_day";
-                }
-
-                if (trigger) {
-                  // Generate a new opener and append it
-                  const openerRes = await fetch("/api/chat/opener", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ sessionId: data.id, trigger }),
-                  });
-                  if (!cancelled && openerRes.ok) {
-                    const { opener } = await openerRes.json();
-                    setMessages(prev => [...prev, {
-                      id: `opener-${Date.now()}`,
-                      role: "assistant" as const,
-                      displayText: opener,
-                    }]);
-                    // Update trigger tracking
-                    localStorage.setItem("brocco_last_opener_date", todayStr);
-                    try {
-                      const actRes2 = await fetch("/api/strava/activities?limit=1");
-                      if (actRes2.ok) {
-                        const d2 = await actRes2.json();
-                        if (d2.activities?.[0]?.id) localStorage.setItem("brocco_last_opener_activity_id", d2.activities[0].id);
-                      }
-                    } catch { /* non-critical */ }
-                  }
-                }
-
-                return;
-              }
+              if (existingMsgs.length > 0) setMessages(existingMsgs);
             }
           }
 
-          // New session — request contextual opener
+          // Ask the server for an opener. The server holds the gate (one
+          // analysis per day, plus a fresh one when a new workout has landed
+          // since the last) and answers { skipped: true } otherwise — no
+          // client-side/localStorage trigger tracking, so phone and desktop
+          // stay in sync.
           const openerRes = await fetch("/api/chat/opener", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sessionId: data.id, trigger: "new_session" }),
+            body: JSON.stringify({ sessionId: data.id }),
           });
           if (cancelled) return;
           if (openerRes.ok) {
-            const { opener } = await openerRes.json();
-            setMessages([{
-              id: `opener-${Date.now()}`,
-              role: "assistant",
-              displayText: opener,
-            }]);
-            // Set trigger tracking
-            localStorage.setItem("brocco_last_opener_date", new Date().toISOString().split("T")[0]);
-            try {
-              const actRes = await fetch("/api/strava/activities?limit=1");
-              if (actRes.ok) {
-                const d = await actRes.json();
-                if (d.activities?.[0]?.id) localStorage.setItem("brocco_last_opener_activity_id", d.activities[0].id);
-              }
-            } catch { /* non-critical */ }
+            const d = await openerRes.json();
+            if (d.opener) {
+              setMessages((prev) => [
+                ...prev,
+                { id: `opener-${Date.now()}`, role: "assistant" as const, displayText: d.opener },
+              ]);
+            }
           }
         }
       } catch {

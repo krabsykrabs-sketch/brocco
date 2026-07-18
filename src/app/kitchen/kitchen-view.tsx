@@ -283,6 +283,96 @@ function RecipeSheet({
 
 const MAX_PAGES = 4;
 
+/**
+ * "Always in stock" pantry staples — ingredients Brocco assumes are available
+ * in every recipe suggestion without the user listing them (curry paste,
+ * chickpeas, …). Stored on the profile; also editable via chat
+ * (manage_recipe staples_add/staples_remove).
+ */
+function StaplesSection() {
+  const [staples, setStaples] = useState<string[]>([]);
+  const [input, setInput] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/recipes/staples")
+      .then((r) => r.json())
+      .then((d) => setStaples(d.staples || []))
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  async function save(next: string[]) {
+    const prev = staples;
+    setStaples(next);
+    try {
+      const res = await fetch("/api/recipes/staples", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staples: next }),
+      });
+      if (!res.ok) throw new Error();
+      const d = await res.json();
+      setStaples(d.staples || next);
+    } catch {
+      setStaples(prev);
+      emitToast({ text: "Couldn't save staples — try again.", kind: "error" });
+    }
+  }
+
+  function addFromInput() {
+    // Allow comma-separated entry: "curry paste, chickpeas, coconut milk"
+    const items = input.split(",").map((s) => s.trim()).filter(Boolean);
+    if (items.length === 0) return;
+    setInput("");
+    save([...staples, ...items]);
+  }
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+      <p className="text-sm font-medium text-gray-100">🧂 Always in stock</p>
+      <p className="text-[11px] text-gray-500 mt-0.5 mb-2">
+        Brocco assumes these in every recipe idea — no need to list them each time.
+      </p>
+      {loaded && staples.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {staples.map((s) => (
+            <span
+              key={s}
+              className="inline-flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-full pl-2.5 pr-1 py-0.5 text-xs text-gray-200"
+            >
+              {s}
+              <button
+                onClick={() => save(staples.filter((x) => x !== s))}
+                aria-label={`Remove ${s}`}
+                className="w-4 h-4 flex items-center justify-center rounded-full text-gray-500 hover:text-red-400"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") addFromInput(); }}
+          placeholder="curry paste, chickpeas…"
+          className="flex-1 px-3 py-1.5 bg-gray-950 border border-gray-700 rounded-lg text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-green-500"
+        />
+        <button
+          onClick={addFromInput}
+          disabled={!input.trim()}
+          className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-200 text-xs rounded-lg transition-colors"
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function KitchenView() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [query, setQuery] = useState("");
@@ -459,6 +549,9 @@ export default function KitchenView() {
             </div>
           </div>
         )}
+
+        {/* Pantry staples */}
+        <StaplesSection />
 
         {/* Search */}
         <input
