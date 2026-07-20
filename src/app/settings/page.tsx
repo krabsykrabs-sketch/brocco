@@ -24,6 +24,40 @@ interface ProfileData {
   hrMaxBpm: number | null;
 }
 
+interface SyncData {
+  created?: number; updated?: number; deleted?: number;
+  hasActivePlan?: boolean; windowWorkouts?: number; desiredCount?: number;
+  skippedType?: number; skippedNoTarget?: number; onCalendar?: number;
+}
+
+/**
+ * Turn a sync result into a message that explains a "nothing changed"
+ * outcome — the common confusion is that "0 new" can mean either
+ * "already up to date" or "nothing to push", which need opposite fixes.
+ */
+function describeSync(d: SyncData): string {
+  const changed = (d.created || 0) + (d.updated || 0) + (d.deleted || 0);
+  if (changed > 0) {
+    return `Synced: ${d.created || 0} new, ${d.updated || 0} updated, ${d.deleted || 0} removed.`;
+  }
+  // Nothing changed — say why.
+  if (d.hasActivePlan === false) {
+    return "No active training plan yet — build one with Brocco, then its upcoming workouts sync here.";
+  }
+  if ((d.desiredCount || 0) > 0) {
+    return `Already up to date — all ${d.desiredCount} upcoming workout${d.desiredCount === 1 ? "" : "s"} are on your intervals.icu calendar. If they're not on your watch, open intervals.icu → your COROS/Garmin connection and turn on “Upload planned workouts”.`;
+  }
+  if ((d.windowWorkouts || 0) === 0) {
+    return "No runs scheduled in the next 2 weeks, so there's nothing to push. Watch sync only sends the upcoming 14 days.";
+  }
+  // Workouts exist in the window but none were syncable.
+  const bits: string[] = [];
+  if (d.skippedType) bits.push(`${d.skippedType} aren't run/ride (strength & co. stay in the app)`);
+  if (d.skippedNoTarget) bits.push(`${d.skippedNoTarget} have no distance or pace target`);
+  const why = bits.length ? ` — ${bits.join(", ")}` : "";
+  return `Found ${d.windowWorkouts} workout${d.windowWorkouts === 1 ? "" : "s"} in the next 2 weeks but none could go to your watch${why}.`;
+}
+
 /**
  * Watch sync via intervals.icu — planned workouts are pushed to the user's
  * intervals.icu calendar, which forwards them to COROS / Garmin / Wahoo /
@@ -55,7 +89,7 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
       const s = data.initialSync;
       setMessage(
         `Connected${data.athleteName ? ` as ${data.athleteName}` : ""}.` +
-          (s?.synced ? ` Pushed ${s.created || 0} workout${(s.created || 0) === 1 ? "" : "s"} to your calendar.` : "")
+          (s?.synced ? ` ${describeSync(s)}` : "")
       );
       setConnected(true);
       setConnectedId(athleteId.trim());
@@ -74,11 +108,7 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
     try {
       const res = await fetch("/api/intervals/sync", { method: "POST" });
       const data = await res.json();
-      setMessage(
-        res.ok
-          ? `Synced: ${data.created || 0} new, ${data.updated || 0} updated, ${data.deleted || 0} removed.`
-          : data.error || "Sync failed"
-      );
+      setMessage(res.ok ? describeSync(data) : data.error || "Sync failed");
     } catch {
       setMessage("Sync failed — try again.");
     } finally {

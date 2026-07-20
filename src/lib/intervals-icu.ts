@@ -154,9 +154,24 @@ interface IcuEvent {
  * adjustments, week promotion). Never throws — watch sync must not break
  * plan operations; returns a summary for logging/UI.
  */
+export interface SyncResult {
+  synced: boolean;
+  created?: number;
+  updated?: number;
+  deleted?: number;
+  error?: string;
+  // Diagnostics — explain what a "0 new / 0 updated" result actually means.
+  hasActivePlan?: boolean;
+  windowWorkouts?: number;   // non-rest, non-done plan workouts in the 14d window
+  desiredCount?: number;     // of those, how many are syncable (run/ride with a target)
+  skippedType?: number;      // skipped: activity type the watch doesn't take (strength/swim/…)
+  skippedNoTarget?: number;  // skipped: no distance/duration/steps to guide with
+  onCalendar?: number;       // brocc-tagged events already on the intervals.icu calendar
+}
+
 export async function syncWorkoutsToIntervals(
   userId: string
-): Promise<{ synced: boolean; created?: number; updated?: number; deleted?: number; error?: string }> {
+): Promise<SyncResult> {
   try {
     const profile = await prisma.userProfile.findUnique({
       where: { userId },
@@ -167,6 +182,11 @@ export async function syncWorkoutsToIntervals(
     }
     const athleteId = profile.intervalsAthleteId;
     const apiKey = decryptToken(profile.intervalsApiKey);
+
+    const activePlan = await prisma.plan.findFirst({
+      where: { userId, status: "active" },
+      select: { id: true },
+    });
 
     const today = todayInTimezone(profile.timezone);
     const windowEnd = wallDateString(addDaysWall(parseWall(today), SYNC_WINDOW_DAYS));
@@ -186,11 +206,13 @@ export async function syncWorkoutsToIntervals(
       string,
       { start_date_local: string; category: "WORKOUT"; type: string; name: string; description: string; external_id: string }
     >();
+    let skippedType = 0;
+    let skippedNoTarget = 0;
     for (const w of workouts) {
       const type = SYNCABLE_ACTIVITY[w.activityType];
-      if (!type) continue; // strength/swim/etc. live in the app, not the watch
+      if (!type) { skippedType++; continue; } // strength/swim/etc. live in the app, not the watch
       const dsl = renderWorkoutDsl(w);
-      if (!dsl) continue; // nothing measurable to guide
+      if (!dsl) { skippedNoTarget++; continue; } // nothing measurable to guide
       const extId = `brocc-${w.id}`;
       desired.set(extId, {
         start_date_local: `${wallDateString(w.date)}T00:00:00`,
@@ -214,6 +236,15 @@ export async function syncWorkoutsToIntervals(
     const existing = ((listRes.data as IcuEvent[]) || []).filter(
       (e) => typeof e.external_id === "string" && e.external_id.startsWith("brocc-")
     );
+
+    const diag = {
+      hasActivePlan: !!activePlan,
+      windowWorkouts: workouts.length,
+      desiredCount: desired.size,
+      skippedType,
+      skippedNoTarget,
+      onCalendar: existing.length,
+    };
 
     let created = 0;
     let updated = 0;
@@ -242,7 +273,7 @@ export async function syncWorkoutsToIntervals(
       if (post.ok) created++;
     }
 
-    return { synced: true, created, updated, deleted };
+    return { synced: true, created, updated, deleted, ...diag };
   } catch (err) {
     console.error("[intervals-icu] sync failed:", err);
     return { synced: false, error: "sync_failed" };
@@ -272,7 +303,11 @@ export function syncWorkoutsInBackground(userId: string): void {
   syncWorkoutsToIntervals(userId)
     .then((r) => {
       if (r.synced) {
-        console.log(`[intervals-icu] synced user=${userId}: +${r.created} ~${r.updated} -${r.deleted}`);
+        console.log(
+          `[intervals-icu] synced user=${userId}: +${r.created} ~${r.updated} -${r.deleted} ` +
+            `(window=${r.windowWorkouts} syncable=${r.desiredCount} skippedType=${r.skippedType} ` +
+            `skippedNoTarget=${r.skippedNoTarget} onCalendar=${r.onCalendar})`
+        );
       } else if (r.error !== "not_connected") {
         console.warn(`[intervals-icu] sync skipped user=${userId}: ${r.error}`);
       }
