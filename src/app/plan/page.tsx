@@ -14,37 +14,23 @@ interface DayActivity { id: string; name: string; activityType: string; distance
 interface Plan { id: string; name: string; goal: string | null; raceDate: string | null; startDate: string; endDate: string; status: string; phases: Phase[]; weeks: PlanWeekData[]; workouts: Workout[]; weeklyTasks: WeeklyTask[]; activitiesByDate: Record<string, DayActivity[]>; }
 
 import { isCompatibleType, isRunning } from "@/lib/activity-types";
+import { getWorkoutTypeColor } from "@/lib/categories";
 import { DesktopNavLinks } from "@/app/nav";
 
 // --- Shared Utilities ---
 
-function getWorkoutTypeColor(type: string): string {
-  switch (type) {
-    case "easy": case "recovery": return "#4ade80";
-    case "tempo": return "#fb923c";
-    case "interval": return "#ef4444";
-    case "race_pace": return "#ea580c";
-    case "long": return "#3b82f6";
-    case "cross_training": return "#14b8a6";
-    case "strength": return "#a855f7";
-    case "rest": return "#6b7280";
-    case "race": return "#eab308";
-    default: return "#6b7280";
-  }
-}
-
 function getWorkoutTypeBg(type: string): string {
   switch (type) {
-    case "easy": case "recovery": return "bg-green-900/30 border-green-800/40";
-    case "tempo": return "bg-orange-900/30 border-orange-800/40";
-    case "interval": return "bg-red-900/30 border-red-800/40";
-    case "race_pace": return "bg-orange-900/40 border-orange-700/40";
-    case "long": return "bg-blue-900/30 border-blue-800/40";
-    case "cross_training": return "bg-teal-900/30 border-teal-800/40";
-    case "strength": return "bg-purple-900/30 border-purple-800/40";
-    case "rest": return "bg-gray-900/50 border-gray-800/40";
-    case "race": return "bg-yellow-900/30 border-yellow-800/40";
-    default: return "bg-gray-900/50 border-gray-800/40";
+    case "easy": case "recovery": return "bg-sprout";
+    case "tempo": return "bg-[#faeed8]";
+    case "interval": return "bg-[#fae3de]";
+    case "race_pace": return "bg-[#f7e4cc]";
+    case "long": return "bg-[#e3eefa]";
+    case "cross_training": return "bg-[#e0f2ef]";
+    case "strength": return "bg-[#f0e6f8]";
+    case "rest": return "bg-ghost";
+    case "race": return "bg-[#faf0d0]";
+    default: return "bg-ghost";
   }
 }
 
@@ -76,10 +62,10 @@ function TaskChecklist({ tasks, onToggle }: { tasks: WeeklyTask[]; onToggle: (id
   return (
     <div className="space-y-1 mt-3">
       {tasks.map((t) => (
-        <button key={t.id} onClick={() => onToggle(t.id, t.status === "done" ? "pending" : "done")} className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900/50 border border-gray-800/40 hover:bg-gray-800/50 transition-colors text-left">
-          <span className={`text-xs ${t.status === "done" ? "text-green-400" : "text-gray-600"}`}>{t.status === "done" ? "\u2611" : "\u2610"}</span>
+        <button key={t.id} onClick={() => onToggle(t.id, t.status === "done" ? "pending" : "done")} className="sticker sticker-press w-full flex items-center gap-2 px-3 py-1.5 text-left">
+          <span className={`text-xs ${t.status === "done" ? "text-leaf" : "text-sage"}`}>{t.status === "done" ? "\u2611" : "\u2610"}</span>
           <span className="text-xs">{icons[t.category] || "\u2705"}</span>
-          <span className={`text-xs flex-1 ${t.status === "done" ? "text-gray-500 line-through" : "text-gray-300"}`}>{t.description}</span>
+          <span className={`text-xs flex-1 ${t.status === "done" ? "text-moss line-through" : "text-ink font-semibold"}`}>{t.description}</span>
         </button>
       ))}
     </div>
@@ -123,31 +109,31 @@ function MobileDayRow({
       onClick={onTap}
       className={`transition-colors cursor-pointer ${
         isTodayRow
-          ? "bg-gray-800/80 border-l-2 border-l-green-500"
+          ? "bg-sprout/40 border-l-2 border-l-brocco"
           : isMissed
-          ? "border-l-2 border-l-red-800/60"
+          ? "border-l-2 border-l-clay/60"
           : "border-l-2 border-l-transparent"
       } ${isMissed && !hasAnyActivity ? "opacity-60" : ""}`}
     >
       {/* Main row */}
       <div className="flex items-center px-4 py-3 gap-3">
         <div className="w-12 flex-shrink-0">
-          <div className={`text-xs font-bold ${isTodayRow ? "text-green-400" : "text-gray-400"}`}>{day.abbr}</div>
-          <div className={`text-lg font-bold leading-none ${isTodayRow ? "text-white" : "text-gray-300"}`}>{day.num}</div>
+          <div className={`text-xs font-extrabold uppercase ${isTodayRow ? "text-leaf" : "text-sage"}`}>{day.abbr}</div>
+          <div className={`text-lg font-extrabold leading-none ${isTodayRow ? "text-leaf" : "text-ink"}`}>{day.num}</div>
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
-            <span className={`text-sm font-medium ${isCompleted ? "text-green-400" : isRest ? "text-gray-500" : "text-gray-200"}`}>
+            <div className="w-2 h-2 rounded-full border border-ink/60 flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
+            <span className={`text-sm font-bold ${isCompleted ? "text-leaf" : isRest ? "text-sage" : "text-ink"}`}>
               {workout.title}
             </span>
             {isCompleted && <span className="text-xs">{"\u2705"}</span>}
-            {isTodayRow && <span className="text-[9px] bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded font-semibold">TODAY</span>}
+            {isTodayRow && <span className="text-[9px] bg-brocco text-ink border border-ink px-1.5 py-0.5 rounded font-bold">TODAY</span>}
           </div>
-          {!isRest && details && <p className="text-xs text-gray-500 mt-0.5 truncate">{details}</p>}
+          {!isRest && details && <p className="text-xs text-moss mt-0.5 truncate">{details}</p>}
         </div>
         {(!isRest || hasAnyActivity) && (
-          <span className="text-xs text-gray-600 flex-shrink-0">{isExpanded ? "\u25B2" : "\u25BC"}</span>
+          <span className="text-xs text-sage flex-shrink-0">{isExpanded ? "\u25B2" : "\u25BC"}</span>
         )}
       </div>
 
@@ -155,32 +141,32 @@ function MobileDayRow({
       {isExpanded && (!isRest || hasAnyActivity) && (
         <div className="px-4 pb-3 pl-16 space-y-1.5">
           {!isRest && workout.description && (
-            <p className="text-xs text-gray-400 leading-relaxed">{workout.description}</p>
+            <p className="text-xs text-moss leading-relaxed">{workout.description}</p>
           )}
           {/* Compatible activities — green "completed" style */}
           {compatibleActivities.map((a) => (
-            <Link key={a.id} href={`/activity/${a.id}`} className="block bg-green-900/20 border border-green-800/30 rounded-lg px-3 py-2 hover:bg-green-900/30 transition-colors">
+            <Link key={a.id} href={`/activity/${a.id}`} className="block bg-sprout border-2 border-ink rounded-lg px-3 py-2 transition-colors">
               <div className="flex items-center gap-2 text-xs">
-                <span className="text-green-400">{"\u2705"}</span>
-                <span className="text-green-300 font-medium">{a.distanceKm?.toFixed(1)}km</span>
-                {a.avgPacePerKm && <span className="text-gray-400">{"\u00b7"} {a.avgPacePerKm}</span>}
-                {a.avgHeartRate && <span className="text-gray-400">{"\u00b7"} HR {a.avgHeartRate}</span>}
+                <span className="text-leaf">{"\u2705"}</span>
+                <span className="text-ink font-bold">{a.distanceKm?.toFixed(1)}km</span>
+                {a.avgPacePerKm && <span className="text-moss">{"\u00b7"} {a.avgPacePerKm}</span>}
+                {a.avgHeartRate && <span className="text-moss">{"\u00b7"} HR {a.avgHeartRate}</span>}
               </div>
             </Link>
           ))}
           {/* Missed indicator */}
           {!isRest && compatibleActivities.length === 0 && isPast && (
-            <div className="bg-red-900/15 border border-red-800/20 rounded-lg px-3 py-2">
-              <div className="flex items-center gap-2 text-xs text-red-400/80">
+            <div className="bg-clay-soft border-2 border-clay rounded-lg px-3 py-2">
+              <div className="flex items-center gap-2 text-xs text-clay font-bold">
                 <span>{"\u2717"}</span>
                 <span>Missed</span>
-                {workout.targetDistanceKm && <span className="text-gray-500">{"\u00b7"} {workout.targetDistanceKm}km planned</span>}
+                {workout.targetDistanceKm && <span className="text-moss font-semibold">{"\u00b7"} {workout.targetDistanceKm}km planned</span>}
               </div>
             </div>
           )}
           {/* Future workout targets */}
           {!isRest && compatibleActivities.length === 0 && !isPast && (
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-moss">
               {workout.targetDistanceKm && <span>{workout.targetDistanceKm}km</span>}
               {workout.targetPace && <span> @ {workout.targetPace}</span>}
             </div>
@@ -189,12 +175,12 @@ function MobileDayRow({
           {!isRest && otherActivities.length > 0 && (
             <div className="space-y-1">
               {otherActivities.map((a) => (
-                <Link key={a.id} href={`/activity/${a.id}`} className="block bg-gray-800/40 rounded-lg px-3 py-1.5 hover:bg-gray-800/60 transition-colors">
-                  <div className="flex items-center gap-2 text-xs text-gray-400">
-                    <span className="text-gray-500">Also:</span>
-                    <span className="text-gray-300">{a.name}</span>
+                <Link key={a.id} href={`/activity/${a.id}`} className="block bg-ghost border border-shade rounded-lg px-3 py-1.5 hover:bg-shade/50 transition-colors">
+                  <div className="flex items-center gap-2 text-xs text-moss">
+                    <span className="text-sage">Also:</span>
+                    <span className="text-ink font-semibold">{a.name}</span>
                     {a.distanceKm && <span>{a.distanceKm.toFixed(1)}km</span>}
-                    {a.source === "manual" && <span className="text-gray-600">(manual)</span>}
+                    {a.source === "manual" && <span className="text-sage">(manual)</span>}
                   </div>
                 </Link>
               ))}
@@ -204,21 +190,21 @@ function MobileDayRow({
           {isRest && dayActivities.length > 0 && (
             <div className="space-y-1">
               {dayActivities.map((a) => (
-                <Link key={a.id} href={`/activity/${a.id}`} className="block bg-gray-800/40 rounded-lg px-3 py-1.5 hover:bg-gray-800/60 transition-colors">
-                  <div className="flex items-center gap-2 text-xs text-gray-400">
-                    <span className="text-gray-500">Also:</span>
-                    <span className="text-gray-300">{a.name}</span>
+                <Link key={a.id} href={`/activity/${a.id}`} className="block bg-ghost border border-shade rounded-lg px-3 py-1.5 hover:bg-shade/50 transition-colors">
+                  <div className="flex items-center gap-2 text-xs text-moss">
+                    <span className="text-sage">Also:</span>
+                    <span className="text-ink font-semibold">{a.name}</span>
                     {a.distanceKm && <span>{a.distanceKm.toFixed(1)}km</span>}
                   </div>
                 </Link>
               ))}
-              <p className="text-[10px] text-gray-600">Bonus work on a rest day.</p>
+              <p className="text-[10px] text-sage font-semibold">Bonus work on a rest day.</p>
             </div>
           )}
         </div>
       )}
 
-      <div className="border-b border-gray-800/50 mx-4" />
+      <div className="border-b border-shade mx-4" />
     </div>
   );
 }
@@ -255,28 +241,28 @@ function MobileWeekCard({
   return (
     <div className="flex flex-col h-full">
       {/* Week header */}
-      <div className="px-4 pt-4 pb-3 border-b border-gray-800 flex-shrink-0">
+      <div className="px-4 pt-4 pb-3 border-b border-shade flex-shrink-0">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-base font-bold text-white">
+            <h2 className="text-base font-extrabold text-ink">
               Week {weekData.weekNumber}
-              {weekData.phaseName && <span className="text-gray-500 font-normal"> · {weekData.phaseName}</span>}
+              {weekData.phaseName && <span className="text-moss font-semibold"> · {weekData.phaseName}</span>}
             </h2>
-            <p className="text-xs text-gray-500 mt-0.5">{formatWeekRange(weekData.startDate)}</p>
+            <p className="text-xs text-moss mt-0.5">{formatWeekRange(weekData.startDate)}</p>
           </div>
           <div className="text-right">
             {isPast && weekRunKm > 0 ? (
-              <p className="text-sm font-medium text-gray-300">{weekRunKm.toFixed(0)} km actual</p>
+              <p className="text-sm font-bold text-ink">{weekRunKm.toFixed(0)} km actual</p>
             ) : weekData.targetKm ? (
-              <p className="text-sm font-medium text-gray-400">{weekData.targetKm.toFixed(0)}km target</p>
+              <p className="text-sm font-bold text-moss">{weekData.targetKm.toFixed(0)}km target</p>
             ) : null}
             {weekData.targetSessions && (
-              <p className="text-[10px] text-gray-600">{weekData.targetSessions} sessions</p>
+              <p className="text-[10px] text-sage font-semibold">{weekData.targetSessions} sessions</p>
             )}
           </div>
         </div>
         {weekData.notes && (
-          <p className="text-xs text-yellow-400/70 mt-1">{weekData.notes}</p>
+          <p className="text-xs text-ink bg-[#faeed8] border-2 border-sun rounded-lg px-2.5 py-1.5 mt-2">{weekData.notes}</p>
         )}
       </div>
 
@@ -285,25 +271,25 @@ function MobileWeekCard({
         {isTarget ? (
           <div className="flex items-center justify-center h-full text-center px-8">
             <div>
-              <p className="text-gray-500 text-sm">Not yet planned</p>
-              <p className="text-gray-600 text-xs mt-1">Details will be generated as this week approaches.</p>
+              <p className="text-moss text-sm font-bold">Not yet planned</p>
+              <p className="text-sage text-xs mt-1 font-semibold">Details will be generated as this week approaches.</p>
               {sessionCodes && (
-                <p className="text-xs text-gray-600 mt-3 font-mono">{sessionCodes.join(" · ")}</p>
+                <p className="text-xs text-sage mt-3 font-mono">{sessionCodes.join(" · ")}</p>
               )}
             </div>
           </div>
         ) : isOutline ? (
           <div className="px-4 py-4">
-            <p className="text-sm text-gray-400 mb-3">Outline — details coming soon</p>
+            <p className="text-sm text-moss font-semibold mb-3">Outline — details coming soon</p>
             {workouts.map((w) => (
               <div key={w.id} className="flex items-center gap-2 py-1.5">
-                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: getWorkoutTypeColor(w.workoutType) }} />
-                <span className="text-sm text-gray-300">{w.title}</span>
-                {w.targetDistanceKm && <span className="text-xs text-gray-500 ml-auto">~{w.targetDistanceKm}km</span>}
+                <div className="w-2 h-2 rounded-full border border-ink/60" style={{ backgroundColor: getWorkoutTypeColor(w.workoutType) }} />
+                <span className="text-sm text-ink font-semibold">{w.title}</span>
+                {w.targetDistanceKm && <span className="text-xs text-moss ml-auto">~{w.targetDistanceKm}km</span>}
               </div>
             ))}
             {sessionCodes && workouts.length === 0 && (
-              <p className="text-xs text-gray-600 font-mono mt-2">{sessionCodes.join(" · ")}</p>
+              <p className="text-xs text-sage font-mono mt-2">{sessionCodes.join(" · ")}</p>
             )}
           </div>
         ) : (
@@ -427,24 +413,24 @@ function MobilePlanView({
   return (
     <div className="flex flex-col h-[calc(100vh-52px-3.5rem)]">
       {/* Navigation arrows */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800/50 flex-shrink-0">
+      <div className="flex items-center justify-between px-4 py-2 border-b border-shade flex-shrink-0">
         <button
           onClick={() => slideToWeek(activeIdx - 1, 1)}
           disabled={activeIdx === 0 || animatingRef.current}
-          className="p-1.5 text-gray-400 hover:text-white disabled:opacity-20 disabled:cursor-default transition-colors"
+          className="p-1.5 text-moss hover:text-ink disabled:opacity-20 disabled:cursor-default transition-colors"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
         </button>
         <div className="text-center">
-          <span className="text-xs text-gray-500">Week {week.weekNumber} of {weekList.length}</span>
-          {activeIdx === currentWeekIdx && <span className="text-[9px] text-green-400 ml-2">Current</span>}
+          <span className="text-xs text-moss font-semibold">Week {week.weekNumber} of {weekList.length}</span>
+          {activeIdx === currentWeekIdx && <span className="text-[9px] text-leaf font-bold ml-2">Current</span>}
         </div>
         <button
           onClick={() => slideToWeek(activeIdx + 1, -1)}
           disabled={activeIdx === weekList.length - 1 || animatingRef.current}
-          className="p-1.5 text-gray-400 hover:text-white disabled:opacity-20 disabled:cursor-default transition-colors"
+          className="p-1.5 text-moss hover:text-ink disabled:opacity-20 disabled:cursor-default transition-colors"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
         </button>
       </div>
 
@@ -489,41 +475,41 @@ function DesktopWorkoutCard({ workout, dayActivities }: { workout: Workout; dayA
   const isMissed = isPast && !isCompleted && !isRest;
 
   return (
-    <div className={`border rounded-lg px-3 py-2 ${getWorkoutTypeBg(workout.workoutType)} ${isMissed && dayActivities.length === 0 ? "opacity-50" : ""}`}>
+    <div className={`border-2 border-ink rounded-[14px] shadow-[2px_2px_0_var(--color-shade)] px-3 py-2 ${getWorkoutTypeBg(workout.workoutType)} ${isMissed && dayActivities.length === 0 ? "opacity-50" : ""}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
-          <span className={`text-sm font-medium ${isCompleted ? "text-green-400" : isMissed ? "text-gray-500" : "text-gray-200"}`}>{workout.title}</span>
+          <div className="w-2 h-2 rounded-full border border-ink/60 flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
+          <span className={`text-sm font-bold ${isCompleted ? "text-leaf" : isMissed ? "text-moss" : "text-ink"}`}>{workout.title}</span>
           {isCompleted && <span className="text-xs">{"\u2705"}</span>}
-          {isMissed && <span className="text-xs text-red-400/70">missed</span>}
+          {isMissed && <span className="text-xs text-clay font-bold">missed</span>}
         </div>
-        <span className="text-xs text-gray-500">{new Date(workout.date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</span>
+        <span className="text-xs text-moss">{new Date(workout.date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</span>
       </div>
       {!isRest && (
-        <div className="flex items-center gap-3 mt-1 ml-4 text-xs text-gray-400">
+        <div className="flex items-center gap-3 mt-1 ml-4 text-xs text-moss">
           {workout.targetDistanceKm && <span>{workout.targetDistanceKm}km</span>}
           {workout.targetPace && <span>{workout.targetPace}</span>}
           {workout.targetDurationMin && <span>{workout.targetDurationMin}min</span>}
         </div>
       )}
       {workout.description && !isRest && (
-        <p className="text-[11px] text-gray-500 mt-1 ml-4 line-clamp-2">{workout.description}</p>
+        <p className="text-[11px] text-moss mt-1 ml-4 line-clamp-2">{workout.description}</p>
       )}
       {compatibleActivities.map((a) => (
-        <div key={a.id} className="mt-1.5 ml-4 bg-green-900/20 border border-green-800/30 rounded px-2 py-1.5">
+        <div key={a.id} className="mt-1.5 ml-4 bg-sprout border-2 border-ink rounded-lg px-2 py-1.5">
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-green-400">{"\u2705"}</span>
-            <span className="text-green-300 font-medium">{a.distanceKm?.toFixed(1)}km</span>
-            {a.avgPacePerKm && <span className="text-gray-400">{"\u00b7"} {a.avgPacePerKm}</span>}
-            {a.avgHeartRate && <span className="text-gray-400">{"\u00b7"} HR {a.avgHeartRate}</span>}
+            <span className="text-leaf">{"\u2705"}</span>
+            <span className="text-ink font-bold">{a.distanceKm?.toFixed(1)}km</span>
+            {a.avgPacePerKm && <span className="text-moss">{"\u00b7"} {a.avgPacePerKm}</span>}
+            {a.avgHeartRate && <span className="text-moss">{"\u00b7"} HR {a.avgHeartRate}</span>}
           </div>
         </div>
       ))}
       {!isRest && otherActivities.map((a) => (
-        <div key={a.id} className="mt-1 ml-4 text-[11px] text-gray-500">Also: {a.name}{a.distanceKm ? ` ${a.distanceKm.toFixed(1)}km` : ""}</div>
+        <div key={a.id} className="mt-1 ml-4 text-[11px] text-moss">Also: {a.name}{a.distanceKm ? ` ${a.distanceKm.toFixed(1)}km` : ""}</div>
       ))}
       {isRest && dayActivities.map((a) => (
-        <div key={a.id} className="mt-1 ml-4 text-[11px] text-gray-500">Also: {a.name}{a.distanceKm ? ` ${a.distanceKm.toFixed(1)}km` : ""}</div>
+        <div key={a.id} className="mt-1 ml-4 text-[11px] text-moss">Also: {a.name}{a.distanceKm ? ` ${a.distanceKm.toFixed(1)}km` : ""}</div>
       ))}
     </div>
   );
@@ -558,30 +544,30 @@ function DesktopWeekRow({
   const sessionCodes = weekData.sessionTypes as string[] | null;
 
   return (
-    <div className={`mb-3 ${isCurrentWeek ? "ring-1 ring-green-500/30 rounded-xl p-3 -mx-3" : ""}`}>
-      {isCurrentWeek && <div className="text-xs text-green-400 mb-2 font-medium">Current Week</div>}
+    <div className={`mb-3 ${isCurrentWeek ? "ring-2 ring-brocco rounded-xl p-3 -mx-3" : ""}`}>
+      {isCurrentWeek && <div className="text-xs text-leaf mb-2 font-bold">Current Week</div>}
       <button
         onClick={() => canExpand && setExpanded((v) => !v)}
         disabled={!canExpand}
-        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-colors ${canExpand ? "hover:bg-gray-800/50 cursor-pointer" : "cursor-default"} ${expanded ? "bg-gray-900/50" : "bg-gray-900/30"}`}
+        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border-2 border-ink shadow-[2px_2px_0_var(--color-shade)] text-left transition-colors ${canExpand ? "sticker-press cursor-pointer" : "cursor-default"} ${expanded ? "bg-ghost" : "bg-card"}`}
       >
         <div className="flex items-center gap-2 min-w-0">
-          {canExpand && <span className="text-xs text-gray-600 flex-shrink-0">{expanded ? "\u25BC" : "\u25B6"}</span>}
-          <span className="text-sm font-semibold text-gray-300">Week {weekData.weekNumber}</span>
-          {weekData.phaseName && <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded truncate">{weekData.phaseName}</span>}
-          {isTarget && <span className="text-[10px] text-gray-600 bg-gray-800/50 px-1.5 py-0.5 rounded">Not yet planned</span>}
-          {isOutline && <span className="text-[10px] text-blue-400/60 bg-blue-900/20 px-1.5 py-0.5 rounded">Outline</span>}
+          {canExpand && <span className="text-xs text-sage flex-shrink-0">{expanded ? "\u25BC" : "\u25B6"}</span>}
+          <span className="text-sm font-bold text-ink">Week {weekData.weekNumber}</span>
+          {weekData.phaseName && <span className="text-xs text-moss bg-ghost border border-shade px-2 py-0.5 rounded truncate">{weekData.phaseName}</span>}
+          {isTarget && <span className="text-[10px] text-ghost-ink bg-ghost px-1.5 py-0.5 rounded">Not yet planned</span>}
+          {isOutline && <span className="text-[10px] text-ink bg-[#e3eefa] border border-ink px-1.5 py-0.5 rounded">Outline</span>}
         </div>
-        <div className="text-xs text-gray-500 flex items-center gap-3 flex-shrink-0">
+        <div className="text-xs text-moss flex items-center gap-3 flex-shrink-0">
           {isPast && actualKm > 0 ? (
-            <span><span className="text-gray-300">{actualKm.toFixed(0)}</span>{weekData.targetKm ? ` / ${weekData.targetKm.toFixed(0)} km` : " km"}{totalCount > 0 && ` · ${completedCount}/${totalCount}`}</span>
+            <span><span className="text-ink font-bold">{actualKm.toFixed(0)}</span>{weekData.targetKm ? ` / ${weekData.targetKm.toFixed(0)} km` : " km"}{totalCount > 0 && ` · ${completedCount}/${totalCount}`}</span>
           ) : weekData.targetKm ? (
             <span>~{weekData.targetKm.toFixed(0)} km{weekData.targetSessions && ` · ${weekData.targetSessions} sessions`}</span>
           ) : null}
-          {sessionCodes && !expanded && <span className="text-[10px] text-gray-600 font-mono">{sessionCodes.join("")}</span>}
+          {sessionCodes && !expanded && <span className="text-[10px] text-sage font-mono">{sessionCodes.join("")}</span>}
         </div>
       </button>
-      {weekData.notes && <p className="text-xs text-yellow-400/70 mt-1 px-3">{weekData.notes}</p>}
+      {weekData.notes && <p className="text-xs text-ink bg-[#faeed8] border-2 border-sun rounded-lg px-2.5 py-1.5 mt-2">{weekData.notes}</p>}
       {expanded && hasWorkouts && (
         <div className="mt-2 space-y-1.5 px-1">
           {workouts.map((w) => <DesktopWorkoutCard key={w.id} workout={w} dayActivities={activitiesByDate[w.date.split("T")[0]] || []} />)}
@@ -596,12 +582,12 @@ function DesktopWeekRow({
 
 function Nav() {
   return (
-    <nav className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm -mx-4 px-4 mb-6">
+    <nav className="safe-top sticky top-0 z-30 bg-cream/95 backdrop-blur-sm -mx-4 px-4 mb-6 border-b-2 border-ink/10">
       <div className="hidden md:flex items-center justify-between pb-6">
         <div className="flex items-center gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/icon-64.png" alt="Brocco" className="w-8 h-8" />
-          <span className="font-bold text-lg">brocco.run</span>
+          <img src="/icons/icon-64.png" alt="Brocco" className="w-8 h-8 rounded-full border-2 border-ink" />
+          <span className="font-extrabold text-lg text-ink">brocco.run</span>
         </div>
         <DesktopNavLinks />
       </div>
@@ -611,13 +597,13 @@ function Nav() {
 
 function MobileNav({ planName, onNewPlan, starting }: { planName: string; onNewPlan: () => void; starting: boolean }) {
   return (
-    <nav className="safe-top flex items-center justify-between px-4 pb-2 border-b border-gray-800 bg-gray-950/95 backdrop-blur-sm flex-shrink-0">
+    <nav className="safe-top flex items-center justify-between px-4 pb-2 border-b-2 border-ink/10 bg-cream/95 backdrop-blur-sm flex-shrink-0">
       <div className="flex items-center gap-2 min-w-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6" />
-        <span className="font-semibold text-sm text-gray-300 truncate">{planName}</span>
+        <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6 rounded-full border-2 border-ink" />
+        <span className="font-bold text-sm text-ink truncate">{planName}</span>
       </div>
-      <button onClick={onNewPlan} disabled={starting} className="text-xs text-gray-500 hover:text-white transition-colors flex-shrink-0">
+      <button onClick={onNewPlan} disabled={starting} className="text-xs text-leaf font-bold hover:opacity-70 transition-opacity flex-shrink-0">
         {starting ? "..." : "+ New plan"}
       </button>
     </nav>
@@ -630,7 +616,7 @@ function MobileNav({ planName, onNewPlan, starting }: { planName: string; onNewP
 
 export default function PlanPage() {
   return (
-    <Suspense fallback={<main className="min-h-screen max-w-2xl mx-auto px-4 py-6"><Nav /><div className="text-gray-500 text-center py-12">Loading...</div></main>}>
+    <Suspense fallback={<main className="min-h-screen max-w-2xl mx-auto px-4 py-6"><Nav /><div className="text-moss text-center py-12 font-semibold">Loading...</div></main>}>
       <PlanPageContent />
     </Suspense>
   );
@@ -664,7 +650,7 @@ function PlanPageContent() {
   }
 
   if (loading) {
-    return <main className="min-h-screen max-w-2xl mx-auto px-4 py-6"><Nav /><div className="text-gray-500 text-center py-12">Loading...</div></main>;
+    return <main className="min-h-screen max-w-2xl mx-auto px-4 py-6"><Nav /><div className="text-moss text-center py-12 font-semibold">Loading...</div></main>;
   }
 
   if (!plan) {
@@ -674,9 +660,9 @@ function PlanPageContent() {
         <div className="text-center py-16">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/brocco-runner.png" alt="" className="h-32 mx-auto mb-4" />
-          <p className="text-gray-400 text-lg font-medium">No training plan yet</p>
-          <p className="text-gray-500 text-sm mt-2 mb-4">Let Brocco build you a personalized plan.</p>
-          <button onClick={handleNewPlan} disabled={startingPlan} className="px-6 py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-medium rounded-lg transition-colors">
+          <p className="text-ink text-lg font-extrabold">No training plan yet</p>
+          <p className="text-moss text-sm mt-2 mb-4 font-semibold">Let Brocco build you a personalized plan.</p>
+          <button onClick={handleNewPlan} disabled={startingPlan} className="btn-brocco px-6 py-2.5">
             {startingPlan ? "Starting..." : "Build a new plan"}
           </button>
         </div>
@@ -741,15 +727,15 @@ function PlanPageContent() {
         <Nav />
         <div className="mb-6">
           <div className="flex items-center justify-between">
-            <h1 className="text-xl font-semibold text-white">{plan.name}</h1>
-            <button onClick={handleNewPlan} disabled={startingPlan} className="px-3 py-1.5 text-xs border border-gray-700 text-gray-300 hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-50">
+            <h1 className="text-xl font-extrabold text-ink">{plan.name}</h1>
+            <button onClick={handleNewPlan} disabled={startingPlan} className="btn-quiet px-3 py-1.5 text-xs disabled:opacity-50">
               {startingPlan ? "Starting..." : "New Plan"}
             </button>
           </div>
-          <div className="flex items-center gap-3 mt-1 text-sm text-gray-400">
+          <div className="flex items-center gap-3 mt-1 text-sm text-moss font-semibold">
             {plan.goal && <span>{plan.goal}</span>}
             {plan.raceDate && <span>Race: {new Date(plan.raceDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>}
-            <span className="text-gray-600">{weekList.length} weeks</span>
+            <span className="text-sage">{weekList.length} weeks</span>
           </div>
           {plan.phases.length > 0 && (
             <>
@@ -757,9 +743,9 @@ function PlanPageContent() {
                 {plan.phases.map((phase) => {
                   const pw = phase.endWeek - phase.startWeek + 1;
                   return (
-                    <div key={phase.id} className="rounded-full h-2 bg-gray-700 relative overflow-hidden" style={{ width: `${(pw / totalWeeks) * 100}%` }}>
+                    <div key={phase.id} className="rounded-full h-2 bg-shade relative overflow-hidden" style={{ width: `${(pw / totalWeeks) * 100}%` }}>
                       {currentWeekNum !== undefined && currentWeekNum >= phase.startWeek && currentWeekNum <= phase.endWeek && (
-                        <div className="absolute inset-y-0 left-0 bg-green-500 rounded-full" style={{ width: `${((currentWeekNum - phase.startWeek + 1) / pw) * 100}%` }} />
+                        <div className="absolute inset-y-0 left-0 bg-brocco rounded-full" style={{ width: `${((currentWeekNum - phase.startWeek + 1) / pw) * 100}%` }} />
                       )}
                     </div>
                   );
@@ -768,7 +754,7 @@ function PlanPageContent() {
               <div className="flex gap-1 mt-1">
                 {plan.phases.map((phase) => (
                   <div key={phase.id} style={{ width: `${((phase.endWeek - phase.startWeek + 1) / totalWeeks) * 100}%` }}>
-                    <span className="text-[10px] text-gray-500 truncate block">{phase.name}</span>
+                    <span className="label-xs truncate block">{phase.name}</span>
                   </div>
                 ))}
               </div>

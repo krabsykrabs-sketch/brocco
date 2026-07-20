@@ -45,7 +45,7 @@ function SignupForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label htmlFor="access-code" className="block text-sm font-medium text-gray-300 mb-1">
+        <label htmlFor="access-code" className="block text-sm font-bold text-ink mb-1">
           Access Code
         </label>
         <input
@@ -54,13 +54,13 @@ function SignupForm() {
           value={accessCode}
           onChange={(e) => setAccessCode(e.target.value)}
           required
-          className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          className="field"
           placeholder="The code you got from your inviter"
         />
       </div>
 
       <div>
-        <label htmlFor="name" className="block text-sm font-medium text-gray-300 mb-1">
+        <label htmlFor="name" className="block text-sm font-bold text-ink mb-1">
           Name
         </label>
         <input
@@ -69,13 +69,13 @@ function SignupForm() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
-          className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          className="field"
           placeholder="Your name"
         />
       </div>
 
       <div>
-        <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">
+        <label htmlFor="email" className="block text-sm font-bold text-ink mb-1">
           Email
         </label>
         <input
@@ -84,13 +84,13 @@ function SignupForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          className="field"
           placeholder="you@example.com"
         />
       </div>
 
       <div>
-        <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
+        <label htmlFor="password" className="block text-sm font-bold text-ink mb-1">
           Password
         </label>
         <input
@@ -100,19 +100,19 @@ function SignupForm() {
           onChange={(e) => setPassword(e.target.value)}
           required
           minLength={8}
-          className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          className="field"
           placeholder="At least 8 characters"
         />
       </div>
 
       {error && (
-        <p className="text-red-400 text-sm">{error}</p>
+        <p className="bg-clay-soft border-2 border-clay text-clay rounded-xl px-3 py-2 text-sm font-bold">{error}</p>
       )}
 
       <button
         type="submit"
         disabled={loading}
-        className="w-full py-2 px-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
+        className="btn-brocco w-full py-2 px-4"
       >
         {loading ? "Creating account..." : "Sign up"}
       </button>
@@ -123,21 +123,21 @@ function SignupForm() {
 export default function SignupPage() {
   return (
     <main className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-sm sticker-lg p-6">
         <div className="text-center mb-8">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/brocco-runner.png" alt="Brocco, running" className="h-32 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold">Join brocco.run</h1>
-          <p className="text-gray-400 text-sm mt-1">You need an invite code to sign up.</p>
+          <h1 className="text-2xl font-extrabold text-ink">Join brocco.run</h1>
+          <p className="text-moss text-sm mt-1">You need an invite code to sign up.</p>
         </div>
 
-        <Suspense fallback={<div className="text-gray-500 text-center">Loading...</div>}>
+        <Suspense fallback={<div className="text-moss text-center">Loading...</div>}>
           <SignupForm />
         </Suspense>
 
-        <p className="text-center text-gray-500 text-sm mt-6">
+        <p className="text-center text-moss text-sm mt-6">
           Already have an account?{" "}
-          <a href="/login" className="text-green-400 hover:text-green-300 underline">
+          <a href="/login" className="text-leaf font-bold underline">
             Log in
           </a>
         </p>

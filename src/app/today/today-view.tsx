@@ -7,6 +7,7 @@ import { categoryMeta, getWorkoutTypeColor } from "@/lib/categories";
 import { useScreenContext, useDataChanged } from "@/lib/capture-context";
 import { useFeatures } from "../features-provider";
 import { anyLifeFeature } from "@/lib/features";
+import { isCompatibleType } from "@/lib/activity-types";
 
 // --- Types (mirror /api/today) ---
 
@@ -52,26 +53,34 @@ function formatHeaderDate(dateStr: string): string {
   return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 }
 
+function activityDetail(a: ActivityRow): string {
+  return [
+    a.distanceKm ? `${a.distanceKm.toFixed(1)} km` : null,
+    a.avgPacePerKm,
+    !a.distanceKm && a.durationMin ? `${Math.round(a.durationMin)} min` : null,
+  ].filter(Boolean).join(" · ");
+}
+
 // --- Agenda rows ---
 
 function EventRow({ event }: { event: EventOccurrence }) {
   const meta = categoryMeta(event.category);
   const isLastDay = event.end?.slice(0, 10) === event.date;
   return (
-    <div className={`flex items-center gap-3 border rounded-xl px-3.5 py-2.5 ${event.continuation ? "opacity-80" : ""} ${meta.bg}`}>
+    <div className={`flex items-center gap-3 border-2 rounded-xl px-3.5 py-2.5 shadow-[2px_2px_0_var(--color-shade)] ${event.continuation ? "opacity-80" : ""} ${meta.bg}`}>
       <div className="w-12 flex-shrink-0 text-right">
         {event.continuation ? (
-          <span className="text-sm text-gray-500" title="Continues from an earlier day">⟶</span>
+          <span className="text-sm text-moss" title="Continues from an earlier day">⟶</span>
         ) : event.allDay ? (
-          <span className="text-[10px] uppercase font-bold text-gray-500">{event.category === "birthday" ? "🎂" : "all day"}</span>
+          <span className="text-[10px] uppercase font-extrabold text-moss">{event.category === "birthday" ? "🎂" : "all day"}</span>
         ) : (
-          <span className="text-sm font-semibold text-gray-200">{timeOf(event)}</span>
+          <span className="text-sm font-extrabold text-ink tabular-nums">{timeOf(event)}</span>
         )}
       </div>
-      <div className="w-1 self-stretch rounded-full" style={{ backgroundColor: meta.color }} />
+      <div className="w-1.5 self-stretch rounded-full border border-ink/60" style={{ backgroundColor: meta.color }} />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-gray-100 truncate">{event.title}</p>
-        <p className="text-xs text-gray-500 truncate">
+        <p className="text-sm font-bold text-ink truncate">{event.title}</p>
+        <p className="text-xs text-moss font-semibold truncate">
           {event.continuation
             ? isLastDay && !event.allDay
               ? `ends ${event.end!.slice(11, 16)}`
@@ -82,113 +91,117 @@ function EventRow({ event }: { event: EventOccurrence }) {
           {event.location ? `${event.continuation || (!event.allDay && event.end) ? " · " : ""}${event.location}` : ""}
         </p>
       </div>
-      {event.recurring && <span className="text-xs text-gray-600" title="Recurring">↻</span>}
+      {event.recurring && <span className="text-xs text-sage" title="Recurring">↻</span>}
     </div>
   );
 }
 
-function WorkoutRow({ workout, activities }: { workout: WorkoutItem; activities: ActivityRow[] }) {
-  if (workout.workoutType === "rest" && activities.length === 0) {
+/**
+ * Planned | actual, side by side: the plan on the left, what actually
+ * happened on the right — real distance/pace instead of a tiny badge.
+ */
+function WorkoutRow({ workout, matched }: { workout: WorkoutItem; matched: ActivityRow | null }) {
+  if (workout.workoutType === "rest") {
     return (
-      <div className="flex items-center gap-3 bg-gray-900/40 border border-gray-800/40 rounded-xl px-3.5 py-2.5">
+      <div className="flex items-center gap-3 bg-ghost border-2 border-ink/20 rounded-xl px-3.5 py-2.5">
         <div className="w-12 flex-shrink-0 text-right"><span className="text-sm">💤</span></div>
-        <div className="w-1 self-stretch rounded-full bg-gray-700" />
-        <p className="text-sm text-gray-500">Rest day — recovery is training too.</p>
+        <p className="text-sm text-moss font-semibold">Rest day — recovery is training too.</p>
       </div>
     );
   }
-  if (workout.workoutType === "rest") return null;
 
+  const done = workout.completed || !!matched;
   const details = [
-    workout.targetDistanceKm ? `${workout.targetDistanceKm}km` : null,
+    workout.targetDistanceKm ? `${workout.targetDistanceKm} km` : null,
     workout.targetPace,
-    workout.targetDurationMin ? `${workout.targetDurationMin}min` : null,
+    workout.targetDurationMin ? `${workout.targetDurationMin} min` : null,
   ].filter(Boolean).join(" · ");
 
   // Strength sessions are playable: deep-link into the guided workout timer
   const isStrength = workout.workoutType === "strength" || workout.activityType === "strength";
-  if (isStrength) {
-    return (
-      <Link
-        href={workout.completed ? "/plan" : `/workout?planned=${workout.workoutId}`}
-        className={`flex items-center gap-3 border rounded-xl px-3.5 py-2.5 transition-colors ${
-          workout.completed
-            ? "bg-green-900/25 border-green-700/40"
-            : "bg-gray-900 border-gray-700/60 hover:border-gray-600"
-        }`}
-      >
-        <div className="w-12 flex-shrink-0 text-right">
-          <span className="text-sm">{workout.completed ? "✅" : "💪"}</span>
-        </div>
-        <div className="w-1 self-stretch rounded-full" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <p className={`text-sm font-medium truncate ${workout.completed ? "text-green-300" : "text-gray-100"}`}>{workout.title}</p>
-            <span className="text-[9px] uppercase font-bold text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded flex-shrink-0">plan</span>
-          </div>
-          <p className="text-xs text-gray-500 truncate">{details || "guided session"}</p>
-        </div>
-        {!workout.completed && (
-          <span className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg flex-shrink-0">Start ▶</span>
-        )}
-      </Link>
-    );
-  }
+  const href = isStrength && !done ? `/workout?planned=${workout.workoutId}` : matched ? `/activity/${matched.id}` : "/plan";
 
   return (
-    <Link href="/plan" className={`flex items-center gap-3 border rounded-xl px-3.5 py-2.5 transition-colors ${
-      workout.completed
-        ? "bg-green-900/25 border-green-700/40"
-        : "bg-gray-900 border-gray-700/60 hover:border-gray-600"
-    }`}>
-      <div className="w-12 flex-shrink-0 text-right">
-        <span className="text-sm">{workout.completed ? "✅" : "🏃"}</span>
+    <Link href={href} className="sticker sticker-press grid grid-cols-2 overflow-hidden">
+      <div className="px-3.5 py-2.5 border-r-2 border-dashed border-shade min-w-0">
+        <p className="label-xs mb-0.5">Planned</p>
+        <p className="text-sm font-bold text-ink truncate flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full border border-ink/60 flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
+          {workout.title}
+        </p>
+        <p className="text-xs text-moss font-semibold truncate tabular-nums">{details || (isStrength ? "guided session" : "training plan")}</p>
       </div>
-      <div className="w-1 self-stretch rounded-full" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <p className={`text-sm font-medium truncate ${workout.completed ? "text-green-300" : "text-gray-100"}`}>{workout.title}</p>
-          <span className="text-[9px] uppercase font-bold text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded flex-shrink-0">plan</span>
+      {done ? (
+        <div className="px-3.5 py-2.5 bg-sprout min-w-0">
+          <p className="label-xs mb-0.5 text-leaf!">✓ Done</p>
+          <p className="text-sm font-extrabold text-ink truncate tabular-nums">{matched ? activityDetail(matched) || matched.name : "completed"}</p>
+          {matched?.avgHeartRate && <p className="text-xs text-leaf font-bold tabular-nums">{Math.round(matched.avgHeartRate)} bpm</p>}
         </div>
-        {details && <p className="text-xs text-gray-500 truncate">{details}</p>}
+      ) : (
+        <div className="px-3.5 py-2.5 bg-ghost min-w-0 flex flex-col justify-center">
+          {isStrength ? (
+            <span className="btn-brocco self-start px-3 py-1.5 text-xs">Start ▶</span>
+          ) : (
+            <>
+              <p className="label-xs mb-0.5">Actual</p>
+              <p className="text-sm font-bold text-ghost-ink">— not yet run</p>
+            </>
+          )}
+        </div>
+      )}
+    </Link>
+  );
+}
+
+/** A completed activity with no planned workout behind it. */
+function ExtraActivityRow({ activity }: { activity: ActivityRow }) {
+  return (
+    <Link href={`/activity/${activity.id}`} className="sticker sticker-press grid grid-cols-2 overflow-hidden">
+      <div className="px-3.5 py-2.5 border-r-2 border-dashed border-shade bg-ghost min-w-0">
+        <p className="label-xs mb-0.5">Unplanned</p>
+        <p className="text-sm font-bold text-ghost-ink">— spontaneous</p>
       </div>
-      <span className="text-gray-600 text-sm">&rsaquo;</span>
+      <div className="px-3.5 py-2.5 bg-sprout min-w-0">
+        <p className="label-xs mb-0.5 text-leaf!">✓ Done</p>
+        <p className="text-sm font-extrabold text-ink truncate">{activity.name}</p>
+        <p className="text-xs text-leaf font-bold truncate tabular-nums">{activityDetail(activity)}</p>
+      </div>
     </Link>
   );
 }
 
 function TaskRow({ task, onToggle }: { task: TodoItem; onToggle: (t: TodoItem) => void }) {
-  const prioColor = task.priority === "high" ? "text-red-400" : task.priority === "medium" ? "text-amber-400" : "";
+  const prioColor = task.priority === "high" ? "text-clay" : task.priority === "medium" ? "text-sun" : "";
   return (
-    <div className="flex items-center gap-3 bg-gray-900/70 border border-gray-800/60 rounded-xl px-3.5 py-2.5">
+    <div className="flex items-center gap-3 sticker px-3.5 py-2.5">
       <div className="w-12 flex-shrink-0 text-right">
-        {task.dueTime ? <span className="text-sm font-semibold text-gray-300">{task.dueTime}</span> : <span className="text-sm text-gray-600">☐</span>}
+        {task.dueTime ? <span className="text-sm font-extrabold text-ink tabular-nums">{task.dueTime}</span> : <span className="text-sm text-sage">☐</span>}
       </div>
       <button
         onClick={() => onToggle(task)}
         className={`w-5 h-5 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
-          task.done ? "bg-green-600 border-green-600" : "border-gray-600 hover:border-green-500"
+          task.done ? "bg-brocco border-ink" : "border-ink bg-card hover:bg-sprout"
         }`}
         aria-label={task.done ? "Mark not done" : "Mark done"}
       >
-        {task.done && <span className="text-white text-xs leading-none">✓</span>}
+        {task.done && <span className="text-ink text-xs font-bold leading-none">✓</span>}
       </button>
       <div className="flex-1 min-w-0">
-        <p className={`text-sm truncate ${task.done ? "text-gray-500 line-through" : "text-gray-100"}`}>
+        <p className={`text-sm font-bold truncate ${task.done ? "text-sage line-through" : "text-ink"}`}>
           {task.title}
           {task.priority && <span className={`ml-1.5 text-xs ${prioColor}`}>{task.priority === "high" ? "!!" : "!"}</span>}
         </p>
-        <p className="text-xs truncate">
-          {task.overdue && <span className="text-red-400/90 font-medium">overdue · {task.dueDate} </span>}
-          {task.listName && <span className="text-gray-600">{task.listName}</span>}
-          {task.recurrence !== "none" && <span className="text-gray-600"> ↻</span>}
+        <p className="text-xs truncate font-semibold">
+          {task.overdue && <span className="text-clay">overdue · {task.dueDate} </span>}
+          {task.listName && <span className="text-sage">{task.listName}</span>}
+          {task.recurrence !== "none" && <span className="text-sage"> ↻</span>}
         </p>
       </div>
     </div>
   );
 }
 
-// --- Mood check-in (one tap, no typing required, dismissible per day) ---
+// --- Weekly review card ---
 
 function WeeklyReviewCard() {
   const [review, setReview] = useState<{ text: string; weekStart: string } | null>(null);
@@ -210,56 +223,54 @@ function WeeklyReviewCard() {
 
   return (
     <section className="mb-4">
-      <div className="bg-gradient-to-br from-emerald-900/30 to-gray-900 border border-emerald-800/40 rounded-2xl px-4 py-3.5">
+      <div className="sticker-lg bg-sprout px-4 py-3.5">
         <div className="flex items-start justify-between gap-2 mb-1.5">
-          <p className="text-[10px] font-bold text-emerald-400/80 uppercase tracking-widest">
-            📋 Your week in review
-          </p>
+          <p className="label-xs text-leaf!">📋 Your week in review</p>
           <button
             onClick={() => {
               localStorage.setItem("brocco_review_dismissed", review.weekStart);
               setDismissed(true);
             }}
-            className="text-gray-600 hover:text-gray-300 leading-none"
+            className="text-moss hover:text-ink leading-none"
             aria-label="Dismiss weekly review"
           >
             &times;
           </button>
         </div>
-        <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap">{review.text}</p>
+        <p className="text-sm text-ink font-semibold leading-relaxed whitespace-pre-wrap">{review.text}</p>
       </div>
     </section>
   );
 }
 
-// --- Week summary (salvaged compact version of the old dashboard card) ---
+// --- Week summary ---
 
 function WeekCard({ data }: { data: TodayData }) {
   const ws = data.weekSummary;
   if (!data.hasActivePlan || (ws.plannedKm === 0 && ws.runKm === 0)) return null;
   const pct = ws.plannedKm > 0 ? Math.min((ws.runKm / ws.plannedKm) * 100, 150) : 0;
   return (
-    <Link href="/plan" className="block rounded-xl bg-slate-800/80 border border-slate-700 px-4 py-3 hover:border-slate-600 transition-colors">
+    <Link href="/plan" className="sticker-lg sticker-press block px-4 py-3">
       <div className="flex items-center justify-between mb-1.5">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+        <p className="label-xs">
           This week{ws.weekNumber ? ` · W${ws.weekNumber}${ws.totalWeeks ? `/${ws.totalWeeks}` : ""}` : ""}{ws.phaseName ? ` · ${ws.phaseName}` : ""}
         </p>
         {ws.totalSessions > 0 && (
-          <p className="text-[10px] text-slate-500">{ws.completedSessions}/{ws.totalSessions} sessions</p>
+          <p className="text-[10px] text-sage font-bold">{ws.completedSessions}/{ws.totalSessions} sessions</p>
         )}
       </div>
       <div className="flex items-baseline justify-between mb-1">
-        <p className="text-sm text-slate-300">
-          <span className="font-semibold text-white">{ws.runKm.toFixed(1)}</span>
-          {ws.plannedKm > 0 && <span className="text-slate-500"> / {ws.plannedKm.toFixed(0)} km</span>}
+        <p className="text-sm text-ink tabular-nums">
+          <span className="font-extrabold text-lg">{ws.runKm.toFixed(1)}</span>
+          {ws.plannedKm > 0 && <span className="text-sage font-bold"> / {ws.plannedKm.toFixed(0)} km</span>}
         </p>
         {ws.plannedKm > 0 && (
-          <span className={`text-xs font-medium ${pct >= 100 ? "text-green-400" : "text-slate-500"}`}>{Math.round(pct)}%</span>
+          <span className={`text-xs font-extrabold tabular-nums ${pct >= 100 ? "text-leaf" : "text-sage"}`}>{Math.round(pct)}%</span>
         )}
       </div>
       {ws.plannedKm > 0 && (
-        <div className="h-1.5 bg-slate-900 rounded-full overflow-hidden">
-          <div className="h-full bg-green-500 rounded-full transition-all duration-500" style={{ width: `${Math.min(pct, 100)}%` }} />
+        <div className="h-2.5 bg-ghost border-2 border-ink rounded-full overflow-hidden">
+          <div className="h-full bg-brocco transition-all duration-500" style={{ width: `${Math.min(pct, 100)}%` }} />
         </div>
       )}
     </Link>
@@ -339,7 +350,7 @@ export default function TodayView() {
     return (
       <main className="min-h-screen max-w-2xl mx-auto px-4">
         <PageHeader title="Today" />
-        <div className="text-gray-500 text-center py-12">{loading ? "Loading..." : "Failed to load."}</div>
+        <div className="text-moss text-center py-12 font-semibold">{loading ? "Loading..." : "Failed to load."}</div>
       </main>
     );
   }
@@ -359,8 +370,25 @@ export default function TodayView() {
     ...timedTodos.map((t) => ({ key: t.todoId, time: t.dueTime!, node: <TaskRow key={t.todoId} task={t} onToggle={handleToggleTask} /> })),
   ].sort((a, b) => a.time.localeCompare(b.time));
 
+  // Planned ↔ done reconciliation (same rule as calendar): each non-rest
+  // workout claims the first compatible unused activity; leftovers render
+  // as unplanned side-by-side rows.
+  const usedActivities = new Set<string>();
+  const workoutRows = data.workouts.map((w) => {
+    if (w.workoutType === "rest") return { workout: w, matched: null };
+    const matched =
+      data.activities.find((a) => !usedActivities.has(a.id) && isCompatibleType(w.activityType, a.activityType)) || null;
+    if (matched) usedActivities.add(matched.id);
+    return { workout: w, matched };
+  });
+  const extraActivities = data.activities.filter((a) => !usedActivities.has(a.id));
+  const visibleWorkoutRows = workoutRows.filter(
+    ({ workout }) => workout.workoutType !== "rest" || (data.workouts.length === 1 && extraActivities.length === 0)
+  );
+
   const isEmptyDay =
-    allDayEvents.length === 0 && timedRows.length === 0 && data.workouts.length === 0 && untimedTodos.length === 0;
+    allDayEvents.length === 0 && timedRows.length === 0 && visibleWorkoutRows.length === 0 &&
+    extraActivities.length === 0 && untimedTodos.length === 0;
   const showNewUserCTAs = !data.hasActivePlan && !data.planExpired;
 
   return (
@@ -369,21 +397,21 @@ export default function TodayView() {
 
       {/* Date + greeting */}
       <div className="mt-3 mb-3">
-        <h1 className="text-xl font-bold text-white">{formatHeaderDate(data.date)}</h1>
+        <h1 className="text-xl font-extrabold text-ink">{formatHeaderDate(data.date)}</h1>
       </div>
 
       {/* Morning briefing */}
       <section className="mb-4">
-        <div className="bg-green-900/15 border border-green-800/30 rounded-2xl px-4 py-3.5 flex gap-3">
+        <div className="sticker-lg bg-[#eef6d4] px-4 py-3.5 flex gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/icon-64.png" alt="" className="w-7 h-7 flex-shrink-0" />
+          <img src="/icons/icon-64.png" alt="" className="w-8 h-8 flex-shrink-0 rounded-full border-2 border-ink" />
           {briefingLoading ? (
             <div className="flex-1 space-y-2 py-1">
-              <div className="h-3 bg-gray-800 rounded animate-pulse w-full" />
-              <div className="h-3 bg-gray-800 rounded animate-pulse w-2/3" />
+              <div className="h-3 bg-shade/60 rounded animate-pulse w-full" />
+              <div className="h-3 bg-shade/60 rounded animate-pulse w-2/3" />
             </div>
           ) : (
-            <p className="text-sm text-gray-200 leading-relaxed">{briefing || "Have a good one. Speak into the mic to add anything to your day."}</p>
+            <p className="text-sm text-ink font-semibold leading-relaxed">{briefing || "Have a good one. Speak into the mic to add anything to your day."}</p>
           )}
         </div>
       </section>
@@ -393,10 +421,10 @@ export default function TodayView() {
 
       {/* Plan expired prompt */}
       {data.planExpired && (
-        <div className="mb-3 bg-green-900/20 border border-green-800/40 rounded-xl p-3.5 flex items-center gap-3">
+        <div className="mb-3 sticker px-3.5 py-3 flex items-center gap-3">
           <span className="text-xl flex-shrink-0">🏁</span>
-          <p className="text-sm text-gray-200 flex-1">{data.activePlanName || "Your plan"} is done!</p>
-          <Link href={`/chat?msg=${encodeURIComponent("I'd like to build a new training plan")}`} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg flex-shrink-0">Build a plan</Link>
+          <p className="text-sm text-ink font-bold flex-1">{data.activePlanName || "Your plan"} is done!</p>
+          <Link href={`/chat?msg=${encodeURIComponent("I'd like to build a new training plan")}`} className="btn-brocco px-3 py-1.5 text-xs flex-shrink-0">Build a plan</Link>
         </div>
       )}
 
@@ -404,9 +432,9 @@ export default function TodayView() {
       {adjustments.length > 0 && (
         <div className="mb-3 space-y-1">
           {adjustments.map((a) => (
-            <div key={a.id} className="bg-blue-900/20 border border-blue-800/40 rounded-lg px-3 py-1.5 flex items-center justify-between">
-              <p className="text-xs text-gray-300 truncate flex-1">{a.summary}</p>
-              <button onClick={() => handleUndoAdjustment(a.id)} className="text-xs text-gray-500 hover:text-yellow-400 ml-2 flex-shrink-0">Undo</button>
+            <div key={a.id} className="bg-[#e3eefa] border-2 border-ink rounded-xl px-3 py-1.5 flex items-center justify-between shadow-[2px_2px_0_var(--color-shade)]">
+              <p className="text-xs text-ink font-semibold truncate flex-1">{a.summary}</p>
+              <button onClick={() => handleUndoAdjustment(a.id)} className="text-xs text-moss font-bold hover:text-clay ml-2 flex-shrink-0">Undo</button>
             </div>
           ))}
         </div>
@@ -416,54 +444,41 @@ export default function TodayView() {
       {showNewUserCTAs && (
         <div className="mb-4 space-y-2">
           {!data.stravaConnected && (
-            <Link href="/api/strava/auth?returnTo=/today" className="flex items-center gap-3 bg-gray-900 border border-gray-700 hover:border-gray-600 rounded-xl px-4 py-3 transition-colors">
+            <Link href="/api/strava/auth?returnTo=/today" className="sticker sticker-press flex items-center gap-3 px-4 py-3">
               <span className="text-lg">🏃</span>
               <div className="flex-1">
-                <p className="text-sm font-medium text-white">Connect Strava</p>
-                <p className="text-xs text-gray-500">Import your runs so Brocco knows your fitness</p>
+                <p className="text-sm font-bold text-ink">Connect Strava</p>
+                <p className="text-xs text-moss font-semibold">Import your runs so Brocco knows your fitness</p>
               </div>
             </Link>
           )}
-          <Link href={`/chat?msg=${encodeURIComponent("I'd like to build a training plan")}`} className="flex items-center gap-3 bg-green-600/90 hover:bg-green-600 border border-green-500/30 rounded-xl px-4 py-3 transition-colors">
+          <Link href={`/chat?msg=${encodeURIComponent("I'd like to build a training plan")}`} className="btn-brocco flex items-center gap-3 px-4 py-3">
             <span className="text-lg">💬</span>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-white">Build my training plan</p>
-              <p className="text-xs text-green-200/70">Chat with Brocco to create one</p>
+            <div className="flex-1 text-left">
+              <p className="text-sm font-extrabold">Build my training plan</p>
+              <p className="text-xs text-leaf font-bold">Chat with Brocco to create one</p>
             </div>
           </Link>
         </div>
       )}
 
       {/* Agenda */}
-      <section className="space-y-1.5 mb-4">
+      <section className="space-y-2 mb-4">
         {allDayEvents.map((e) => <EventRow key={e.occurrenceKey} event={e} />)}
         {timedRows.map((r) => r.node)}
-        {data.workouts.map((w) => (
-          <WorkoutRow key={w.workoutId} workout={w} activities={data.activities} />
+        {visibleWorkoutRows.map(({ workout, matched }) => (
+          <WorkoutRow key={workout.workoutId} workout={workout} matched={matched} />
         ))}
+        {extraActivities.map((a) => <ExtraActivityRow key={a.id} activity={a} />)}
         {untimedTodos.map((t) => <TaskRow key={t.todoId} task={t} onToggle={handleToggleTask} />)}
-
-        {/* Unplanned activities done today */}
-        {data.activities.length > 0 && data.workouts.every((w) => w.workoutType === "rest" || !w.completed) && (
-          data.activities.map((a) => (
-            <Link key={a.id} href={`/activity/${a.id}`} className="flex items-center gap-3 bg-green-900/15 border border-green-800/25 rounded-xl px-3.5 py-2.5">
-              <div className="w-12 flex-shrink-0 text-right"><span className="text-sm">✅</span></div>
-              <div className="w-1 self-stretch rounded-full bg-green-700" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-green-300 font-medium truncate">{a.name}</p>
-                <p className="text-xs text-gray-500">{[a.distanceKm ? `${a.distanceKm.toFixed(1)}km` : null, a.avgPacePerKm].filter(Boolean).join(" · ")}</p>
-              </div>
-            </Link>
-          ))
-        )}
 
         {isEmptyDay && (
           <div className="text-center py-10">
             <p className="text-4xl mb-3">🌤️</p>
-            <p className="text-gray-400 text-sm font-medium">
+            <p className="text-ink text-sm font-bold">
               {anyLifeFeature(features) ? "Clear day ahead" : "No training today"}
             </p>
-            <p className="text-gray-600 text-xs mt-1">
+            <p className="text-moss text-xs mt-1 font-semibold">
               {anyLifeFeature(features)
                 ? "Tap the mic and tell Brocco what's coming up."
                 : "Rest up, or chat with Brocco about the week."}
@@ -480,7 +495,7 @@ export default function TodayView() {
       {/* Coming up */}
       {(data.upcoming.events.length > 0 || data.upcoming.workouts.length > 0) && (
         <section className="mb-4">
-          <h2 className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-2">Coming up</h2>
+          <h2 className="label-xs mb-2">Coming up</h2>
           <div className="space-y-1">
             {[...data.upcoming.events.map((e) => ({
                 key: e.occurrenceKey, date: e.date, label: e.title,
@@ -495,12 +510,12 @@ export default function TodayView() {
               .slice(0, 5)
               .map((item) => (
                 <div key={item.key} className="flex items-center gap-2.5 px-1 py-1">
-                  <span className="text-xs text-gray-600 w-16 flex-shrink-0">
+                  <span className="text-xs text-sage font-bold w-16 flex-shrink-0">
                     {new Date(`${item.date}T00:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric" })}
                   </span>
-                  <div className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
-                  <span className="text-xs text-gray-400 truncate flex-1">{item.label}</span>
-                  {item.detail && <span className="text-xs text-gray-600 flex-shrink-0">{item.detail}</span>}
+                  <div className="w-2 h-2 rounded-full border border-ink/60 flex-shrink-0" style={{ backgroundColor: item.color }} />
+                  <span className="text-xs text-ink font-semibold truncate flex-1">{item.label}</span>
+                  {item.detail && <span className="text-xs text-sage font-bold flex-shrink-0 tabular-nums">{item.detail}</span>}
                 </div>
               ))}
           </div>
@@ -509,7 +524,7 @@ export default function TodayView() {
 
       {/* Ask Brocco */}
       <section>
-        <Link href="/chat" className="flex items-center justify-center gap-2 w-full py-2.5 bg-gray-900 border border-gray-700 hover:border-gray-600 text-gray-300 text-sm font-medium rounded-xl transition-colors">
+        <Link href="/chat" className="btn-quiet flex items-center justify-center gap-2 w-full py-2.5 text-sm">
           <span>💬</span><span>Open chat with Brocco</span>
         </Link>
       </section>

@@ -30,7 +30,7 @@ export function DesktopNavLinks() {
         <Link
           key={l.name}
           href={l.href}
-          className={`transition-colors ${l.match(pathname) ? "text-white font-medium" : "text-gray-400 hover:text-white"}`}
+          className={`transition-colors font-bold ${l.match(pathname) ? "text-ink" : "text-sage hover:text-ink"}`}
         >
           {l.name}
         </Link>
@@ -42,12 +42,12 @@ export function DesktopNavLinks() {
 /** Standard page header: branding + desktop links. Used by the new life-planner pages. */
 export function PageHeader({ title, right }: { title?: string; right?: React.ReactNode }) {
   return (
-    <nav className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm -mx-4 px-4">
+    <nav className="safe-top sticky top-0 z-30 bg-cream/95 backdrop-blur-sm -mx-4 px-4 border-b-2 border-ink/10">
       <div className="flex items-center justify-between pb-2 md:pb-4">
         <div className="flex items-center gap-2 min-w-0">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6 md:w-8 md:h-8" />
-          <span className="font-semibold text-sm text-gray-300 md:font-bold md:text-lg md:text-white truncate">
+          <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6 md:w-8 md:h-8 rounded-full border-2 border-ink" />
+          <span className="font-extrabold text-sm text-ink md:text-lg truncate">
             {title || "brocco.run"}
           </span>
         </div>

@@ -40,17 +40,17 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-sm sticker-lg p-6">
         <div className="text-center mb-8">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/brocco-runner.png" alt="Brocco, running" className="h-36 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold">brocco.run</h1>
-          <p className="text-gray-400 text-sm mt-1">Run like a broccoli.</p>
+          <h1 className="text-2xl font-extrabold text-ink">brocco.run</h1>
+          <p className="text-moss text-sm mt-1">Run like a broccoli.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">
+            <label htmlFor="email" className="block text-sm font-bold text-ink mb-1">
               Email
             </label>
             <input
@@ -59,13 +59,13 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              className="field"
               placeholder="you@example.com"
             />
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
+            <label htmlFor="password" className="block text-sm font-bold text-ink mb-1">
               Password
             </label>
             <input
@@ -74,33 +74,33 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+              className="field"
               placeholder="Enter password"
             />
           </div>
 
           {error && (
-            <p className="text-red-400 text-sm">{error}</p>
+            <p className="bg-clay-soft border-2 border-clay text-clay rounded-xl px-3 py-2 text-sm font-bold">{error}</p>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2 px-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
+            className="btn-brocco w-full py-2 px-4"
           >
             {loading ? "Logging in..." : "Log in"}
           </button>
         </form>
 
         <p className="text-center mt-3">
-          <a href="/forgot-password" className="text-sm text-gray-500 hover:text-gray-300 underline underline-offset-2">
+          <a href="/forgot-password" className="text-sm text-moss hover:text-ink underline underline-offset-2">
             Forgot password?
           </a>
         </p>
 
-        <p className="text-center text-gray-500 text-sm mt-6">
+        <p className="text-center text-moss text-sm mt-6">
           Have an invite code?{" "}
-          <a href="/signup" className="text-green-400 hover:text-green-300 underline">
+          <a href="/signup" className="text-leaf font-bold underline">
             Sign up
           </a>
         </p>

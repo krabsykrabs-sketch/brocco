@@ -49,8 +49,8 @@ function ResetPasswordForm() {
   if (!token) {
     return (
       <div className="text-center">
-        <p className="text-red-400 text-sm mb-4">This reset link is incomplete.</p>
-        <a href="/forgot-password" className="text-green-400 hover:text-green-300 underline text-sm">
+        <p className="bg-clay-soft border-2 border-clay text-clay rounded-xl px-3 py-2 text-sm font-bold mb-4">This reset link is incomplete.</p>
+        <a href="/forgot-password" className="text-leaf font-bold underline text-sm">
           Request a new one
         </a>
       </div>
@@ -59,7 +59,7 @@ function ResetPasswordForm() {
 
   if (done) {
     return (
-      <div className="bg-green-900/30 border border-green-800 rounded-lg p-4 text-sm text-green-300 text-center">
+      <div className="bg-sprout border-2 border-ink rounded-xl p-4 text-sm text-ink font-bold text-center">
         Password updated. Taking you to the login…
       </div>
     );
@@ -68,7 +68,7 @@ function ResetPasswordForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1">
+        <label htmlFor="password" className="block text-sm font-bold text-ink mb-1">
           New password
         </label>
         <input
@@ -78,12 +78,12 @@ function ResetPasswordForm() {
           onChange={(e) => setPassword(e.target.value)}
           required
           autoFocus
-          className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          className="field"
           placeholder="Minimum 8 characters"
         />
       </div>
       <div>
-        <label htmlFor="confirm" className="block text-sm font-medium text-gray-300 mb-1">
+        <label htmlFor="confirm" className="block text-sm font-bold text-ink mb-1">
           Repeat new password
         </label>
         <input
@@ -92,17 +92,17 @@ function ResetPasswordForm() {
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           required
-          className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          className="field"
           placeholder="Same again"
         />
       </div>
 
-      {error && <p className="text-red-400 text-sm">{error}</p>}
+      {error && <p className="bg-clay-soft border-2 border-clay text-clay rounded-xl px-3 py-2 text-sm font-bold">{error}</p>}
 
       <button
         type="submit"
         disabled={loading}
-        className="w-full py-2 px-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
+        className="btn-brocco w-full py-2 px-4"
       >
         {loading ? "Saving..." : "Set new password"}
       </button>
@@ -113,13 +113,13 @@ function ResetPasswordForm() {
 export default function ResetPasswordPage() {
   return (
     <main className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-sm sticker-lg p-6">
         <div className="text-center mb-8">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/brocco-runner.png" alt="Brocco, running" className="h-32 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold">Choose a new password</h1>
+          <h1 className="text-2xl font-extrabold text-ink">Choose a new password</h1>
         </div>
-        <Suspense fallback={<div className="text-gray-500 text-center">Loading…</div>}>
+        <Suspense fallback={<div className="text-moss text-center">Loading…</div>}>
           <ResetPasswordForm />
         </Suspense>
       </div>

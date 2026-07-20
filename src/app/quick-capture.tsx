@@ -197,12 +197,12 @@ export function QuickCapture() {
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`px-3.5 py-2.5 rounded-xl text-sm shadow-lg backdrop-blur-sm border animate-[fadeIn_0.15s_ease-out] flex items-center gap-3 ${
+            className={`px-3.5 py-2.5 rounded-xl text-sm font-semibold border-2 border-ink shadow-[2px_2px_0_var(--color-shade)] animate-[fadeIn_0.15s_ease-out] flex items-center gap-3 ${
               t.kind === "success"
-                ? "bg-green-900/90 border-green-700/50 text-green-100"
+                ? "bg-sprout text-ink"
                 : t.kind === "error"
-                ? "bg-red-900/90 border-red-700/50 text-red-100"
-                : "bg-gray-800/95 border-gray-700/60 text-gray-200"
+                ? "bg-clay-soft text-clay"
+                : "bg-paper text-ink"
             }`}
           >
             <span className="flex-1">{t.text}</span>
@@ -223,13 +223,13 @@ export function QuickCapture() {
 
       {/* Clarify overlay */}
       {clarify && (
-        <div className="fixed left-4 right-4 md:left-auto md:right-6 md:w-96 z-[70] bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-3.5"
+        <div className="fixed left-4 right-4 md:left-auto md:right-6 md:w-96 z-[70] sticker-lg p-3.5"
           style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 8.5rem)" }}>
           <div className="flex items-start gap-2.5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/icons/icon-64.png" alt="" className="w-6 h-6 mt-0.5" />
-            <p className="text-sm text-gray-200 flex-1">{clarify}</p>
-            <button onClick={() => { setClarify(null); setClarifyInput(""); }} className="text-gray-500 hover:text-white text-lg leading-none">&times;</button>
+            <img src="/icons/icon-64.png" alt="" className="w-6 h-6 mt-0.5 rounded-full border-2 border-ink" />
+            <p className="text-sm text-ink font-semibold flex-1">{clarify}</p>
+            <button onClick={() => { setClarify(null); setClarifyInput(""); }} className="text-moss hover:text-ink text-lg leading-none">&times;</button>
           </div>
           <div className="flex gap-2 mt-3">
             <input
@@ -242,7 +242,7 @@ export function QuickCapture() {
                 }
               }}
               placeholder="Answer, or use the mic…"
-              className="flex-1 px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-green-500"
+              className="field flex-1"
               disabled={busy}
             />
             <button
@@ -253,7 +253,7 @@ export function QuickCapture() {
                 }
               }}
               disabled={busy || !clarifyInput.trim()}
-              className="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white rounded-lg text-sm"
+              className="btn-brocco px-3 py-2 text-sm"
             >
               ↵
             </button>
@@ -266,11 +266,11 @@ export function QuickCapture() {
           as a mysteriously wrong toast */}
       {micEnabled && phase === "thinking" && transcript && (
         <div
-          className="fixed z-[60] right-4 md:right-6 max-w-[70vw] md:max-w-sm bg-gray-900/95 border border-gray-700 rounded-xl px-3 py-2 shadow-lg"
+          className="fixed z-[60] right-4 md:right-6 max-w-[70vw] md:max-w-sm sticker px-3 py-2"
           style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 8.5rem)" }}
         >
-          <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-0.5">Heard</p>
-          <p className="text-xs text-gray-200 italic">&ldquo;{transcript}&rdquo;</p>
+          <p className="label-xs mb-0.5">Heard</p>
+          <p className="text-xs text-ink italic font-semibold">&ldquo;{transcript}&rdquo;</p>
         </div>
       )}
 
@@ -279,10 +279,10 @@ export function QuickCapture() {
         <button
           onClick={handleDiscard}
           aria-label="Discard recording"
-          className="fixed z-[60] w-10 h-10 rounded-full bg-gray-800 border border-gray-600 hover:bg-gray-700 shadow-lg flex items-center justify-center transition-colors"
+          className="fixed z-[60] w-10 h-10 rounded-full bg-card border-2 border-ink shadow-[2px_2px_0_var(--color-shade)] hover:bg-ghost flex items-center justify-center transition-colors"
           style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 5rem)", right: "calc(1rem + 4.25rem)" }}
         >
-          <span className="text-gray-300 text-lg leading-none">&times;</span>
+          <span className="text-ink text-lg leading-none">&times;</span>
         </button>
       )}
 
@@ -292,21 +292,21 @@ export function QuickCapture() {
           onClick={handleMicTap}
           disabled={busy}
           aria-label={phase === "recording" ? "Stop recording and send" : "Speak to Brocco"}
-          className={`fixed z-[60] right-4 md:right-6 w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all ${
+          className={`fixed z-[60] right-4 md:right-6 w-14 h-14 rounded-full border-2 border-ink shadow-[3px_3px_0_var(--color-shade)] flex items-center justify-center transition-all ${
             phase === "recording"
-              ? "bg-red-600 scale-110 animate-pulse"
+              ? "bg-clay scale-110 animate-pulse"
               : busy
-              ? "bg-gray-700"
-              : "bg-green-600 hover:bg-green-500 active:scale-95"
+              ? "bg-ghost"
+              : "bg-brocco active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
           }`}
           style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 4.5rem)" }}
         >
           {busy ? (
-            <span className="inline-block w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            <span className="inline-block w-6 h-6 border-2 border-ink/20 border-t-ink rounded-full animate-spin" />
           ) : phase === "recording" ? (
             <span className="w-5 h-5 bg-white rounded-sm" />
           ) : (
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-6 h-6 text-ink" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m-4 0h8M12 3a3 3 0 00-3 3v4a3 3 0 006 0V6a3 3 0 00-3-3z" />
             </svg>
           )}

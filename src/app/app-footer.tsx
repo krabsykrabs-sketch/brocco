@@ -14,7 +14,7 @@ export function AppFooter() {
         href="https://www.strava.com"
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-400 transition-colors"
+        className="flex items-center gap-1.5 text-xs text-moss hover:text-ink transition-colors"
       >
         Powered by
         <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-[#FC4C02]" aria-label="Strava">
@@ -22,8 +22,8 @@ export function AppFooter() {
         </svg>
         <span className="text-[#FC4C02]">Strava</span>
       </a>
-      <span className="text-gray-700">|</span>
-      <a href="/legal" className="text-xs text-gray-500 hover:text-gray-400 transition-colors">
+      <span className="text-shade">|</span>
+      <a href="/legal" className="text-xs text-moss hover:text-ink transition-colors">
         Legal
       </a>
     </footer>
