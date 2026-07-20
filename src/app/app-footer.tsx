@@ -6,7 +6,7 @@ export function AppFooter() {
   const pathname = usePathname();
 
   // Hide on chat, login, signup pages
-  if (pathname.startsWith("/chat") || pathname.startsWith("/login") || pathname.startsWith("/signup")) return null;
+  if (pathname.startsWith("/chat") || pathname.startsWith("/kitchen/chat") || pathname.startsWith("/login") || pathname.startsWith("/signup")) return null;
 
   return (
     <footer className="hidden md:flex w-full justify-center items-center gap-3 py-4 opacity-60">

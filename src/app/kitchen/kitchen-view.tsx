@@ -449,12 +449,12 @@ export default function KitchenView() {
             <span className="text-[10px] text-moss font-semibold">Photo a cookbook page — multi-page works too</span>
           </button>
           <Link
-            href={`/chat?msg=${encodeURIComponent("What can I cook tonight? Here's what I have: ")}`}
+            href="/kitchen/chat"
             className="btn-brocco flex flex-col items-center gap-1 px-4 py-4"
           >
             <span className="text-2xl">🥦</span>
-            <span className="text-sm font-extrabold">What can I cook?</span>
-            <span className="text-[10px] text-leaf font-bold">Tell Brocco your ingredients</span>
+            <span className="text-sm font-extrabold">Cook with Brocco</span>
+            <span className="text-[10px] text-leaf font-bold">Tell Brocco your ingredients, pick a recipe</span>
           </Link>
         </div>
         <input

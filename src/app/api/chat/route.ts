@@ -55,7 +55,12 @@ export async function POST(request: NextRequest) {
   const userName = user?.name || "Runner";
 
   const context = await buildCoachContext(session.userId);
-  const systemPrompt = await buildSystemPrompt(session.userId, userName, context);
+  const systemPrompt = await buildSystemPrompt(
+    session.userId,
+    userName,
+    context,
+    chatSession.type === "kitchen" ? "kitchen" : "chat"
+  );
 
   const profileFlags = await prisma.userProfile.findUnique({
     where: { userId: session.userId },

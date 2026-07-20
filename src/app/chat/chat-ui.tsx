@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { DesktopNavLinks } from "@/app/nav";
 import { ChatMarkdown } from "./markdown";
+import { useLiveSpeech } from "@/lib/live-speech";
 
 interface Message {
   id: string;
@@ -124,11 +125,15 @@ function SessionSidebar({
   currentId,
   open,
   onClose,
+  basePath,
+  title,
 }: {
   sessions: SessionItem[];
   currentId: string | null;
   open: boolean;
   onClose: () => void;
+  basePath: string;
+  title: string;
 }) {
   const router = useRouter();
 
@@ -145,14 +150,14 @@ function SessionSidebar({
         }`}
       >
         <div className="p-4 border-b-2 border-shade flex items-center justify-between">
-          <h2 className="font-extrabold text-sm text-ink">Conversations</h2>
+          <h2 className="font-extrabold text-sm text-ink">{title}</h2>
           <button onClick={onClose} className="text-moss hover:text-ink text-lg">
             &times;
           </button>
         </div>
         <div className="p-2 border-b-2 border-shade">
           <button
-            onClick={() => { router.push("/chat"); onClose(); }}
+            onClick={() => { router.push(basePath); onClose(); }}
             className="btn-brocco w-full text-left px-3 py-2 text-sm"
           >
             + New conversation
@@ -162,7 +167,7 @@ function SessionSidebar({
           {sessions.map((s) => (
             <button
               key={s.id}
-              onClick={() => { router.push(`/chat/${s.id}`); onClose(); }}
+              onClick={() => { router.push(`${basePath}/${s.id}`); onClose(); }}
               className={`w-full text-left px-4 py-3 border-b border-shade hover:bg-ghost transition-colors ${
                 s.id === currentId ? "bg-ghost" : ""
               }`}
@@ -181,12 +186,18 @@ export default function ChatUI({
   sessionId: initialSessionId,
   initialMessages,
   autoMessage,
+  mode = "coach",
 }: {
   sessionId: string | null;
   initialMessages: Message[];
   autoMessage?: string;
+  mode?: "coach" | "kitchen";
 }) {
   const router = useRouter();
+  const kitchen = mode === "kitchen";
+  const basePath = kitchen ? "/kitchen/chat" : "/chat";
+  const sessionsUrl = `/api/chat/sessions${kitchen ? "?type=kitchen" : ""}`;
+  const sessionBody = kitchen ? { type: "kitchen" } : {};
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
@@ -202,11 +213,33 @@ export default function ChatUI({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  // Text in the composer before dictation started — live words append to it.
+  const baseInputRef = useRef("");
+
+  // Live word-by-word feedback while recording (Whisper still does the
+  // real transcription on stop; this is what makes dictation feel alive).
+  const liveSpeech = useLiveSpeech((text) => {
+    setInput(baseInputRef.current ? `${baseInputRef.current} ${text}` : text);
+  });
 
   // Detect MediaRecorder support
   useEffect(() => {
     setMicSupported(typeof window !== "undefined" && !!window.MediaRecorder);
   }, []);
+
+  // Auto-grow the composer whenever its value changes — after the DOM has
+  // the new value, so scrollHeight is measured on the real content. (The
+  // old inline resize measured before React re-rendered: a dictated
+  // message stayed one line tall.)
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+    // While dictating, keep the newest words in view once the cap is hit
+    if (recording) el.scrollTop = el.scrollHeight;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input]);
 
   async function toggleRecording() {
     if (recording) {
@@ -231,6 +264,7 @@ export default function ChatUI({
         // Stop all tracks to release mic
         stream.getTracks().forEach((t) => t.stop());
         setRecording(false);
+        const liveText = liveSpeech.stop();
 
         const chunks = audioChunksRef.current;
         if (chunks.length === 0) return;
@@ -243,26 +277,30 @@ export default function ChatUI({
           form.append("audio", blob, `recording.${recorder.mimeType.includes("webm") ? "webm" : "mp4"}`);
 
           const res = await fetch("/api/voice/transcribe", { method: "POST", body: form });
+          const base = baseInputRef.current;
           if (res.ok) {
             const { text } = await res.json();
-            if (text) {
-              const newValue = input ? input + " " + text : text;
-              setInput(newValue);
-              if (inputRef.current) {
-                inputRef.current.style.height = "auto";
-                inputRef.current.style.height = Math.min(inputRef.current.scrollHeight, 160) + "px";
-              }
-            }
+            // Whisper is the source of truth; the live transcript covers
+            // for it when it comes back empty or the request fails.
+            const finalText = (text as string)?.trim() || liveText;
+            if (finalText) setInput(base ? `${base} ${finalText}` : finalText);
+          } else if (liveText) {
+            setInput(base ? `${base} ${liveText}` : liveText);
           }
         } catch {
-          // Transcription failed silently
+          if (liveText) {
+            const base = baseInputRef.current;
+            setInput(base ? `${base} ${liveText}` : liveText);
+          }
         } finally {
           setTranscribing(false);
           inputRef.current?.focus();
         }
       };
 
+      baseInputRef.current = input.trim();
       recorder.start();
+      liveSpeech.start();
       setRecording(true);
     } catch {
       // Mic permission denied or unavailable
@@ -279,19 +317,20 @@ export default function ChatUI({
 
   // Load sessions for sidebar
   useEffect(() => {
-    fetch("/api/chat/sessions")
+    fetch(sessionsUrl)
       .then((r) => r.json())
       .then((data) => setSessions(data.sessions || []))
       .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
   async function ensureSession(): Promise<string> {
     if (sessionId) return sessionId;
 
-    const res = await fetch("/api/chat/sessions", { method: "POST" });
+    const res = await fetch("/api/chat/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sessionBody) });
     const data = await res.json();
     setSessionId(data.id);
-    window.history.replaceState(null, "", `/chat/${data.id}`);
+    window.history.replaceState(null, "", `${basePath}/${data.id}`);
     // Opener is already fetched in the effect below
     return data.id;
   }
@@ -306,11 +345,11 @@ export default function ChatUI({
       try {
         if (autoMessage) {
           // Create a new session and auto-send the pre-filled message
-          const res = await fetch("/api/chat/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ forceNew: true }) });
+          const res = await fetch("/api/chat/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ forceNew: true, ...sessionBody }) });
           const data = await res.json();
           if (cancelled) return;
           setSessionId(data.id);
-          window.history.replaceState(null, "", `/chat/${data.id}`);
+          window.history.replaceState(null, "", `${basePath}/${data.id}`);
 
           // Send the pre-filled message
           const chatRes = await fetch("/api/chat", {
@@ -364,11 +403,11 @@ export default function ChatUI({
           }
         } else {
           // Get or reuse today's session
-          const res = await fetch("/api/chat/sessions", { method: "POST" });
+          const res = await fetch("/api/chat/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sessionBody) });
           const data = await res.json();
           if (cancelled) return;
           setSessionId(data.id);
-          window.history.replaceState(null, "", `/chat/${data.id}`);
+          window.history.replaceState(null, "", `${basePath}/${data.id}`);
 
           if (data.reused) {
             // Load existing messages from today's session
@@ -386,6 +425,9 @@ export default function ChatUI({
               if (existingMsgs.length > 0) setMessages(existingMsgs);
             }
           }
+
+          // The training-analysis opener belongs to the coach chat only.
+          if (kitchen) return;
 
           // Ask the server for an opener. The server holds the gate (one
           // analysis per day, plus a fresh one when a new workout has landed
@@ -546,7 +588,7 @@ export default function ChatUI({
           <div className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6 rounded-full border-2 border-ink" />
-            <span className="font-bold text-sm text-ink md:text-lg md:font-extrabold">brocco.run</span>
+            <span className="font-bold text-sm text-ink md:text-lg md:font-extrabold">{kitchen ? "Brocco's kitchen 🍳" : "brocco.run"}</span>
           </div>
         </div>
         {/* Desktop nav only */}
@@ -559,6 +601,8 @@ export default function ChatUI({
         currentId={sessionId}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        basePath={basePath}
+        title={kitchen ? "Kitchen chats" : "Conversations"}
       />
 
       {/* Messages */}
@@ -567,7 +611,16 @@ export default function ChatUI({
           <div className="text-center py-16">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/icons/icon-192.png" alt="" className="w-16 h-16 mx-auto mb-4 rounded-full border-2 border-ink" />
-            <span className="inline-block w-6 h-6 border-2 border-ink/20 border-t-ink rounded-full animate-spin" />
+            {kitchen ? (
+              <>
+                <p className="text-sm font-bold text-ink">What are we cooking?</p>
+                <p className="text-xs text-moss font-semibold mt-1 max-w-xs mx-auto">
+                  Tell me what&apos;s in your fridge and I&apos;ll suggest something — your saved recipes and pantry staples included.
+                </p>
+              </>
+            ) : (
+              <span className="inline-block w-6 h-6 border-2 border-ink/20 border-t-ink rounded-full animate-spin" />
+            )}
           </div>
         )}
 
@@ -610,17 +663,12 @@ export default function ChatUI({
           <textarea
             ref={inputRef}
             value={input}
-            onChange={(e) => {
-              setInput(e.target.value);
-              // Auto-expand: reset height then set to scrollHeight
-              const el = e.target;
-              el.style.height = "auto";
-              el.style.height = Math.min(el.scrollHeight, 160) + "px";
-            }}
-            placeholder="Ask Brocco..."
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={recording ? (liveSpeech.supported ? "Listening…" : "Listening… (words appear when you stop)") : kitchen ? "What's in your fridge?" : "Ask Brocco..."}
             rows={1}
-            className="field flex-1 resize-none"
-            style={{ height: "auto", maxHeight: "160px", overflow: "auto" }}
+            readOnly={recording}
+            className={`field flex-1 resize-none ${recording ? "border-clay!" : ""}`}
+            style={{ height: "auto", maxHeight: "200px", overflow: "auto" }}
             disabled={sending}
           />
           {micSupported && (

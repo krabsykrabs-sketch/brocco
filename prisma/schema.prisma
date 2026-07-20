@@ -329,6 +329,7 @@ enum ChatSessionType {
   general
   onboarding
   plan_creation
+  kitchen
 }
 
 model PendingPlanChange {

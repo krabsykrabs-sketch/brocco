@@ -6,6 +6,7 @@ import { getScreenContext, emitDataChanged } from "@/lib/capture-context";
 import { TOAST_EVENT, type AppToast } from "@/lib/toast";
 import { useFeatures } from "./features-provider";
 import { anyLifeFeature } from "@/lib/features";
+import { useLiveSpeech } from "@/lib/live-speech";
 
 /**
  * Floating mic — the primary input method of the whole app.
@@ -14,7 +15,7 @@ import { anyLifeFeature } from "@/lib/features";
  */
 
 // No FAB on auth/legal pages; chat has its own mic.
-const HIDDEN_ON = ["/login", "/signup", "/legal", "/chat", "/forgot-password", "/reset-password"];
+const HIDDEN_ON = ["/login", "/signup", "/legal", "/chat", "/kitchen/chat", "/forgot-password", "/reset-password"];
 
 interface Toast {
   id: number;
@@ -36,11 +37,16 @@ export function QuickCapture() {
   const [clarifyInput, setClarifyInput] = useState("");
   const [micSupported, setMicSupported] = useState(false);
   const [transcript, setTranscript] = useState<string | null>(null);
+  const [liveText, setLiveText] = useState("");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const discardedRef = useRef(false);
   const phaseRef = useRef<Phase>("idle");
   phaseRef.current = phase;
+
+  // Live word-by-word feedback while the mic records (display only —
+  // Whisper transcribes the audio on stop, with this as the fallback).
+  const liveSpeech = useLiveSpeech(setLiveText);
 
   useEffect(() => {
     setMicSupported(typeof window !== "undefined" && !!window.MediaRecorder);
@@ -128,6 +134,8 @@ export function QuickCapture() {
 
       recorder.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop());
+        const spoken = liveSpeech.stop();
+        setLiveText("");
         if (discardedRef.current) {
           discardedRef.current = false;
           setPhase("idle");
@@ -146,24 +154,34 @@ export function QuickCapture() {
           const res = await fetch("/api/voice/transcribe", { method: "POST", body: form });
           if (!res.ok) throw new Error("transcribe failed");
           const { text } = await res.json();
-          if (!text || !text.trim()) {
+          // Whisper is the source of truth; the live transcript covers
+          // for it when it hears nothing.
+          const finalText = (text as string)?.trim() || spoken;
+          if (!finalText) {
             pushToast("Didn't catch that — try again.", "error");
             setPhase("idle");
             return;
           }
-          await sendCapture(text.trim());
+          await sendCapture(finalText);
         } catch {
-          pushToast("Transcription failed — try again.", "error");
-          setPhase("idle");
+          if (spoken) {
+            await sendCapture(spoken);
+          } else {
+            pushToast("Transcription failed — try again.", "error");
+            setPhase("idle");
+          }
         }
       };
 
+      setLiveText("");
       recorder.start();
+      liveSpeech.start();
       setPhase("recording");
     } catch {
       pushToast("Microphone unavailable. Check permissions.", "error");
     }
-  }, [pushToast, sendCapture]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pushToast, sendCapture, liveSpeech.start, liveSpeech.stop]);
 
   const handleMicTap = useCallback(() => {
     if (phaseRef.current === "recording") {
@@ -258,6 +276,22 @@ export function QuickCapture() {
               ↵
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Live transcript chip while recording — words appear as you speak,
+          so you know the mic is actually hearing you */}
+      {micEnabled && phase === "recording" && (
+        <div
+          className="fixed z-[60] left-4 right-4 md:left-auto md:right-6 md:max-w-sm sticker px-3 py-2"
+          style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 8.5rem)" }}
+        >
+          <p className="label-xs text-clay! mb-0.5 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-clay animate-pulse" /> Listening
+          </p>
+          <p className="text-sm text-ink font-semibold max-h-28 overflow-y-auto">
+            {liveText || <span className="text-ghost-ink">{liveSpeech.supported ? "Say something…" : "Speak, then tap the mic again to stop"}</span>}
+          </p>
         </div>
       )}
 

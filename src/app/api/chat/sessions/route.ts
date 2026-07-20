@@ -3,15 +3,20 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { todayInTimezone, dateInTimezone } from "@/lib/schedule";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getSession();
     if (!session.userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Sidebar lists one chat surface at a time: the coach ("general")
+    // or the kitchen chat — never mixed.
+    const typeParam = request.nextUrl.searchParams.get("type");
+    const type = typeParam === "kitchen" ? "kitchen" : "general";
+
     const sessions = await prisma.chatSession.findMany({
-      where: { userId: session.userId, type: "general" },
+      where: { userId: session.userId, type },
       orderBy: { updatedAt: "desc" },
       select: {
         id: true,
@@ -45,9 +50,11 @@ export async function POST(request: NextRequest) {
 
     // Check if caller wants a fresh session (e.g. for auto-messages like "build my plan")
     let forceNew = false;
+    let type: "general" | "kitchen" = "general";
     try {
       const body = await request.json();
       forceNew = !!body?.forceNew;
+      if (body?.type === "kitchen") type = "kitchen";
     } catch { /* no body = default behavior */ }
 
     if (!forceNew) {
@@ -60,7 +67,7 @@ export async function POST(request: NextRequest) {
       });
       const tz = profile?.timezone || "Europe/Berlin";
       const latest = await prisma.chatSession.findFirst({
-        where: { userId: session.userId, type: "general" },
+        where: { userId: session.userId, type },
         orderBy: { createdAt: "desc" },
         select: { id: true, title: true, createdAt: true },
       });
@@ -73,7 +80,8 @@ export async function POST(request: NextRequest) {
     const chatSession = await prisma.chatSession.create({
       data: {
         userId: session.userId,
-        title: "New conversation",
+        title: type === "kitchen" ? "Kitchen chat" : "New conversation",
+        type,
       },
     });
 

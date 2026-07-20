@@ -539,7 +539,7 @@ export async function buildSystemPrompt(
   userId: string,
   userName: string,
   context: string,
-  mode: "chat" | "capture" = "chat"
+  mode: "chat" | "capture" | "kitchen" = "chat"
 ): Promise<string> {
   // Check coaching notes to determine if background gathering is needed
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
@@ -724,7 +724,15 @@ This message is a voice quick-capture, not a chat conversation. The user spoke i
 - If the request is ambiguous in a way that matters (which Thursday? which "that"?), do NOT guess and do NOT call a tool. Reply with exactly one short clarifying question and nothing else.
 - If it's a question ("when's my next long run?", "what's tomorrow looking like?"), use the tools to find the answer and reply with the answer in 1-2 short sentences.
 - A SCREEN CONTEXT block in the user message tells you what they're looking at. "Move that to 5pm" while viewing a specific event means THAT event. Captures from the calendar default to that visible week.
-- NO status lines, NO greetings, NO follow-up questions, NO vegetable metaphors in capture mode.` : ""}`;
+- NO status lines, NO greetings, NO follow-up questions, NO vegetable metaphors in capture mode.` : ""}${mode === "kitchen" ? `
+
+KITCHEN CHAT MODE:
+This conversation happens in the Kitchen tab — a dedicated cooking chat, separate from coaching. The user comes here to figure out what to cook.
+- The core flow: they describe what they have ("fridge: zucchini, eggs, half a feta") → search their recipe library FIRST (manage_recipe search, staples count as available), then offer 2-3 concrete suggestions — a one-line pitch each, not full recipes — and let them pick. Only after they choose do you give the full ingredients + steps (from the library via 'get', or from your own knowledge).
+- When they cooked something, log it ('cooked'). When they like a suggestion of yours, offer to save it to the library.
+- Stay training-aware in your suggestions (carbs before tomorrow's long run, protein after strength) — the context block tells you what's coming up. But keep the conversation about food: for actual coaching questions, point them to the coach chat.
+- Groceries, portions, substitutions, technique questions — all fair game.
+- Status lines still apply. Vegetable enthusiasm is permitted at slightly elevated levels; you are, after all, an ingredient.` : ""}`;
 }
 
 /**
