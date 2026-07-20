@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Nunito, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AppFooter } from "./app-footer";
 import { BottomTabBar } from "./bottom-tabs";
@@ -10,8 +10,8 @@ import { ReminderWatcher } from "./reminder-watcher";
 import { FeaturesProvider } from "./features-provider";
 import { BootSplash } from "./boot-splash";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const nunito = Nunito({
+  variable: "--font-nunito",
   subsets: ["latin"],
 });
 
@@ -26,13 +26,13 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    statusBarStyle: "default",
     title: "Brocco",
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#030712",
+  themeColor: "#faf6ea",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -45,7 +45,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <head>
         <link rel="icon" href="/icons/icon-192.png" type="image/png" sizes="192x192" />
         <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
@@ -53,7 +53,7 @@ export default function RootLayout({
         <link rel="preload" as="image" href="/brand/brocco-runner.png" />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+        className={`${nunito.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
         <BootSplash />
         <FeaturesProvider>

@@ -95,22 +95,22 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
     setConnectedId(null);
   }
 
-  const inputCls = "w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500";
+  const inputCls = "field";
 
   return (
     <section>
-      <h2 className="text-lg font-semibold mb-1">Watch sync</h2>
-      <p className="text-xs text-gray-500 mb-3">
+      <h2 className="text-lg font-extrabold mb-1">Watch sync</h2>
+      <p className="text-xs text-moss mb-3">
         Your planned workouts on your COROS or Garmin — intervals, paces, and all — via a free intervals.icu account.
       </p>
-      <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+      <div className="sticker p-4 space-y-3">
         {connected ? (
           <>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-green-500" />
-              <span className="text-sm text-gray-300">Connected (intervals.icu athlete {connectedId})</span>
+              <div className="w-2 h-2 rounded-full bg-brocco border border-ink" />
+              <span className="text-sm text-ink font-bold">Connected (intervals.icu athlete {connectedId})</span>
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-moss">
               Upcoming workouts (next 2 weeks) sync automatically whenever your plan changes. Your watch picks them up
               from intervals.icu — make sure your watch is connected there with &quot;Upload planned workouts&quot; on.
             </p>
@@ -118,14 +118,14 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
               <button
                 onClick={handleSyncNow}
                 disabled={busy}
-                className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg transition-colors"
+                className="btn-quiet px-4 py-2 text-sm disabled:opacity-50"
               >
                 {busy ? "Working…" : "Sync Now"}
               </button>
               <button
                 onClick={handleDisconnect}
                 disabled={busy}
-                className="px-4 py-2 text-sm bg-red-900/40 hover:bg-red-900/60 text-red-300 disabled:opacity-50 rounded-lg transition-colors"
+                className="btn-danger px-4 py-2 text-sm disabled:opacity-50"
               >
                 Disconnect
               </button>
@@ -135,15 +135,15 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
           <>
             <button
               onClick={() => setShowHelp(!showHelp)}
-              className="text-xs text-green-400 hover:text-green-300 underline underline-offset-2"
+              className="text-xs text-leaf font-bold underline underline-offset-2 hover:opacity-70"
             >
               {showHelp ? "Hide setup steps" : "How do I set this up? (one-time, ~3 minutes)"}
             </button>
             {showHelp && (
-              <ol className="text-xs text-gray-400 space-y-1.5 list-decimal pl-4">
+              <ol className="text-xs text-moss space-y-1.5 list-decimal pl-4">
                 <li>
                   Create a free account at{" "}
-                  <a href="https://intervals.icu" target="_blank" rel="noreferrer" className="text-green-400 underline">intervals.icu</a>
+                  <a href="https://intervals.icu" target="_blank" rel="noreferrer" className="text-leaf font-bold underline">intervals.icu</a>
                 </li>
                 <li>
                   In intervals.icu <b>Settings</b>, scroll to your watch brand (COROS / Garmin / …), connect it, and tick{" "}
@@ -153,7 +153,7 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
                   Still in Settings, open <b>Developer Settings</b> and generate an <b>API key</b>
                 </li>
                 <li>
-                  Your <b>Athlete ID</b> is shown right there (looks like <code className="text-gray-300">i1234567</code>)
+                  Your <b>Athlete ID</b> is shown right there (looks like <code className="text-ink font-bold">i1234567</code>)
                 </li>
                 <li>Paste both below</li>
               </ol>
@@ -174,13 +174,13 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
             <button
               onClick={handleConnect}
               disabled={busy || !athleteId.trim() || !apiKey.trim()}
-              className="px-4 py-2 text-sm bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+              className="btn-brocco px-4 py-2 text-sm"
             >
               {busy ? "Checking…" : "Connect & sync"}
             </button>
           </>
         )}
-        {message && <p className="text-sm text-gray-400">{message}</p>}
+        {message && <p className="text-sm text-moss">{message}</p>}
       </div>
     </section>
   );
@@ -208,7 +208,7 @@ function TimezonePicker({ value, onChange }: { value: string; onChange: (tz: str
     } catch { /* leave null */ }
   }, []);
 
-  const inputCls = "w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500";
+  const inputCls = "field";
 
   return (
     <div className="space-y-1">
@@ -232,7 +232,7 @@ function TimezonePicker({ value, onChange }: { value: string; onChange: (tz: str
         <button
           type="button"
           onClick={() => onChange(deviceTz)}
-          className="text-xs text-green-400 hover:text-green-300 underline underline-offset-2"
+          className="text-xs text-leaf font-bold underline underline-offset-2 hover:opacity-70"
         >
           Use device timezone ({deviceTz})
         </button>
@@ -349,22 +349,22 @@ function NotificationSettings() {
 
   return (
     <section>
-      <h2 className="text-lg font-semibold mb-1">Notifications</h2>
-      <p className="text-xs text-gray-500 mb-3">
+      <h2 className="text-lg font-extrabold mb-1">Notifications</h2>
+      <p className="text-xs text-moss mb-3">
         Event reminders on this device — even when the app is closed.
       </p>
-      <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
-        {status === "loading" && <p className="text-sm text-gray-500">Checking…</p>}
+      <div className="sticker p-4 space-y-3">
+        {status === "loading" && <p className="text-sm text-moss">Checking…</p>}
         {status === "unsupported" && (
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-moss">
             This browser doesn&apos;t support push notifications. On iPhone, add brocco.run to your home screen first.
           </p>
         )}
         {status === "unconfigured" && (
-          <p className="text-sm text-gray-500">Push isn&apos;t configured on the server yet.</p>
+          <p className="text-sm text-moss">Push isn&apos;t configured on the server yet.</p>
         )}
         {status === "denied" && (
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-moss">
             Notifications are blocked for brocco.run — allow them in your browser&apos;s site settings, then reload.
           </p>
         )}
@@ -372,7 +372,7 @@ function NotificationSettings() {
           <button
             onClick={enable}
             disabled={busy}
-            className="px-4 py-2 text-sm bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+            className="btn-brocco px-4 py-2 text-sm"
           >
             {busy ? "Enabling..." : "Enable on this device"}
           </button>
@@ -380,28 +380,28 @@ function NotificationSettings() {
         {status === "on" && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-green-500" />
-              <span className="text-sm text-gray-300">Enabled on this device</span>
+              <div className="w-2 h-2 rounded-full bg-brocco border border-ink" />
+              <span className="text-sm text-ink font-bold">Enabled on this device</span>
             </div>
             <div className="flex gap-3">
               <button
                 onClick={sendTest}
                 disabled={busy}
-                className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-200 rounded-lg transition-colors"
+                className="btn-quiet px-4 py-2 text-sm disabled:opacity-50"
               >
                 Send test notification
               </button>
               <button
                 onClick={disable}
                 disabled={busy}
-                className="px-4 py-2 text-sm text-gray-500 hover:text-gray-300 transition-colors"
+                className="px-4 py-2 text-sm text-moss font-bold hover:text-ink transition-colors"
               >
                 Disable
               </button>
             </div>
           </div>
         )}
-        {testResult && <p className="text-xs text-gray-400">{testResult}</p>}
+        {testResult && <p className="text-xs text-moss">{testResult}</p>}
       </div>
     </section>
   );
@@ -671,81 +671,81 @@ function SettingsContent() {
   }
 
   if (loading) {
-    return <div className="text-gray-500 text-center py-12">Loading...</div>;
+    return <div className="text-moss text-center py-12 font-semibold">Loading...</div>;
   }
 
   return (
     <div className="space-y-8">
       {/* Strava status banner */}
       {stravaStatus === "connected" && (
-        <div className="bg-green-900/30 border border-green-800 rounded-lg p-3 text-sm text-green-300">
+        <div className="bg-sprout border-2 border-ink rounded-lg p-3 text-sm text-ink font-bold">
           Strava connected successfully.
         </div>
       )}
       {stravaStatus === "denied" && (
-        <div className="bg-yellow-900/30 border border-yellow-800 rounded-lg p-3 text-sm text-yellow-300">
+        <div className="bg-[#faeed8] border-2 border-sun rounded-lg p-3 text-sm text-ink font-bold">
           Strava authorization was denied.
         </div>
       )}
 
       {/* Profile */}
       <section>
-        <h2 className="text-lg font-semibold mb-3">Profile</h2>
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-4">
+        <h2 className="text-lg font-extrabold mb-3">Profile</h2>
+        <div className="sticker p-4 space-y-4">
           <div>
-            <label className="text-xs text-gray-500 block mb-1">Name</label>
+            <label className="label-xs block mb-1">Name</label>
             <input
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+              className="field"
             />
           </div>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">Email</label>
+            <label className="label-xs block mb-1">Email</label>
             {!emailEditOpen ? (
               <div className="flex items-center justify-between px-3 py-2">
-                <p className="text-sm text-gray-400">{profile?.email}</p>
+                <p className="text-sm text-moss">{profile?.email}</p>
                 <button
                   onClick={() => setEmailEditOpen(true)}
-                  className="text-xs text-green-400 hover:text-green-300 underline underline-offset-2"
+                  className="text-xs text-leaf font-bold underline underline-offset-2 hover:opacity-70"
                 >
                   Change
                 </button>
               </div>
             ) : (
-              <div className="space-y-2 bg-gray-800/60 border border-gray-700 rounded-lg p-3">
+              <div className="space-y-2 bg-ghost border-2 border-ink rounded-lg p-3">
                 <input
                   type="email"
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
                   placeholder="new@email.com"
                   autoFocus
-                  className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                  className="field"
                 />
                 <input
                   type="password"
                   value={emailPw}
                   onChange={(e) => setEmailPw(e.target.value)}
                   placeholder="Current password (to confirm)"
-                  className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                  className="field"
                 />
-                <p className="text-[11px] text-gray-500">
+                <p className="text-[11px] text-moss">
                   This is your login and where password-reset links go — make sure it&apos;s an inbox you can read.
                 </p>
                 {emailResult && (
-                  <p className={`text-xs ${emailResult.ok ? "text-green-400" : "text-red-400"}`}>{emailResult.msg}</p>
+                  <p className={`text-xs font-bold ${emailResult.ok ? "text-leaf" : "text-clay"}`}>{emailResult.msg}</p>
                 )}
                 <div className="flex gap-2">
                   <button
                     onClick={() => { setEmailEditOpen(false); setNewEmail(""); setEmailPw(""); setEmailResult(null); }}
-                    className="px-3 py-1.5 text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors"
+                    className="btn-quiet px-3 py-1.5 text-xs"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleEmailChange}
                     disabled={emailSaving || !newEmail.trim() || !emailPw}
-                    className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white rounded-lg transition-colors"
+                    className="btn-brocco px-3 py-1.5 text-xs"
                   >
                     {emailSaving ? "Saving..." : "Save email"}
                   </button>
@@ -754,40 +754,40 @@ function SettingsContent() {
             )}
           </div>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">Timezone</label>
+            <label className="label-xs block mb-1">Timezone</label>
             <TimezonePicker value={editTimezone} onChange={setEditTimezone} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Goal race</label>
+              <label className="label-xs block mb-1">Goal race</label>
               <input
                 value={editGoalRace}
                 onChange={(e) => setEditGoalRace(e.target.value)}
                 placeholder="e.g. Valencia Marathon"
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                className="field"
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Target time</label>
+              <label className="label-xs block mb-1">Target time</label>
               <input
                 value={editGoalTime}
                 onChange={(e) => setEditGoalTime(e.target.value)}
                 placeholder="e.g. Sub 3:00"
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+                className="field"
               />
             </div>
           </div>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">Race date</label>
+            <label className="label-xs block mb-1">Race date</label>
             <input
               type="date"
               value={editGoalDate}
               onChange={(e) => setEditGoalDate(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+              className="field"
             />
           </div>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">Max heart rate (bpm)</label>
+            <label className="label-xs block mb-1">Max heart rate (bpm)</label>
             <input
               type="number"
               inputMode="numeric"
@@ -796,9 +796,9 @@ function SettingsContent() {
               value={editHrMax}
               onChange={(e) => setEditHrMax(e.target.value)}
               placeholder="e.g. 188"
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+              className="field"
             />
-            <p className="text-[11px] text-gray-600 mt-1">
+            <p className="text-[11px] text-sage mt-1">
               Used to compute heart rate zones for intensity analysis. If left blank, Brocco estimates it from your highest recorded heart rate.
             </p>
           </div>
@@ -806,12 +806,12 @@ function SettingsContent() {
             <button
               onClick={handleProfileSave}
               disabled={profileSaving}
-              className="px-4 py-2 text-sm bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+              className="btn-brocco px-4 py-2 text-sm"
             >
               {profileSaving ? "Saving..." : "Save changes"}
             </button>
             {profileSaved && (
-              <span className="text-sm text-green-400">Saved</span>
+              <span className="text-sm text-leaf font-bold">Saved</span>
             )}
           </div>
         </div>
@@ -819,33 +819,33 @@ function SettingsContent() {
 
       {/* Features */}
       <section>
-        <h2 className="text-lg font-semibold mb-1">Features</h2>
-        <p className="text-xs text-gray-500 mb-3">
+        <h2 className="text-lg font-extrabold mb-1">Features</h2>
+        <p className="text-xs text-moss mb-3">
           Switch off what you don&apos;t use — navigation, the Today screen, and Brocco adapt.
           With everything off you get the classic running-coach experience. Your data is kept, just hidden.
         </p>
-        <div className="bg-gray-900 border border-gray-800 rounded-lg divide-y divide-gray-800">
+        <div className="sticker divide-y-2 divide-shade/40">
           {([
             ["calendar", "Calendar", "Events, birthdays, and reminders"],
             ["kitchen", "Kitchen", "Recipe library, photo scans, cooking ideas"],
           ] as Array<[keyof Features, string, string]>).map(([key, label, desc]) => (
             <div key={key} className="flex items-center gap-3 px-4 py-3">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-200">{label}</p>
-                <p className="text-xs text-gray-500">{desc}</p>
+                <p className="text-sm font-bold text-ink">{label}</p>
+                <p className="text-xs text-moss">{desc}</p>
               </div>
               <button
                 role="switch"
                 aria-checked={featureFlags[key]}
                 aria-label={`${label} ${featureFlags[key] ? "enabled" : "disabled"}`}
                 onClick={() => handleToggleFeature(key)}
-                className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${
-                  featureFlags[key] ? "bg-green-600" : "bg-gray-700"
+                className={`relative w-11 h-6 rounded-full border-2 border-ink transition-colors flex-shrink-0 ${
+                  featureFlags[key] ? "bg-brocco" : "bg-ghost"
                 }`}
               >
                 <span
-                  className={`absolute left-0 top-0.5 w-5 h-5 bg-white rounded-full transition-transform ${
-                    featureFlags[key] ? "translate-x-[22px]" : "translate-x-0.5"
+                  className={`absolute left-0 top-0 w-5 h-5 bg-card border-2 border-ink rounded-full transition-transform ${
+                    featureFlags[key] ? "translate-x-[20px]" : "translate-x-0"
                   }`}
                 />
               </button>
@@ -857,11 +857,11 @@ function SettingsContent() {
       {/* Calendar feed */}
       {featureFlags.calendar && (
         <section>
-          <h2 className="text-lg font-semibold mb-1">Calendar feed</h2>
-          <p className="text-xs text-gray-500 mb-3">
+          <h2 className="text-lg font-extrabold mb-1">Calendar feed</h2>
+          <p className="text-xs text-moss mb-3">
             Subscribe from Google or Apple Calendar to see your brocco events and workouts there (read-only).
           </p>
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+          <div className="sticker p-4 space-y-3">
             {icsUrl ? (
               <>
                 <div className="flex gap-2">
@@ -869,22 +869,22 @@ function SettingsContent() {
                     readOnly
                     value={icsUrl}
                     onFocus={(e) => e.target.select()}
-                    className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-xs text-gray-300 focus:outline-none"
+                    className="field flex-1 text-xs!"
                   />
                   <button
                     onClick={handleIcsCopy}
-                    className="px-3 py-2 text-xs bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-lg transition-colors flex-shrink-0"
+                    className="btn-quiet px-3 py-2 text-xs flex-shrink-0"
                   >
                     {icsCopied ? "Copied ✓" : "Copy"}
                   </button>
                 </div>
-                <p className="text-[11px] text-gray-600">
+                <p className="text-[11px] text-sage">
                   Google Calendar: Other calendars → + → From URL. Apple Calendar: File → New Calendar Subscription.
                   Anyone with this link can read your calendar —{" "}
                   <button
                     onClick={() => handleIcsToken(true)}
                     disabled={icsBusy}
-                    className="text-gray-500 hover:text-gray-300 underline underline-offset-2 disabled:opacity-50"
+                    className="text-moss hover:text-ink underline underline-offset-2 disabled:opacity-50"
                   >
                     regenerate it
                   </button>{" "}
@@ -895,7 +895,7 @@ function SettingsContent() {
               <button
                 onClick={() => handleIcsToken(false)}
                 disabled={icsBusy}
-                className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-200 rounded-lg transition-colors"
+                className="btn-quiet px-4 py-2 text-sm disabled:opacity-50"
               >
                 {icsBusy ? "Creating..." : "Create subscribe link"}
               </button>
@@ -909,13 +909,13 @@ function SettingsContent() {
 
       {/* Strava */}
       <section>
-        <h2 className="text-lg font-semibold mb-3">Strava</h2>
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+        <h2 className="text-lg font-extrabold mb-3">Strava</h2>
+        <div className="sticker p-4">
           {profile?.stravaConnected ? (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-green-500" />
-                <span className="text-sm text-gray-300">
+                <div className="w-2 h-2 rounded-full bg-brocco border border-ink" />
+                <span className="text-sm text-ink font-bold">
                   Connected (Athlete {profile.stravaAthleteId})
                 </span>
               </div>
@@ -923,23 +923,23 @@ function SettingsContent() {
                 <button
                   onClick={handleSync}
                   disabled={syncing}
-                  className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-50 rounded-lg transition-colors"
+                  className="btn-quiet px-4 py-2 text-sm disabled:opacity-50"
                 >
                   {syncing ? "Syncing..." : "Sync Now"}
                 </button>
               </div>
               {syncResult && (
-                <p className="text-sm text-gray-400">{syncResult}</p>
+                <p className="text-sm text-moss">{syncResult}</p>
               )}
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm text-gray-400">
+              <p className="text-sm text-moss">
                 Connect your Strava account to import activities.
               </p>
               <a
                 href="/api/strava/auth"
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#FC4C02] hover:bg-[#e04400] text-white font-semibold rounded-md transition-colors text-sm"
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#FC4C02] hover:bg-[#e04400] text-cream font-bold border-2 border-ink rounded-xl shadow-[2px_2px_0_var(--color-shade)] transition-colors text-sm"
               >
                 <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current" aria-hidden="true">
                   <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
@@ -956,39 +956,39 @@ function SettingsContent() {
 
       {/* Change Password */}
       <section>
-        <h2 className="text-lg font-semibold mb-3">Change Password</h2>
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+        <h2 className="text-lg font-extrabold mb-3">Change Password</h2>
+        <div className="sticker p-4 space-y-3">
           <input
             type="password"
             value={currentPw}
             onChange={(e) => setCurrentPw(e.target.value)}
             placeholder="Current password"
-            className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="field"
           />
           <input
             type="password"
             value={newPw}
             onChange={(e) => setNewPw(e.target.value)}
             placeholder="New password (min. 8 chars)"
-            className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="field"
           />
           <input
             type="password"
             value={confirmPw}
             onChange={(e) => setConfirmPw(e.target.value)}
             placeholder="Confirm new password"
-            className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+            className="field"
           />
           <div className="flex items-center gap-3">
             <button
               onClick={handlePasswordChange}
               disabled={pwSaving || !currentPw || !newPw || !confirmPw}
-              className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+              className="btn-quiet px-4 py-2 text-sm disabled:opacity-50"
             >
               {pwSaving ? "Updating..." : "Update Password"}
             </button>
             {pwResult && (
-              <span className={`text-sm ${pwResult.ok ? "text-green-400" : "text-red-400"}`}>
+              <span className={`text-sm font-bold ${pwResult.ok ? "text-leaf" : "text-clay"}`}>
                 {pwResult.msg}
               </span>
             )}
@@ -998,26 +998,26 @@ function SettingsContent() {
 
       {/* Account */}
       <section>
-        <h2 className="text-lg font-semibold mb-3">Account</h2>
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-4">
+        <h2 className="text-lg font-extrabold mb-3">Account</h2>
+        <div className="sticker p-4 space-y-4">
           <button
             onClick={handleLogout}
-            className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors"
+            className="btn-quiet px-4 py-2 text-sm"
           >
             Log out
           </button>
 
-          <div className="border-t border-gray-800 pt-4">
+          <div className="border-t-2 border-shade pt-4">
             {!showDelete ? (
               <button
                 onClick={() => setShowDelete(true)}
-                className="text-sm text-red-400 hover:text-red-300 transition-colors"
+                className="text-sm text-clay font-bold hover:opacity-70 transition-opacity"
               >
                 Delete account
               </button>
             ) : (
               <div className="space-y-3">
-                <p className="text-sm text-red-400">
+                <p className="text-sm text-clay">
                   This will permanently delete all your data including activities, plans, and chat history. This cannot be undone.
                 </p>
                 <input
@@ -1025,22 +1025,22 @@ function SettingsContent() {
                   value={deletePw}
                   onChange={(e) => setDeletePw(e.target.value)}
                   placeholder="Enter your password to confirm"
-                  className="w-full px-3 py-2 bg-gray-800 border border-red-900 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className="field border-clay!"
                 />
                 {deleteError && (
-                  <p className="text-sm text-red-400">{deleteError}</p>
+                  <p className="text-sm text-clay">{deleteError}</p>
                 )}
                 <div className="flex gap-3">
                   <button
                     onClick={handleDeleteAccount}
                     disabled={deleting || !deletePw}
-                    className="px-4 py-2 text-sm bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg transition-colors"
+                    className="btn-danger px-4 py-2 text-sm disabled:opacity-50"
                   >
                     {deleting ? "Deleting..." : "Delete my account"}
                   </button>
                   <button
                     onClick={() => { setShowDelete(false); setDeletePw(""); setDeleteError(""); }}
-                    className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-colors"
+                    className="btn-quiet px-4 py-2 text-sm"
                   >
                     Cancel
                   </button>
@@ -1053,9 +1053,9 @@ function SettingsContent() {
 
       {/* Install App */}
       <section>
-        <h2 className="text-lg font-semibold mb-3">Install App</h2>
-        <div className="bg-gray-900 rounded-lg p-4">
-          <p className="text-sm text-gray-400 mb-3">Add brocco.run to your home screen for the best experience — it works like a regular app.</p>
+        <h2 className="text-lg font-extrabold mb-3">Install App</h2>
+        <div className="sticker p-4">
+          <p className="text-sm text-moss mb-3">Add brocco.run to your home screen for the best experience — it works like a regular app.</p>
           <InstallInstructions />
         </div>
       </section>
@@ -1066,21 +1066,21 @@ function SettingsContent() {
 export default function SettingsPage() {
   return (
     <main className="min-h-screen max-w-lg mx-auto px-4 py-6 pb-24">
-      <div className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm -mx-4 px-4 mb-6">
+      <div className="safe-top sticky top-0 z-30 bg-cream/95 backdrop-blur-sm -mx-4 px-4 mb-6 border-b-2 border-ink/10">
         {/* Mobile: minimal */}
         <div className="md:hidden flex items-center gap-2 pb-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6" />
-          <span className="font-semibold text-sm text-gray-300">Settings</span>
+          <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6 rounded-full border-2 border-ink" />
+          <span className="font-extrabold text-sm text-ink">Settings</span>
         </div>
         {/* Desktop: full */}
         <div className="hidden md:flex items-center justify-between py-3">
-          <h1 className="text-2xl font-bold">Settings</h1>
+          <h1 className="text-2xl font-extrabold">Settings</h1>
           <DesktopNavLinks />
         </div>
       </div>
 
-      <Suspense fallback={<div className="text-gray-500 text-center py-12">Loading...</div>}>
+      <Suspense fallback={<div className="text-moss text-center py-12 font-semibold">Loading...</div>}>
         <SettingsContent />
       </Suspense>
     </main>

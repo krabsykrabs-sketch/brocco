@@ -33,25 +33,25 @@ export default function ForgotPasswordPage() {
 
   return (
     <main className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-sm sticker-lg p-6">
         <div className="text-center mb-8">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/brocco-runner.png" alt="Brocco, running" className="h-32 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold">Reset password</h1>
-          <p className="text-gray-400 text-sm mt-1">
+          <h1 className="text-2xl font-extrabold text-ink">Reset password</h1>
+          <p className="text-moss text-sm mt-1">
             Enter your account email and we&apos;ll send you a reset link.
           </p>
         </div>
 
         {sent ? (
-          <div className="bg-green-900/30 border border-green-800 rounded-lg p-4 text-sm text-green-300 text-center">
+          <div className="bg-sprout border-2 border-ink rounded-xl p-4 text-sm text-ink font-bold text-center">
             If that address has an account, a reset link is on its way. Check your inbox
             (and the spam folder).
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1">
+              <label htmlFor="email" className="block text-sm font-bold text-ink mb-1">
                 Email
               </label>
               <input
@@ -61,25 +61,25 @@ export default function ForgotPasswordPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoFocus
-                className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="field"
                 placeholder="you@example.com"
               />
             </div>
 
-            {error && <p className="text-red-400 text-sm">{error}</p>}
+            {error && <p className="bg-clay-soft border-2 border-clay text-clay rounded-xl px-3 py-2 text-sm font-bold">{error}</p>}
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2 px-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors"
+              className="btn-brocco w-full py-2 px-4"
             >
               {loading ? "Sending..." : "Send reset link"}
             </button>
           </form>
         )}
 
-        <p className="text-center text-gray-500 text-sm mt-6">
-          <a href="/login" className="text-green-400 hover:text-green-300 underline">
+        <p className="text-center text-moss text-sm mt-6">
+          <a href="/login" className="text-leaf font-bold underline">
             Back to login
           </a>
         </p>

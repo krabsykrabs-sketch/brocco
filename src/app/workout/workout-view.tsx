@@ -33,28 +33,28 @@ function CustomIntervalForm({ onStart }: { onStart: (def: WorkoutDefinition, tit
   const [rest, setRest] = useState(20);
   const [rounds, setRounds] = useState(10);
 
-  const numCls = "w-full px-2 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white text-center focus:outline-none focus:ring-1 focus:ring-green-500";
+  const numCls = "field text-center";
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-      <p className="text-sm font-medium text-gray-200 mb-3">⏱ Custom intervals</p>
+    <div className="sticker p-4">
+      <p className="text-sm font-bold text-ink mb-3">⏱ Custom intervals</p>
       <div className="grid grid-cols-3 gap-2 mb-3">
         <div>
-          <label className="block text-[10px] text-gray-500 uppercase mb-1 text-center">Work (s)</label>
+          <label className="label-xs block mb-1 text-center">Work (s)</label>
           <input type="number" min={5} max={600} value={work} onChange={(e) => setWork(Number(e.target.value))} className={numCls} />
         </div>
         <div>
-          <label className="block text-[10px] text-gray-500 uppercase mb-1 text-center">Rest (s)</label>
+          <label className="label-xs block mb-1 text-center">Rest (s)</label>
           <input type="number" min={0} max={600} value={rest} onChange={(e) => setRest(Number(e.target.value))} className={numCls} />
         </div>
         <div>
-          <label className="block text-[10px] text-gray-500 uppercase mb-1 text-center">Rounds</label>
+          <label className="label-xs block mb-1 text-center">Rounds</label>
           <input type="number" min={1} max={50} value={rounds} onChange={(e) => setRounds(Number(e.target.value))} className={numCls} />
         </div>
       </div>
       <button
         onClick={() => onStart(buildCustomInterval(work, rest, rounds), `Intervals ${work}/${rest} × ${rounds}`)}
-        className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 text-white text-sm font-medium rounded-xl transition-colors"
+        className="btn-quiet w-full py-2.5 text-sm"
       >
         Start
       </button>
@@ -167,9 +167,9 @@ function WorkoutViewInner() {
       <PageHeader title="Workouts" />
 
       {generating && (
-        <div className="mt-4 bg-green-900/20 border border-green-800/40 rounded-xl px-4 py-3 flex items-center gap-3">
+        <div className="mt-4 bg-sprout border-2 border-ink rounded-xl px-4 py-3 flex items-center gap-3 shadow-[2px_2px_0_var(--color-shade)]">
           <span className="text-xl animate-pulse">🥦</span>
-          <p className="text-sm text-gray-200">{generating}</p>
+          <p className="text-sm text-ink font-semibold">{generating}</p>
         </div>
       )}
 
@@ -177,31 +177,31 @@ function WorkoutViewInner() {
         {/* Ask Brocco */}
         <Link
           href={`/chat?msg=${encodeURIComponent("Make me a workout for today")}`}
-          className="flex items-center gap-3 bg-green-600/90 hover:bg-green-600 border border-green-500/30 rounded-xl px-4 py-3 transition-colors"
+          className="btn-brocco flex items-center gap-3 px-4 py-3"
         >
           <span className="text-xl">💬</span>
-          <div className="flex-1">
-            <p className="text-sm font-medium text-white">Ask Brocco for a workout</p>
-            <p className="text-xs text-green-200/70">Tell it your time, focus, and equipment — get a playable session</p>
+          <div className="flex-1 text-left">
+            <p className="text-sm font-extrabold">Ask Brocco for a workout</p>
+            <p className="text-xs text-leaf font-bold">Tell it your time, focus, and equipment — get a playable session</p>
           </div>
         </Link>
 
         {/* Presets */}
         <section>
-          <h2 className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-2">Quick start</h2>
+          <h2 className="label-xs mb-2">Quick start</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {PRESET_WORKOUTS.map((p) => (
               <button
                 key={p.key}
                 onClick={() => setActive({ title: p.title, definition: p.definition, workoutId: null })}
-                className="text-left bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl px-4 py-3 transition-colors"
+                className="sticker sticker-press text-left px-4 py-3"
               >
                 <div className="flex items-center gap-2 mb-0.5">
                   <span>{p.emoji}</span>
-                  <p className="text-sm font-medium text-gray-100">{p.title}</p>
-                  <span className="ml-auto text-[10px] text-gray-600">~{estimateDurationMin(p.definition)} min</span>
+                  <p className="text-sm font-bold text-ink">{p.title}</p>
+                  <span className="ml-auto text-[10px] text-sage font-bold tabular-nums">~{estimateDurationMin(p.definition)} min</span>
                 </div>
-                <p className="text-xs text-gray-500">{p.description}</p>
+                <p className="text-xs text-moss font-semibold">{p.description}</p>
               </button>
             ))}
           </div>
@@ -212,38 +212,38 @@ function WorkoutViewInner() {
 
         {/* Saved workouts */}
         <section>
-          <h2 className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-2">Your workouts</h2>
+          <h2 className="label-xs mb-2">Your workouts</h2>
           {loading ? (
-            <p className="text-sm text-gray-600 text-center py-4">Loading…</p>
+            <p className="text-sm text-moss font-semibold text-center py-4">Loading…</p>
           ) : saved.length === 0 ? (
-            <p className="text-xs text-gray-600 text-center py-4">
+            <p className="text-xs text-sage font-semibold text-center py-4">
               Nothing saved yet — ask Brocco for a workout and it lands here.
             </p>
           ) : (
             <div className="space-y-2">
               {saved.map((w) => (
-                <div key={w.id} className="group flex items-center gap-3 bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
+                <div key={w.id} className="group flex items-center gap-3 sticker px-4 py-3">
                   <button onClick={() => startSaved(w.id)} className="flex-1 min-w-0 text-left">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-gray-100 truncate">{w.title}</p>
+                      <p className="text-sm font-bold text-ink truncate">{w.title}</p>
                       {w.source === "plan" && (
-                        <span className="text-[9px] uppercase font-bold text-gray-600 bg-gray-800 px-1.5 py-0.5 rounded flex-shrink-0">plan</span>
+                        <span className="text-[9px] uppercase font-extrabold text-moss bg-ghost px-1.5 py-0.5 rounded flex-shrink-0">plan</span>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-moss font-semibold">
                       ~{w.durationMin} min{w.focus ? ` · ${w.focus}` : ""}{w.timesCompleted > 0 ? ` · done ${w.timesCompleted}×` : ""}
                     </p>
                   </button>
                   <button
                     onClick={() => startSaved(w.id)}
-                    className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg flex-shrink-0 transition-colors"
+                    className="btn-brocco px-3 py-1.5 text-xs flex-shrink-0"
                   >
                     Start
                   </button>
                   <button
                     onClick={() => deleteSaved(w)}
                     aria-label={`Delete ${w.title}`}
-                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-gray-600 hover:text-red-400 transition-all px-1"
+                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-sage hover:text-clay transition-all px-1"
                   >
                     &times;
                   </button>

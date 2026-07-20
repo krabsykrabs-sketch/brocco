@@ -42,7 +42,7 @@ function ToolNotificationBadge({ notification }: { notification: ToolNotificatio
   };
 
   return (
-    <div className="flex items-center gap-2 bg-green-900/30 border border-green-800/40 rounded-lg px-3 py-1.5 text-xs text-green-300 mb-1">
+    <div className="flex items-center gap-2 bg-sprout border-2 border-ink rounded-lg px-3 py-1.5 text-xs font-bold text-ink mb-1">
       <span>{icons[notification.type] || "\u2705"}</span>
       <span>{notification.message}</span>
     </div>
@@ -60,9 +60,9 @@ function parseStatus(text: string): { cleanText: string; statusType: string | nu
 }
 
 const statusStyles: Record<string, { bg: string; icon: string }> = {
-  question: { bg: "bg-amber-900/40 border border-amber-600/50 text-amber-200", icon: "\uD83D\uDFE1" },
-  done: { bg: "bg-green-900/40 border border-green-600/50 text-green-200", icon: "\uD83D\uDFE2" },
-  info: { bg: "bg-blue-900/40 border border-blue-600/50 text-blue-200", icon: "\uD83D\uDD35" },
+  question: { bg: "bg-[#faeed8] border-2 border-sun text-ink", icon: "\uD83D\uDFE1" },
+  done: { bg: "bg-sprout border-2 border-ink text-ink", icon: "\uD83D\uDFE2" },
+  info: { bg: "bg-[#e3eefa] border-2 border-ink text-ink", icon: "\uD83D\uDD35" },
 };
 
 function StatusStrip({ type, text }: { type: string; text: string }) {
@@ -70,7 +70,7 @@ function StatusStrip({ type, text }: { type: string; text: string }) {
   return (
     <div className={`${style.bg} rounded-lg px-3 py-1.5 mt-2 flex items-center gap-2`}>
       <span className="text-xs flex-shrink-0">{style.icon}</span>
-      <span className="text-xs font-medium">{text}</span>
+      <span className="text-xs font-bold">{text}</span>
     </div>
   );
 }
@@ -79,8 +79,8 @@ function MessageBubble({ msg }: { msg: Message }) {
   if (msg.role === "user") {
     return (
       <div className="flex justify-end mb-3">
-        <div className="max-w-[85%] bg-gray-800 rounded-2xl rounded-br-md px-4 py-2.5">
-          <p className="text-sm text-gray-100 whitespace-pre-wrap">{msg.displayText}</p>
+        <div className="max-w-[85%] bg-sprout border-2 border-ink rounded-2xl rounded-br-md px-4 py-2.5">
+          <p className="text-sm text-ink whitespace-pre-wrap">{msg.displayText}</p>
         </div>
       </div>
     );
@@ -98,7 +98,7 @@ function MessageBubble({ msg }: { msg: Message }) {
 
   return (
     <div className="flex gap-2 mb-3 items-start">
-      <div className="w-7 h-7 rounded-full flex-shrink-0 mt-0.5 overflow-hidden">
+      <div className="w-7 h-7 rounded-full border-2 border-ink flex-shrink-0 mt-0.5 overflow-hidden">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/icons/icon-64.png" alt="" className="w-full h-full" />
       </div>
@@ -107,7 +107,7 @@ function MessageBubble({ msg }: { msg: Message }) {
           <ToolNotificationBadge key={i} notification={n} />
         ))}
         {cleanText && (
-          <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5">
+          <div className="bg-card border-2 border-ink rounded-2xl rounded-bl-md shadow-[2px_2px_0_var(--color-shade)] px-4 py-2.5">
             <ChatMarkdown text={cleanText} />
             {statusType && statusText && (
               <StatusStrip type={statusType} text={statusText} />
@@ -136,24 +136,24 @@ function SessionSidebar({
     <>
       {/* Overlay */}
       {open && (
-        <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+        <div className="fixed inset-0 bg-ink/40 z-40" onClick={onClose} />
       )}
       {/* Panel */}
       <div
-        className={`fixed top-0 left-0 h-full w-72 bg-gray-950 border-r border-gray-800 z-50 transform transition-transform ${
+        className={`fixed top-0 left-0 h-full w-72 bg-paper border-r-2 border-ink z-50 transform transition-transform ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="p-4 border-b border-gray-800 flex items-center justify-between">
-          <h2 className="font-semibold text-sm">Conversations</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-lg">
+        <div className="p-4 border-b-2 border-shade flex items-center justify-between">
+          <h2 className="font-extrabold text-sm text-ink">Conversations</h2>
+          <button onClick={onClose} className="text-moss hover:text-ink text-lg">
             &times;
           </button>
         </div>
-        <div className="p-2 border-b border-gray-800">
+        <div className="p-2 border-b-2 border-shade">
           <button
             onClick={() => { router.push("/chat"); onClose(); }}
-            className="w-full text-left px-3 py-2 text-sm bg-green-900/30 text-green-400 rounded-lg hover:bg-green-900/50 transition-colors"
+            className="btn-brocco w-full text-left px-3 py-2 text-sm"
           >
             + New conversation
           </button>
@@ -163,12 +163,12 @@ function SessionSidebar({
             <button
               key={s.id}
               onClick={() => { router.push(`/chat/${s.id}`); onClose(); }}
-              className={`w-full text-left px-4 py-3 border-b border-gray-900 hover:bg-gray-900 transition-colors ${
-                s.id === currentId ? "bg-gray-900" : ""
+              className={`w-full text-left px-4 py-3 border-b border-shade hover:bg-ghost transition-colors ${
+                s.id === currentId ? "bg-ghost" : ""
               }`}
             >
-              <p className="text-sm text-gray-200 truncate">{s.title}</p>
-              <p className="text-xs text-gray-600 mt-0.5">{formatTime(s.updatedAt)}</p>
+              <p className="text-sm font-bold text-ink truncate">{s.title}</p>
+              <p className="text-xs text-sage mt-0.5">{formatTime(s.updatedAt)}</p>
             </button>
           ))}
         </div>
@@ -534,19 +534,19 @@ export default function ChatUI({
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)] md:h-screen max-w-2xl mx-auto">
       {/* Header */}
-      <header className="safe-top flex items-center justify-between px-4 pb-2 border-b border-gray-800 flex-shrink-0 bg-gray-950/95 backdrop-blur-sm">
+      <header className="safe-top flex items-center justify-between px-4 pb-2 border-b-2 border-ink/10 flex-shrink-0 bg-cream/95 backdrop-blur-sm">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(true)}
-            className="text-gray-400 hover:text-white text-lg"
+            className="text-moss hover:text-ink text-lg"
             title="Conversations"
           >
             &#9776;
           </button>
           <div className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6" />
-            <span className="font-semibold text-sm text-gray-300 md:text-lg md:font-bold md:text-white">brocco.run</span>
+            <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6 rounded-full border-2 border-ink" />
+            <span className="font-bold text-sm text-ink md:text-lg md:font-extrabold">brocco.run</span>
           </div>
         </div>
         {/* Desktop nav only */}
@@ -566,8 +566,8 @@ export default function ChatUI({
         {messages.length === 0 && !streamingText && (
           <div className="text-center py-16">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/icons/icon-192.png" alt="" className="w-16 h-16 mx-auto mb-4" />
-            <span className="inline-block w-6 h-6 border-2 border-green-400/30 border-t-green-400 rounded-full animate-spin" />
+            <img src="/icons/icon-192.png" alt="" className="w-16 h-16 mx-auto mb-4 rounded-full border-2 border-ink" />
+            <span className="inline-block w-6 h-6 border-2 border-ink/20 border-t-ink rounded-full animate-spin" />
           </div>
         )}
 
@@ -578,7 +578,7 @@ export default function ChatUI({
         {/* Streaming indicator */}
         {(streamingText || streamingNotifications.length > 0) && (
           <div className="flex gap-2 mb-3 items-start">
-            <div className="w-7 h-7 rounded-full flex-shrink-0 mt-0.5 overflow-hidden">
+            <div className="w-7 h-7 rounded-full border-2 border-ink flex-shrink-0 mt-0.5 overflow-hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/icons/icon-64.png" alt="" className="w-full h-full" />
             </div>
@@ -589,7 +589,7 @@ export default function ChatUI({
               {streamingText && (() => {
                 const { cleanText, statusType, statusText } = parseStatus(streamingText);
                 return (
-                  <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5">
+                  <div className="bg-card border-2 border-ink rounded-2xl rounded-bl-md shadow-[2px_2px_0_var(--color-shade)] px-4 py-2.5">
                     <ChatMarkdown text={cleanText} />
                     {statusType && statusText && (
                       <StatusStrip type={statusType} text={statusText} />
@@ -605,7 +605,7 @@ export default function ChatUI({
       </div>
 
       {/* Input */}
-      <div className="safe-bottom px-4 pt-3 border-t border-gray-800 flex-shrink-0">
+      <div className="safe-bottom px-4 pt-3 border-t-2 border-ink bg-paper flex-shrink-0">
         <div className="flex gap-2 items-end">
           <textarea
             ref={inputRef}
@@ -619,7 +619,7 @@ export default function ChatUI({
             }}
             placeholder="Ask Brocco..."
             rows={1}
-            className="flex-1 px-3 py-2.5 bg-gray-900 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent resize-none text-sm"
+            className="field flex-1 resize-none"
             style={{ height: "auto", maxHeight: "160px", overflow: "auto" }}
             disabled={sending}
           />
@@ -627,17 +627,17 @@ export default function ChatUI({
             <button
               onClick={toggleRecording}
               disabled={sending || transcribing}
-              className={`p-2.5 rounded-xl transition-colors flex-shrink-0 ${
+              className={`p-2.5 flex-shrink-0 ${
                 recording
-                  ? "bg-red-600 hover:bg-red-700 text-white animate-pulse"
+                  ? "btn-danger animate-pulse"
                   : transcribing
-                  ? "bg-yellow-600/50 text-yellow-300"
-                  : "bg-gray-800 hover:bg-gray-700 text-gray-400"
+                  ? "bg-[#faeed8] border-2 border-sun rounded-xl text-ink"
+                  : "btn-brocco"
               } disabled:opacity-40 disabled:cursor-not-allowed`}
               title={recording ? "Stop recording" : transcribing ? "Transcribing..." : "Voice input"}
             >
               {transcribing ? (
-                <span className="inline-block w-5 h-5 border-2 border-yellow-300/30 border-t-yellow-300 rounded-full animate-spin" />
+                <span className="inline-block w-5 h-5 border-2 border-ink/20 border-t-ink rounded-full animate-spin" />
               ) : (
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m-4 0h8M12 3a3 3 0 00-3 3v4a3 3 0 006 0V6a3 3 0 00-3-3z" />
@@ -648,10 +648,10 @@ export default function ChatUI({
           <button
             onClick={handleSend}
             disabled={sending || !input.trim()}
-            className="px-4 py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl transition-colors flex-shrink-0"
+            className="btn-brocco px-4 py-2.5 disabled:cursor-not-allowed flex-shrink-0"
           >
             {sending ? (
-              <span className="inline-block w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              <span className="inline-block w-5 h-5 border-2 border-ink/20 border-t-ink rounded-full animate-spin" />
             ) : (
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />

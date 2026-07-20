@@ -32,20 +32,22 @@ function fmt(sec: number): string {
   return m > 0 ? `${m}:${s.toString().padStart(2, "0")}` : `${s}`;
 }
 
+/* Page ground tint per phase — cream family, still glanceable mid-exercise */
 const KIND_BG: Record<Segment["kind"], string> = {
-  prep: "bg-amber-950",
-  warmup: "bg-amber-950",
-  work: "bg-gray-950",
-  rest: "bg-blue-950",
-  cooldown: "bg-indigo-950",
+  prep: "bg-[#faeed8]",
+  warmup: "bg-[#faeed8]",
+  work: "bg-cream",
+  rest: "bg-[#e3eefa]",
+  cooldown: "bg-ghost",
 };
 
-const KIND_ACCENT: Record<Segment["kind"], string> = {
-  prep: "text-amber-400",
-  warmup: "text-amber-400",
-  work: "text-green-400",
-  rest: "text-blue-300",
-  cooldown: "text-indigo-300",
+/* Progress fill inside the active exercise sticker */
+const KIND_FILL: Record<Segment["kind"], string> = {
+  prep: "bg-sun/40",
+  warmup: "bg-sun/40",
+  work: "bg-brocco",
+  rest: "bg-sky/40",
+  cooldown: "bg-ghost",
 };
 
 export default function WorkoutPlayer({ title, definition, workoutId, onExit }: PlayerProps) {
@@ -252,30 +254,32 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
   // Overall progress by estimated time
   const elapsedEst = segments.slice(0, idx).reduce((s, sg) => s + segEstSec(sg), 0) + (isTimed && seg ? seg.seconds! - remaining : 0);
   const progressPct = Math.min(100, (elapsedEst / Math.max(totalEstSec, 1)) * 100);
+  // Fill of the active exercise sticker (timed segments only)
+  const segPct = isTimed && seg?.seconds ? Math.min(100, ((seg.seconds - remaining) / seg.seconds) * 100) : 0;
   const workSegs = segments.filter((s) => s.kind === "work").length;
   const workDone = segments.slice(0, idx).filter((s) => s.kind === "work").length;
 
   if (finished) {
     const totalMin = Math.max(1, Math.round((Date.now() - startedAtRef.current) / 60000));
     return (
-      <div className="fixed inset-0 z-[90] bg-gray-950 flex flex-col items-center justify-center px-6 text-center">
+      <div className="fixed inset-0 z-[90] bg-cream flex flex-col items-center justify-center px-6 text-center">
         <p className="text-6xl mb-4">🥦</p>
-        <h2 className="text-2xl font-bold text-white mb-1">Workout complete!</h2>
-        <p className="text-sm text-gray-400 mb-8">
+        <h2 className="text-2xl font-extrabold text-ink mb-1">Workout complete!</h2>
+        <p className="text-sm text-moss font-semibold mb-8">
           {title} · {totalMin} min · {workSegs} exercises
         </p>
         <div className="w-full max-w-xs space-y-2">
           <button
             onClick={() => handleFinish(true)}
             disabled={logging}
-            className="w-full py-3 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-medium rounded-xl transition-colors"
+            className="btn-brocco w-full py-3"
           >
             {logging ? "Logging…" : "Log to training ✓"}
           </button>
           <button
             onClick={() => handleFinish(false)}
             disabled={logging}
-            className="w-full py-3 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors"
+            className="btn-quiet w-full py-3 text-sm"
           >
             Finish without logging
           </button>
@@ -291,54 +295,62 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
       {/* Top bar: progress + exit */}
       <div className="safe-top px-4 pt-3">
         <div className="flex items-center gap-3">
-          <div className="flex-1 h-1.5 bg-black/40 rounded-full overflow-hidden">
-            <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${progressPct}%` }} />
+          <div className="flex-1 h-2.5 bg-ghost border-2 border-ink rounded-full overflow-hidden">
+            <div className="h-full bg-brocco rounded-full transition-all" style={{ width: `${progressPct}%` }} />
           </div>
           <button
             onClick={() => { setQuitPrompt(true); if (!paused) togglePause(); }}
-            className="text-gray-400 hover:text-white text-2xl leading-none px-1"
+            className="text-moss hover:text-ink text-2xl leading-none px-1"
             aria-label="Exit workout"
           >
             &times;
           </button>
         </div>
         <div className="flex items-center justify-between mt-1.5">
-          <p className="text-[11px] text-gray-500 truncate">{title}</p>
-          <p className="text-[11px] text-gray-500 flex-shrink-0">
+          <p className="text-[11px] text-sage font-bold truncate">{title}</p>
+          <p className="text-[11px] text-sage font-bold flex-shrink-0 tabular-nums">
             {seg.kind === "work" ? `Exercise ${workDone + 1}/${workSegs}` : `${workDone}/${workSegs} done`}
           </p>
         </div>
       </div>
 
-      {/* Center: the big display */}
+      {/* Center: the big display — active exercise sticker with progress fill */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center min-h-0">
-        {seg.context && <p className="text-xs uppercase tracking-widest text-gray-500 mb-2">{seg.context}</p>}
-        <h1 className={`text-3xl md:text-4xl font-bold mb-1 ${seg.kind === "rest" ? "text-blue-200" : "text-white"}`}>
-          {seg.label}
-        </h1>
-        {seg.note && <p className="text-sm text-gray-400 mb-4 max-w-xs">{seg.note}</p>}
+        <div className="sticker-lg relative overflow-hidden w-full max-w-sm px-6 py-8">
+          <div
+            className={`absolute inset-y-0 left-0 ${KIND_FILL[seg.kind]} transition-all`}
+            style={{ width: `${segPct}%` }}
+          />
+          <div className="relative flex flex-col items-center">
+            {seg.context && <p className="label-xs mb-2">{seg.context}</p>}
+            <h1 className="text-3xl md:text-4xl font-extrabold text-ink mb-1">
+              {seg.label}
+            </h1>
+            {seg.note && <p className="text-sm text-moss font-semibold mb-4 max-w-xs">{seg.note}</p>}
 
-        {isTimed ? (
-          <p className={`font-mono font-bold tabular-nums leading-none my-6 ${KIND_ACCENT[seg.kind]}`} style={{ fontSize: "clamp(5rem, 22vw, 9rem)" }}>
-            {fmt(remaining)}
-          </p>
-        ) : (
-          <div className="my-6 flex flex-col items-center gap-5">
-            <p className={`font-bold leading-none ${KIND_ACCENT[seg.kind]}`} style={{ fontSize: "clamp(4rem, 18vw, 7rem)" }}>
-              {seg.reps} <span className="text-3xl text-gray-400">reps</span>
-            </p>
-            <button
-              onClick={() => goTo(idx + 1)}
-              className="px-10 py-4 bg-green-600 hover:bg-green-700 text-white text-lg font-semibold rounded-2xl transition-colors"
-            >
-              Done ✓
-            </button>
+            {isTimed ? (
+              <p className="font-mono font-extrabold tabular-nums leading-none my-6 text-ink" style={{ fontSize: "clamp(4rem, 20vw, 7rem)" }}>
+                {fmt(remaining)}
+              </p>
+            ) : (
+              <div className="my-6 flex flex-col items-center gap-5">
+                <p className="font-extrabold leading-none text-ink" style={{ fontSize: "clamp(4rem, 18vw, 6rem)" }}>
+                  {seg.reps} <span className="text-3xl text-moss">reps</span>
+                </p>
+                <button
+                  onClick={() => goTo(idx + 1)}
+                  className="btn-brocco px-10 py-4 text-lg"
+                >
+                  Done ✓
+                </button>
+              </div>
+            )}
           </div>
-        )}
+        </div>
 
         {seg.nextUp && seg.nextUp !== seg.label && (
-          <p className="text-sm text-gray-500">
-            Next: <span className="text-gray-300">{seg.nextUp}</span>
+          <p className="text-sm text-sage font-bold mt-4">
+            Next: <span className="text-ink">{seg.nextUp}</span>
           </p>
         )}
       </div>
@@ -348,7 +360,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
         <div className="flex items-center justify-center gap-4">
           <button
             onClick={() => goTo(Math.max(0, idx - 1))}
-            className="w-12 h-12 flex items-center justify-center bg-gray-800/70 hover:bg-gray-700 text-gray-300 rounded-full transition-colors"
+            className="sticker-press w-12 h-12 flex items-center justify-center bg-card border-2 border-ink text-ink rounded-full shadow-[2px_2px_0_var(--color-shade)]"
             aria-label="Previous"
           >
             ⏮
@@ -356,7 +368,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
           {isTimed && (
             <button
               onClick={togglePause}
-              className="w-16 h-16 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white text-2xl rounded-full transition-colors"
+              className="sticker-press w-16 h-16 flex items-center justify-center bg-brocco border-2 border-ink text-ink text-2xl rounded-full shadow-[3px_3px_0_var(--color-shade)]"
               aria-label={paused ? "Resume" : "Pause"}
             >
               {paused ? "▶" : "⏸"}
@@ -364,7 +376,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
           )}
           <button
             onClick={() => goTo(idx + 1)}
-            className="w-12 h-12 flex items-center justify-center bg-gray-800/70 hover:bg-gray-700 text-gray-300 rounded-full transition-colors"
+            className="sticker-press w-12 h-12 flex items-center justify-center bg-card border-2 border-ink text-ink rounded-full shadow-[2px_2px_0_var(--color-shade)]"
             aria-label="Skip"
           >
             ⏭
@@ -373,13 +385,13 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
         <div className="flex items-center justify-center gap-5 mt-4">
           <button
             onClick={() => { const v = !soundOn; setSoundOn(v); localStorage.setItem("brocco_wo_sound", v ? "on" : "off"); }}
-            className={`text-xs ${soundOn ? "text-gray-300" : "text-gray-600 line-through"}`}
+            className={`text-xs font-bold ${soundOn ? "text-ink" : "text-ghost-ink line-through"}`}
           >
             🔔 Beeps
           </button>
           <button
             onClick={() => { const v = !voiceOn; setVoiceOn(v); localStorage.setItem("brocco_wo_voice", v ? "on" : "off"); if (!v && typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); }}
-            className={`text-xs ${voiceOn ? "text-gray-300" : "text-gray-600 line-through"}`}
+            className={`text-xs font-bold ${voiceOn ? "text-ink" : "text-ghost-ink line-through"}`}
           >
             🗣 Voice
           </button>
@@ -388,19 +400,19 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
 
       {/* Quit confirmation */}
       {quitPrompt && (
-        <div className="absolute inset-0 z-10 bg-black/70 flex items-center justify-center px-6">
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl p-5 w-full max-w-xs text-center">
-            <p className="text-white font-medium mb-4">Quit this workout?</p>
+        <div className="absolute inset-0 z-10 bg-ink/40 flex items-center justify-center px-6">
+          <div className="bg-paper border-2 border-ink rounded-2xl shadow-[4px_4px_0_var(--color-shade)] p-5 w-full max-w-xs text-center">
+            <p className="text-ink font-bold mb-4">Quit this workout?</p>
             <div className="space-y-2">
               <button
                 onClick={() => { setQuitPrompt(false); if (paused) togglePause(); }}
-                className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-xl"
+                className="btn-brocco w-full py-2.5 text-sm"
               >
                 Keep going 💪
               </button>
               <button
                 onClick={onExit}
-                className="w-full py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl"
+                className="btn-quiet w-full py-2.5 text-sm"
               >
                 Quit
               </button>

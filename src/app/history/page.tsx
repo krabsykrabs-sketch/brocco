@@ -38,19 +38,19 @@ function formatDate(iso: string): string {
 
 function ActivityCard({ activity }: { activity: Activity }) {
   return (
-    <Link href={`/activity/${activity.id}`} className="block bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-gray-700 transition-colors">
+    <Link href={`/activity/${activity.id}`} className="sticker sticker-press block p-4">
       <div className="flex items-start justify-between mb-2">
         <div>
-          <h3 className="font-medium text-white">{activity.name}</h3>
-          <p className="text-sm text-gray-400">
+          <h3 className="font-bold text-ink">{activity.name}</h3>
+          <p className="text-sm text-moss font-semibold">
             {formatDate(activity.startDateLocal)} &middot; {activity.activityType}
             {activity.source === "manual" && (
-              <span className="ml-1 text-xs text-gray-500">(manual)</span>
+              <span className="ml-1 text-xs text-sage">(manual)</span>
             )}
           </p>
         </div>
         {activity.stravaId && (
-          <span className="text-xs text-[#FC4C02] flex-shrink-0">
+          <span className="text-xs text-[#FC4C02] font-bold flex-shrink-0">
             Strava
           </span>
         )}
@@ -59,34 +59,34 @@ function ActivityCard({ activity }: { activity: Activity }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
         {activity.distanceKm && (
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Distance</p>
-            <p className="text-sm font-medium text-white">
+            <p className="label-xs">Distance</p>
+            <p className="text-sm font-bold text-ink">
               {parseFloat(activity.distanceKm).toFixed(1)} km
             </p>
           </div>
         )}
         <div>
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Duration</p>
-          <p className="text-sm font-medium text-white">
+          <p className="label-xs">Duration</p>
+          <p className="text-sm font-bold text-ink">
             {formatDuration(parseFloat(activity.durationMin))}
           </p>
         </div>
         {activity.avgPacePerKm && (
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Pace</p>
-            <p className="text-sm font-medium text-white">{activity.avgPacePerKm}</p>
+            <p className="label-xs">Pace</p>
+            <p className="text-sm font-bold text-ink">{activity.avgPacePerKm}</p>
           </div>
         )}
         {activity.avgHeartRate && (
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Avg HR</p>
-            <p className="text-sm font-medium text-white">{activity.avgHeartRate} bpm</p>
+            <p className="label-xs">Avg HR</p>
+            <p className="text-sm font-bold text-ink">{activity.avgHeartRate} bpm</p>
           </div>
         )}
         {activity.elevationGainM && parseFloat(activity.elevationGainM) > 0 && (
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Elevation</p>
-            <p className="text-sm font-medium text-white">
+            <p className="label-xs">Elevation</p>
+            <p className="text-sm font-bold text-ink">
               {Math.round(parseFloat(activity.elevationGainM))} m
             </p>
           </div>
@@ -112,7 +112,7 @@ function fmtSecs(sec: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
 }
 
-const ZONE_COLORS = ["#4b5563", "#4ade80", "#facc15", "#fb923c", "#ef4444"];
+const ZONE_COLORS = ["#99a17e", "#9ccb2e", "#e0b23c", "#e8813c", "#d9534c"];
 
 /**
  * 90-day best efforts + 8-week zone mix, computed from stored per-run
@@ -139,19 +139,19 @@ function TrendsSection() {
   return (
     <div className="mb-6 space-y-4">
       {paceCurve.length > 0 && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Best efforts · last 90 days</p>
+        <div className="sticker p-4">
+          <p className="label-xs mb-3">Best efforts · last 90 days</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {paceCurve.map((e) => {
               const improved = e.prevBestTimeSec != null && e.bestTimeSec < e.prevBestTimeSec;
               return (
                 <div key={e.distanceM}>
-                  <p className="text-[10px] text-gray-500 uppercase">{e.label}</p>
-                  <p className="text-base font-semibold text-white font-mono">{fmtSecs(e.bestTimeSec)}</p>
-                  <p className="text-[10px] text-gray-500">
+                  <p className="label-xs">{e.label}</p>
+                  <p className="text-base font-extrabold text-ink font-mono">{fmtSecs(e.bestTimeSec)}</p>
+                  <p className="text-[10px] text-moss font-semibold">
                     {fmtSecs(e.paceSecPerKm)}/km
                     {e.prevBestTimeSec != null && (
-                      <span className={improved ? "text-green-400 ml-1" : "text-gray-600 ml-1"}>
+                      <span className={improved ? "text-leaf font-bold ml-1" : "text-sage ml-1"}>
                         {improved ? "▼" : "▲"} {fmtSecs(Math.abs(e.bestTimeSec - e.prevBestTimeSec))}
                       </span>
                     )}
@@ -160,19 +160,19 @@ function TrendsSection() {
               );
             })}
           </div>
-          <p className="text-[10px] text-gray-600 mt-2">vs. the 90 days before — ▼ faster, ▲ slower</p>
+          <p className="text-[10px] text-sage font-semibold mt-2">vs. the 90 days before — ▼ faster, ▲ slower</p>
         </div>
       )}
 
       {hasZones && (
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">Weekly intensity mix (Z1–Z5)</p>
+        <div className="sticker p-4">
+          <p className="label-xs mb-3">Weekly intensity mix (Z1–Z5)</p>
           <div className="flex items-end gap-1.5 h-20">
             {weeks.map((w) => {
               const total = w.zoneMin.reduce((a, b) => a + b, 0);
               return (
                 <div key={w.weekStart} className="flex-1 flex flex-col justify-end h-full" title={`${w.label}: ${w.runKm}km${w.hardPct != null ? `, ${w.hardPct}% hard` : ""}`}>
-                  <div className="w-full flex flex-col-reverse" style={{ height: `${(total / maxMin) * 100}%` }}>
+                  <div className="w-full flex flex-col-reverse rounded-[4px] overflow-hidden" style={{ height: `${(total / maxMin) * 100}%` }}>
                     {w.zoneMin.map((min, zi) =>
                       min > 0 ? (
                         <div key={zi} style={{ height: `${(min / Math.max(total, 1)) * 100}%`, backgroundColor: ZONE_COLORS[zi] }} className="w-full" />
@@ -185,10 +185,10 @@ function TrendsSection() {
           </div>
           <div className="flex gap-1.5 mt-1">
             {weeks.map((w) => (
-              <p key={w.weekStart} className="flex-1 text-center text-[9px] text-gray-600">{w.label.split(" ")[1]}</p>
+              <p key={w.weekStart} className="flex-1 text-center text-[9px] text-sage font-bold">{w.label.split(" ")[1]}</p>
             ))}
           </div>
-          <p className="text-[10px] text-gray-600 mt-1.5">
+          <p className="text-[10px] text-sage font-semibold mt-1.5">
             Hard share (Z4+Z5): {weeks.filter((w) => w.hardPct != null).map((w) => `${w.hardPct}%`).join(" · ") || "–"}
           </p>
         </div>
@@ -231,19 +231,19 @@ export default function HistoryPage() {
 
   return (
     <main className="min-h-screen max-w-2xl mx-auto px-4 py-6 pb-24">
-      <div className="safe-top sticky top-0 z-30 bg-gray-950/95 backdrop-blur-sm -mx-4 px-4 mb-6">
+      <div className="safe-top sticky top-0 z-30 bg-cream/95 backdrop-blur-sm -mx-4 px-4 mb-6">
         {/* Mobile */}
         <div className="md:hidden flex items-center gap-2 pb-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6" />
-          <span className="font-semibold text-sm text-gray-300">History</span>
-          <span className="text-xs text-gray-500 ml-auto">{total} activities</span>
+          <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6 rounded-full border-2 border-ink" />
+          <span className="font-extrabold text-sm text-ink">History</span>
+          <span className="text-xs text-sage font-bold ml-auto">{total} activities</span>
         </div>
         {/* Desktop */}
         <div className="hidden md:flex items-center justify-between py-3">
           <div>
-            <h1 className="text-2xl font-bold">Activity History</h1>
-            <p className="text-sm text-gray-400">{total} {total === 1 ? "activity" : "activities"}</p>
+            <h1 className="text-2xl font-extrabold text-ink">Activity History</h1>
+            <p className="text-sm text-moss font-semibold">{total} {total === 1 ? "activity" : "activities"}</p>
           </div>
           <DesktopNavLinks />
         </div>
@@ -255,7 +255,7 @@ export default function HistoryPage() {
         <select
           value={typeFilter}
           onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}
-          className="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-green-500"
+          className="field w-auto"
         >
           <option value="">All types</option>
           <option value="Run">Run</option>
@@ -268,13 +268,13 @@ export default function HistoryPage() {
       </div>
 
       {loading ? (
-        <div className="text-gray-500 text-center py-12">Loading...</div>
+        <div className="text-moss text-center py-12 font-semibold">Loading...</div>
       ) : activities.length === 0 ? (
         <div className="text-center py-12">
-          <p className="text-gray-500 mb-2">No activities yet.</p>
-          <p className="text-gray-600 text-sm">
+          <p className="text-moss font-semibold mb-2">No activities yet.</p>
+          <p className="text-sage text-sm font-semibold">
             Connect Strava in{" "}
-            <Link href="/settings" className="text-green-400 underline">
+            <Link href="/settings" className="text-leaf font-bold underline">
               Settings
             </Link>{" "}
             to import your runs.
@@ -293,17 +293,17 @@ export default function HistoryPage() {
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-colors"
+                className="btn-quiet px-3 py-1.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Previous
               </button>
-              <span className="text-sm text-gray-400">
+              <span className="text-sm text-moss font-semibold">
                 {page} / {totalPages}
               </span>
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg transition-colors"
+                className="btn-quiet px-3 py-1.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Next
               </button>

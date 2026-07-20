@@ -48,9 +48,9 @@ function reconcileDay(workouts: WorkoutItem[], activities: ActivityItem[], today
 
 function activityDetail(a: ActivityItem): string {
   if (a.distanceKm) {
-    return `${a.distanceKm.toFixed(1)}km${a.avgPacePerKm ? ` · ${a.avgPacePerKm.replace("/km", "")}` : ""}`;
+    return `${a.distanceKm.toFixed(1)} km${a.avgPacePerKm ? ` · ${a.avgPacePerKm.replace("/km", "")}` : ""}`;
   }
-  if (a.durationMin) return `${Math.round(a.durationMin)}min`;
+  if (a.durationMin) return `${Math.round(a.durationMin)} min`;
   return "";
 }
 
@@ -188,14 +188,14 @@ function EventChip({ event, onTap }: { event: EventOccurrence; onTap: () => void
   const meta = categoryMeta(event.category);
   const isLastDay = event.end?.slice(0, 10) === event.date;
   return (
-    <button onClick={onTap} className={`w-full flex items-center gap-2.5 border rounded-lg px-2.5 py-1.5 text-left transition-colors hover:brightness-110 ${event.continuation ? "opacity-80" : ""} ${meta.bg}`}>
-      <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{ backgroundColor: meta.color }} />
+    <button onClick={onTap} className={`w-full flex items-center gap-2.5 border-2 rounded-xl px-2.5 py-1.5 text-left shadow-[2px_2px_0_var(--color-shade)] sticker-press ${event.continuation ? "opacity-80" : ""} ${meta.bg}`}>
+      <div className="w-1.5 self-stretch rounded-full flex-shrink-0 border border-ink/60" style={{ backgroundColor: meta.color }} />
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-gray-100 truncate">
+        <p className="text-xs font-bold text-ink truncate">
           {event.continuation ? "⟶ " : event.category === "birthday" ? "🎂 " : ""}{event.title}
-          {event.recurring && <span className="text-gray-600 ml-1">↻</span>}
+          {event.recurring && <span className="text-sage ml-1">↻</span>}
         </p>
-        <p className="text-[10px] text-gray-500 truncate">
+        <p className="text-[10px] text-moss font-semibold truncate tabular-nums">
           {event.continuation
             ? isLastDay && !event.allDay
               ? `until ${event.end!.slice(11, 16)}`
@@ -210,34 +210,40 @@ function EventChip({ event, onTap }: { event: EventOccurrence; onTap: () => void
   );
 }
 
+/**
+ * Planned | actual, side by side: the plan in the left cell, the matched
+ * activity's real numbers in the right one — instead of a tiny badge.
+ */
 function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matched: ActivityItem | null; state: WorkoutState }) {
-  const badge =
-    state === "done" ? (
-      <span className="text-[10px] font-medium text-green-950 bg-green-400/90 px-1.5 py-0.5 rounded-md flex-shrink-0 whitespace-nowrap">
-        ✓ {matched ? activityDetail(matched) || "done" : "done"}
-      </span>
-    ) : state === "missed" ? (
-      <span className="text-[10px] font-medium text-red-300 bg-red-950/70 border border-red-900/60 px-1.5 py-0.5 rounded-md flex-shrink-0 whitespace-nowrap">
-        ✗ missed
-      </span>
-    ) : state === "today" ? (
-      <span className="text-[10px] text-gray-400 bg-gray-800 px-1.5 py-0.5 rounded-md flex-shrink-0 whitespace-nowrap">open</span>
-    ) : (
-      <span className="text-[9px] uppercase font-bold text-gray-600 bg-gray-800 px-1 py-0.5 rounded flex-shrink-0">plan</span>
-    );
-
   return (
-    <Link href="/plan" className="w-full flex items-center gap-2.5 bg-gray-900 border border-gray-700/60 rounded-lg px-2.5 py-1.5 hover:border-gray-600 transition-colors">
-      <div className="w-1 self-stretch rounded-full flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
-      <div className="flex-1 min-w-0">
-        <p className={`text-xs font-medium truncate ${state === "missed" ? "text-gray-400" : "text-gray-100"}`}>
-          {state === "done" ? "✅ " : "🏃 "}{workout.title}
+    <Link href={matched ? `/activity/${matched.activityId}` : "/plan"} className={`sticker sticker-press grid grid-cols-2 overflow-hidden ${state === "today" ? "shadow-[3px_3px_0_var(--color-brocco)]" : ""}`}>
+      <div className="px-2.5 py-1.5 border-r-2 border-dashed border-shade min-w-0">
+        <p className="label-xs">Planned</p>
+        <p className={`text-xs font-bold truncate flex items-center gap-1.5 ${state === "missed" ? "text-moss" : "text-ink"}`}>
+          <span className="w-2 h-2 rounded-full border border-ink/60 flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
+          {workout.title}
         </p>
-        <p className="text-[10px] text-gray-500 truncate">
-          {[workout.targetDistanceKm ? `${workout.targetDistanceKm}km` : null, workout.targetPace].filter(Boolean).join(" · ") || "training plan"}
+        <p className="text-[10px] text-moss font-semibold truncate tabular-nums">
+          {[workout.targetDistanceKm ? `${workout.targetDistanceKm} km` : null, workout.targetPace].filter(Boolean).join(" · ") || "training plan"}
         </p>
       </div>
-      {badge}
+      {state === "done" ? (
+        <div className="px-2.5 py-1.5 bg-sprout min-w-0">
+          <p className="label-xs text-leaf!">✓ Done</p>
+          <p className="text-xs font-extrabold text-ink truncate tabular-nums">{matched ? activityDetail(matched) || matched.name : "completed"}</p>
+          {matched && <p className="text-[10px] text-leaf font-bold truncate">{matched.source === "strava" ? "strava" : "logged"}</p>}
+        </div>
+      ) : state === "missed" ? (
+        <div className="px-2.5 py-1.5 bg-clay-soft min-w-0">
+          <p className="label-xs text-clay!">✗ Missed</p>
+          <p className="text-xs font-bold text-clay truncate">not run</p>
+        </div>
+      ) : (
+        <div className="px-2.5 py-1.5 bg-ghost min-w-0">
+          <p className="label-xs">Actual</p>
+          <p className="text-xs font-bold text-ghost-ink truncate">{state === "today" ? "— today" : "—"}</p>
+        </div>
+      )}
     </Link>
   );
 }
@@ -245,11 +251,15 @@ function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matche
 /** A completed activity with no planned workout behind it (spontaneous run, extra ride, ad-hoc session). */
 function ActivityChip({ activity }: { activity: ActivityItem }) {
   return (
-    <Link href="/history" className="w-full flex items-center gap-2.5 bg-green-950/40 border border-green-900/50 rounded-lg px-2.5 py-1.5 hover:border-green-700/60 transition-colors">
-      <div className="w-1 self-stretch rounded-full flex-shrink-0 bg-green-400" />
-      <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-green-100 truncate">✓ {activity.name}</p>
-        <p className="text-[10px] text-green-700 truncate">
+    <Link href={`/activity/${activity.activityId}`} className="sticker sticker-press grid grid-cols-2 overflow-hidden">
+      <div className="px-2.5 py-1.5 border-r-2 border-dashed border-shade bg-ghost min-w-0">
+        <p className="label-xs">Unplanned</p>
+        <p className="text-xs font-bold text-ghost-ink truncate">— spontaneous</p>
+      </div>
+      <div className="px-2.5 py-1.5 bg-sprout min-w-0">
+        <p className="label-xs text-leaf!">✓ Done</p>
+        <p className="text-xs font-extrabold text-ink truncate">{activity.name}</p>
+        <p className="text-[10px] text-leaf font-bold truncate tabular-nums">
           {[activityDetail(activity), activity.source === "strava" ? "strava" : "logged"].filter(Boolean).join(" · ")}
         </p>
       </div>
@@ -321,15 +331,15 @@ function EventFormModal({
     if (res.ok) { onSaved(); onClose(); }
   }
 
-  const inputCls = "w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-green-500";
+  const inputCls = "field";
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end md:items-center justify-center">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative w-full md:max-w-md bg-gray-900 border border-gray-700 rounded-t-2xl md:rounded-2xl p-4 max-h-[90vh] overflow-y-auto safe-bottom">
+      <div className="absolute inset-0 bg-ink/40" onClick={onClose} />
+      <div className="relative w-full md:max-w-md bg-paper border-2 border-ink rounded-t-2xl md:rounded-2xl md:shadow-[4px_4px_0_var(--color-shade)] p-4 max-h-[90vh] overflow-y-auto safe-bottom">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-white">{form.id ? "Edit event" : "New event"}</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-white text-xl leading-none">&times;</button>
+          <h2 className="text-sm font-extrabold text-ink">{form.id ? "Edit event" : "New event"}</h2>
+          <button onClick={onClose} className="text-moss hover:text-ink text-xl leading-none">&times;</button>
         </div>
 
         <div className="space-y-2.5">
@@ -337,8 +347,8 @@ function EventFormModal({
 
           <div className="flex gap-2">
             <input type="date" value={form.date} onChange={(e) => set({ date: e.target.value })} className={inputCls} />
-            <label className="flex items-center gap-1.5 text-xs text-gray-400 flex-shrink-0 px-1">
-              <input type="checkbox" checked={form.allDay} onChange={(e) => set({ allDay: e.target.checked })} className="accent-green-600" />
+            <label className="flex items-center gap-1.5 text-xs text-ink font-bold flex-shrink-0 px-1">
+              <input type="checkbox" checked={form.allDay} onChange={(e) => set({ allDay: e.target.checked })} className="accent-[#9ccb2e]" />
               All-day
             </label>
           </div>
@@ -346,13 +356,13 @@ function EventFormModal({
           {!form.allDay && (
             <div className="flex gap-2 items-center">
               <input type="time" value={form.time} onChange={(e) => set({ time: e.target.value })} className={inputCls} />
-              <span className="text-gray-600 text-xs">to</span>
+              <span className="text-moss text-xs font-bold">to</span>
               <input type="time" value={form.endTime} onChange={(e) => set({ endTime: e.target.value })} className={inputCls} />
             </div>
           )}
 
           <div className="flex gap-2 items-center">
-            <span className="text-xs text-gray-500 flex-shrink-0 w-14">Ends on</span>
+            <span className="text-xs text-moss font-bold flex-shrink-0 w-14">Ends on</span>
             <input
               type="date"
               value={form.endDate}
@@ -362,7 +372,7 @@ function EventFormModal({
               title="Leave empty for a single-day event"
             />
             {form.endDate && form.endDate !== form.date && (
-              <button onClick={() => set({ endDate: "" })} className="text-xs text-gray-500 hover:text-gray-300 flex-shrink-0">clear</button>
+              <button onClick={() => set({ endDate: "" })} className="text-xs text-moss font-bold hover:text-ink flex-shrink-0">clear</button>
             )}
           </div>
 
@@ -371,8 +381,8 @@ function EventFormModal({
               <button
                 key={key}
                 onClick={() => set({ category: key })}
-                className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
-                  form.category === key ? "border-transparent text-gray-950 font-semibold" : "border-gray-700 text-gray-400 hover:border-gray-500"
+                className={`px-2.5 py-1 rounded-full text-xs border-2 transition-colors font-bold ${
+                  form.category === key ? "border-ink text-ink" : "border-shade text-moss hover:border-ink"
                 }`}
                 style={form.category === key ? { backgroundColor: meta.color } : {}}
               >
@@ -411,7 +421,7 @@ function EventFormModal({
           <button
             onClick={handleSave}
             disabled={saving || !form.title.trim()}
-            className="w-full py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white text-sm font-medium rounded-xl transition-colors"
+            className="btn-brocco w-full py-2.5 text-sm"
           >
             {saving ? "Saving..." : form.id ? "Save changes" : "Add event"}
           </button>
@@ -474,31 +484,31 @@ function EventDetailSheet({
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end md:items-center justify-center">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative w-full md:max-w-md bg-gray-900 border border-gray-700 rounded-t-2xl md:rounded-2xl p-4 safe-bottom">
+      <div className="absolute inset-0 bg-ink/40" onClick={onClose} />
+      <div className="relative w-full md:max-w-md bg-paper border-2 border-ink rounded-t-2xl md:rounded-2xl md:shadow-[4px_4px_0_var(--color-shade)] p-4 safe-bottom">
         <div className="flex items-start gap-3 mb-3">
-          <div className="w-1.5 self-stretch rounded-full" style={{ backgroundColor: meta.color }} />
+          <div className="w-1.5 self-stretch rounded-full border border-ink/60" style={{ backgroundColor: meta.color }} />
           <div className="flex-1 min-w-0">
-            <h2 className="text-base font-semibold text-white">{occurrence.category === "birthday" ? "🎂 " : ""}{occurrence.title}</h2>
-            <p className="text-xs text-gray-400 mt-0.5">
+            <h2 className="text-base font-extrabold text-ink">{occurrence.category === "birthday" ? "🎂 " : ""}{occurrence.title}</h2>
+            <p className="text-xs text-moss font-semibold mt-0.5">
               {fmt(occurrence.date, { weekday: "long", day: "numeric", month: "long" })}
               {!occurrence.allDay && ` · ${occurrence.start.slice(11, 16)}${occurrence.end ? `–${occurrence.end.slice(11, 16)}` : ""}`}
               {occurrence.recurring && " · repeats"}
             </p>
-            {occurrence.location && <p className="text-xs text-gray-500 mt-1">📍 {occurrence.location}</p>}
-            {occurrence.notes && <p className="text-xs text-gray-400 mt-2 whitespace-pre-wrap">{occurrence.notes}</p>}
+            {occurrence.location && <p className="text-xs text-moss font-semibold mt-1">📍 {occurrence.location}</p>}
+            {occurrence.notes && <p className="text-xs text-ink mt-2 whitespace-pre-wrap">{occurrence.notes}</p>}
           </div>
-          <button onClick={onClose} className="text-gray-500 hover:text-white text-xl leading-none">&times;</button>
+          <button onClick={onClose} className="text-moss hover:text-ink text-xl leading-none">&times;</button>
         </div>
         <div className="flex gap-2">
-          <button onClick={loadForEdit} disabled={busy} className="flex-1 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 text-sm rounded-lg transition-colors disabled:opacity-50">Edit</button>
+          <button onClick={loadForEdit} disabled={busy} className="btn-quiet flex-1 py-2 text-sm disabled:opacity-50">Edit</button>
           {occurrence.recurring ? (
             <>
-              <button onClick={() => handleDelete("occurrence")} disabled={busy} className="flex-1 py-2 bg-red-900/40 hover:bg-red-900/60 text-red-300 text-sm rounded-lg transition-colors disabled:opacity-50">Delete this</button>
-              <button onClick={() => handleDelete("series")} disabled={busy} className="flex-1 py-2 bg-red-900/40 hover:bg-red-900/60 text-red-300 text-sm rounded-lg transition-colors disabled:opacity-50">Delete all</button>
+              <button onClick={() => handleDelete("occurrence")} disabled={busy} className="btn-danger flex-1 py-2 text-sm disabled:opacity-50">Delete this</button>
+              <button onClick={() => handleDelete("series")} disabled={busy} className="btn-danger flex-1 py-2 text-sm disabled:opacity-50">Delete all</button>
             </>
           ) : (
-            <button onClick={() => handleDelete("series")} disabled={busy} className="flex-1 py-2 bg-red-900/40 hover:bg-red-900/60 text-red-300 text-sm rounded-lg transition-colors disabled:opacity-50">Delete</button>
+            <button onClick={() => handleDelete("series")} disabled={busy} className="btn-danger flex-1 py-2 text-sm disabled:opacity-50">Delete</button>
           )}
         </div>
       </div>
@@ -595,9 +605,9 @@ export default function CalendarView() {
     const isEmpty = data.events.length === 0 && data.workouts.length === 0 && data.activities.length === 0;
     if (compact && isEmpty) {
       return (
-        <div className="flex items-center gap-3 py-1.5 opacity-50">
+        <div className="flex items-center gap-3 py-1.5 opacity-60">
           <DayLabel date={date} isToday={isToday} />
-          <div className="flex-1 border-b border-dashed border-gray-800/80" />
+          <div className="flex-1 border-b-2 border-dotted border-shade" />
         </div>
       );
     }
@@ -605,13 +615,13 @@ export default function CalendarView() {
     return (
       <div className="flex gap-3 py-1.5">
         <DayLabel date={date} isToday={isToday} />
-        <div className="flex-1 min-w-0 space-y-1">
+        <div className="flex-1 min-w-0 space-y-1.5">
           {data.events.map((e) => <EventChip key={e.occurrenceKey} event={e} onTap={() => setDetail(e)} />)}
           {rows.map(({ workout, matched, state }) => (
             <WorkoutChip key={workout.workoutId} workout={workout} matched={matched} state={state} />
           ))}
           {extras.map((a) => <ActivityChip key={a.activityId} activity={a} />)}
-          {!compact && isEmpty && <p className="text-xs text-gray-600 py-2">Nothing scheduled.</p>}
+          {!compact && isEmpty && <p className="text-xs text-sage font-semibold py-2">Nothing scheduled.</p>}
         </div>
       </div>
     );
@@ -620,8 +630,8 @@ export default function CalendarView() {
   function DayLabel({ date, isToday }: { date: string; isToday: boolean }) {
     return (
       <button onClick={() => { setAnchor(date); setView("day"); }} className="w-11 flex-shrink-0 text-center pt-0.5">
-        <p className={`text-[10px] font-bold uppercase ${isToday ? "text-green-400" : "text-gray-500"}`}>{fmt(date, { weekday: "short" })}</p>
-        <p className={`text-lg font-bold leading-tight ${isToday ? "text-green-400" : "text-gray-300"}`}>{toDate(date).getDate()}</p>
+        <p className={`text-[10px] font-extrabold uppercase ${isToday ? "text-leaf" : "text-sage"}`}>{fmt(date, { weekday: "short" })}</p>
+        <p className={`text-lg font-extrabold leading-tight tabular-nums ${isToday ? "text-leaf" : "text-ink"}`}>{toDate(date).getDate()}</p>
       </button>
     );
   }
@@ -632,12 +642,12 @@ export default function CalendarView() {
 
       {/* View switcher + nav */}
       <div className="flex items-center justify-between mt-2 mb-1">
-        <div className="flex bg-gray-900 border border-gray-800 rounded-lg p-0.5">
+        <div className="flex sticker rounded-xl p-0.5">
           {(["day", "week", "month"] as ViewMode[]).map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
-              className={`px-3 py-1 text-xs rounded-md capitalize transition-colors ${view === v ? "bg-gray-700 text-white" : "text-gray-500 hover:text-gray-300"}`}
+              className={`px-3 py-1 text-xs rounded-lg capitalize transition-colors font-bold ${view === v ? "bg-brocco text-ink" : "text-sage hover:text-ink"}`}
             >
               {v}
             </button>
@@ -645,18 +655,18 @@ export default function CalendarView() {
         </div>
         <div className="flex items-center gap-1">
           {anchor !== today && (
-            <button onClick={() => setAnchor(today)} className="px-2 py-1 text-xs text-green-400 hover:text-green-300">Today</button>
+            <button onClick={() => setAnchor(today)} className="px-2 py-1 text-xs text-leaf font-bold hover:opacity-70">Today</button>
           )}
-          <button onClick={() => navigate(1)} className="p-1.5 text-gray-400 hover:text-white">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+          <button onClick={() => navigate(1)} className="p-1.5 text-moss hover:text-ink">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <button onClick={() => navigate(-1)} className="p-1.5 text-gray-400 hover:text-white">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+          <button onClick={() => navigate(-1)} className="p-1.5 text-moss hover:text-ink">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
           </button>
         </div>
       </div>
 
-      <p className="text-sm font-semibold text-white mb-2">{headerLabel}</p>
+      <p className="text-sm font-extrabold text-ink mb-2">{headerLabel}</p>
 
       {/* Views */}
       <SwipePager contentKey={`${view}:${rangeStart}`} onSwipe={navigate} className="flex-1">
@@ -670,7 +680,7 @@ export default function CalendarView() {
             onDayTap={(d) => { setAnchor(d); setView("day"); }}
           />
         ) : view === "week" ? (
-          <div className="divide-y divide-gray-800/40">
+          <div className="divide-y-2 divide-shade/40">
             {Array.from({ length: 7 }, (_, i) => addDaysStr(rangeStart, i)).map((d) => (
               <DaySection key={d} date={d} compact />
             ))}
@@ -684,10 +694,10 @@ export default function CalendarView() {
       <button
         onClick={() => setFormOpen(emptyForm(view === "day" ? anchor : today))}
         aria-label="Add event"
-        className="fixed z-[60] w-12 h-12 rounded-full bg-gray-800 border border-gray-700 hover:bg-gray-700 shadow-xl flex items-center justify-center transition-colors"
+        className="fixed z-[60] w-12 h-12 rounded-full bg-card border-2 border-ink shadow-[3px_3px_0_var(--color-shade)] hover:bg-ghost active:translate-x-[2px] active:translate-y-[2px] active:shadow-none flex items-center justify-center transition-all"
         style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 4.75rem)", right: "calc(1rem + 4.25rem)" }}
       >
-        <span className="text-2xl text-gray-300 leading-none">+</span>
+        <span className="text-2xl text-ink leading-none">+</span>
       </button>
 
       {formOpen && (
@@ -732,7 +742,7 @@ function MonthGrid({
     <div>
       <div className="grid grid-cols-7 mb-1">
         {["M", "T", "W", "T", "F", "S", "S"].map((l, i) => (
-          <div key={i} className="text-center text-[10px] font-bold text-gray-600">{l}</div>
+          <div key={i} className="text-center text-[10px] font-extrabold text-sage">{l}</div>
         ))}
       </div>
       {weeks.map((week, wi) => (
@@ -748,9 +758,9 @@ function MonthGrid({
               })),
               ...reconciled.rows.map(({ workout, state }) => ({
                 title: `${state === "done" ? "✓ " : state === "missed" ? "✗ " : ""}${workout.title}`,
-                color: state === "done" ? "#4ade80" : state === "missed" ? "#f87171" : getWorkoutTypeColor(workout.workoutType),
+                color: state === "done" ? "#9ccb2e" : state === "missed" ? "#d9534c" : getWorkoutTypeColor(workout.workoutType),
               })),
-              ...reconciled.extras.map((a) => ({ title: `✓ ${a.name}`, color: "#4ade80" })),
+              ...reconciled.extras.map((a) => ({ title: `✓ ${a.name}`, color: "#9ccb2e" })),
             ];
             const dots = items.slice(0, 4);
             const isToday = date === today;
@@ -758,27 +768,27 @@ function MonthGrid({
               <button
                 key={date}
                 onClick={() => onDayTap(date)}
-                className={`aspect-square md:aspect-[4/5] flex flex-col items-center md:items-stretch justify-start pt-1.5 md:px-1 rounded-lg transition-colors hover:bg-gray-900 overflow-hidden ${!inMonth ? "opacity-30" : ""}`}
+                className={`aspect-square md:aspect-[4/5] flex flex-col items-center md:items-stretch justify-start pt-1.5 md:px-1 rounded-xl transition-colors hover:bg-ghost overflow-hidden ${!inMonth ? "opacity-30" : ""}`}
               >
-                <span className={`text-sm w-7 h-7 flex items-center justify-center rounded-full md:self-center flex-shrink-0 ${isToday ? "bg-green-600 text-white font-bold" : "text-gray-300"}`}>
+                <span className={`text-sm w-7 h-7 flex items-center justify-center rounded-full md:self-center flex-shrink-0 tabular-nums ${isToday ? "bg-brocco border-2 border-ink text-ink font-extrabold" : "text-ink font-bold"}`}>
                   {toDate(date).getDate()}
                 </span>
                 {/* Mobile: color dots (cells too small for text) */}
                 <div className="flex gap-0.5 mt-0.5 md:hidden justify-center">
                   {dots.map((it, i) => (
-                    <span key={i} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: it.color }} />
+                    <span key={i} className="w-2 h-2 rounded-full border border-ink/50" style={{ backgroundColor: it.color }} />
                   ))}
                 </div>
                 {/* Desktop: truncated titles */}
                 <div className="hidden md:block w-full space-y-0.5 mt-0.5">
                   {items.slice(0, 2).map((it, i) => (
                     <div key={i} className="flex items-center gap-1 min-w-0">
-                      <span className="w-1 h-1 rounded-full flex-shrink-0" style={{ backgroundColor: it.color }} />
-                      <span className="text-[10px] text-gray-400 truncate text-left">{it.title}</span>
+                      <span className="w-1.5 h-1.5 rounded-full border border-ink/50 flex-shrink-0" style={{ backgroundColor: it.color }} />
+                      <span className="text-[10px] text-ink font-semibold truncate text-left">{it.title}</span>
                     </div>
                   ))}
                   {items.length > 2 && (
-                    <p className="text-[9px] text-gray-600 text-left pl-2">+{items.length - 2} more</p>
+                    <p className="text-[9px] text-sage font-bold text-left pl-2">+{items.length - 2} more</p>
                   )}
                 </div>
               </button>

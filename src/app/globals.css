@@ -1,22 +1,149 @@
 @import "tailwindcss";
 
+/*
+ * Sticker design system — the whole UI is drawn in the same pen as the
+ * mascot: cream paper ground, chunky ink outlines, offset "sticker"
+ * shadows, chartreuse as the only celebratory color.
+ */
 :root {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --background: #faf6ea; /* cream paper */
+  --foreground: #26301a; /* green-black ink */
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-green-accent: #4ade80;
-  --font-sans: var(--font-geist-sans);
+
+  /* grounds */
+  --color-cream: #faf6ea;
+  --color-paper: #fffdf4;
+  --color-card: #ffffff;
+
+  /* ink + text */
+  --color-ink: #26301a;
+  --color-moss: #7d8468;   /* muted text */
+  --color-sage: #99a17e;   /* faint text, labels */
+
+  /* mascot greens */
+  --color-brocco: #9ccb2e; /* chartreuse accent */
+  --color-sprout: #d9ef9e; /* done/success fill */
+  --color-leaf: #4a7013;   /* accent-dark, readable on light fills */
+
+  /* sticker shadow + ghost states */
+  --color-shade: #d8d2bc;
+  --color-ghost: #f4efdd;
+  --color-ghost-ink: #b3ac8f;
+
+  /* semantic */
+  --color-clay: #b25b33;      /* missed/danger text */
+  --color-clay-soft: #fbe3d6; /* missed/danger fill */
+  --color-sun: #f0b13e;       /* warm highlight */
+  --color-sky: #6db3e8;       /* info */
+
+  --color-green-accent: #9ccb2e; /* legacy alias */
+
+  --font-sans: var(--font-nunito);
   --font-mono: var(--font-geist-mono);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), "Segoe UI", Arial, sans-serif;
+}
+
+/* ---- Sticker components ---------------------------------------------- */
+
+/* Card drawn with the mascot's pen: ink outline + offset shadow. */
+.sticker {
+  background: var(--color-card);
+  border: 2px solid var(--color-ink);
+  border-radius: 14px;
+  box-shadow: 2px 2px 0 var(--color-shade);
+}
+.sticker-lg {
+  background: var(--color-card);
+  border: 2px solid var(--color-ink);
+  border-radius: 16px;
+  box-shadow: 3px 3px 0 var(--color-shade);
+}
+/* Interactive stickers press down into their own shadow. */
+.sticker-press {
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+.sticker-press:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--color-shade);
+}
+
+/* Buttons */
+.btn-brocco {
+  background: var(--color-brocco);
+  color: var(--color-ink);
+  border: 2px solid var(--color-ink);
+  border-radius: 12px;
+  font-weight: 800;
+  box-shadow: 2px 2px 0 var(--color-shade);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+.btn-brocco:not(:disabled):active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--color-shade);
+}
+.btn-brocco:disabled {
+  opacity: 0.45;
+}
+.btn-quiet {
+  background: var(--color-card);
+  color: var(--color-ink);
+  border: 2px solid var(--color-ink);
+  border-radius: 12px;
+  font-weight: 700;
+  box-shadow: 2px 2px 0 var(--color-shade);
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+.btn-quiet:not(:disabled):active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 var(--color-shade);
+}
+.btn-danger {
+  background: var(--color-clay-soft);
+  color: var(--color-clay);
+  border: 2px solid var(--color-clay);
+  border-radius: 12px;
+  font-weight: 700;
+}
+
+/* Form fields */
+.field {
+  width: 100%;
+  background: var(--color-card);
+  border: 2px solid var(--color-ink);
+  border-radius: 12px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--color-ink);
+}
+.field::placeholder {
+  color: var(--color-ghost-ink);
+}
+.field:focus {
+  outline: none;
+  box-shadow: 2px 2px 0 var(--color-brocco);
+}
+
+/* Eyebrow label */
+.label-xs {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--color-sage);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-leaf);
+  outline-offset: 2px;
 }
 
 /* iOS safe area insets for notch/dynamic island and home indicator */
@@ -40,4 +167,8 @@ body {
 }
 .boot-splash-run {
   animation: bootRun 0.7s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-splash-run { animation: none; }
 }

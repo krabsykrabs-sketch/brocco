@@ -63,7 +63,7 @@ function RecipeSheet({
   const [ingredients, setIngredients] = useState(recipe.ingredients.join("\n"));
   const [steps, setSteps] = useState(recipe.steps.join("\n"));
 
-  const inputCls = "w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-green-500";
+  const inputCls = "field";
 
   async function handleSaveEdit() {
     setSaving(true);
@@ -140,14 +140,14 @@ function RecipeSheet({
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end md:items-center justify-center">
-      <div className="absolute inset-0 bg-black/60" onClick={isNewScan ? undefined : onClose} />
-      <div className="relative w-full md:max-w-lg bg-gray-900 border border-gray-700 rounded-t-2xl md:rounded-2xl max-h-[92vh] flex flex-col safe-bottom">
+      <div className="absolute inset-0 bg-ink/40" onClick={isNewScan ? undefined : onClose} />
+      <div className="relative w-full md:max-w-lg bg-paper border-2 border-ink rounded-t-2xl md:rounded-2xl md:shadow-[4px_4px_0_var(--color-shade)] max-h-[92vh] flex flex-col safe-bottom">
         <div className="flex items-center justify-between px-4 pt-4 pb-2 flex-shrink-0">
-          <h2 className="text-sm font-semibold text-white">
+          <h2 className="text-sm font-extrabold text-ink">
             {isNewScan ? "📸 Scanned — check it over" : editing ? "Edit recipe" : ""}
           </h2>
           {!isNewScan && (
-            <button onClick={onClose} className="text-gray-500 hover:text-white text-xl leading-none">&times;</button>
+            <button onClick={onClose} className="text-moss hover:text-ink text-xl leading-none">&times;</button>
           )}
         </div>
 
@@ -161,23 +161,23 @@ function RecipeSheet({
               </div>
               <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Tags, comma-separated" className={inputCls} />
               <div>
-                <label className="block text-[10px] text-gray-500 uppercase mb-1">Ingredients — one per line</label>
+                <label className="label-xs block mb-1">Ingredients — one per line</label>
                 <textarea value={ingredients} onChange={(e) => setIngredients(e.target.value)} rows={6} className={inputCls} />
               </div>
               <div>
-                <label className="block text-[10px] text-gray-500 uppercase mb-1">Steps — one per line</label>
+                <label className="label-xs block mb-1">Steps — one per line</label>
                 <textarea value={steps} onChange={(e) => setSteps(e.target.value)} rows={8} className={inputCls} />
               </div>
               <div className="flex gap-2 pt-1">
                 {isNewScan ? (
-                  <button onClick={handleDiscardScan} className="px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">Discard</button>
+                  <button onClick={handleDiscardScan} className="btn-quiet px-4 py-2.5 text-sm">Discard</button>
                 ) : (
-                  <button onClick={() => setEditing(false)} className="px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">Cancel</button>
+                  <button onClick={() => setEditing(false)} className="btn-quiet px-4 py-2.5 text-sm">Cancel</button>
                 )}
                 <button
                   onClick={handleSaveEdit}
                   disabled={saving || !title.trim()}
-                  className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white text-sm font-medium rounded-xl transition-colors"
+                  className="btn-brocco flex-1 py-2.5 text-sm"
                 >
                   {saving ? "Saving…" : isNewScan ? "Looks right — save" : "Save"}
                 </button>
@@ -185,8 +185,8 @@ function RecipeSheet({
             </div>
           ) : (
             <>
-              <h1 className="text-lg font-bold text-white mb-1">{recipe.title}</h1>
-              <p className="text-xs text-gray-500 mb-3">
+              <h1 className="text-lg font-extrabold text-ink mb-1">{recipe.title}</h1>
+              <p className="text-xs text-moss font-semibold mb-3">
                 {[
                   recipe.servings ? `${recipe.servings} servings` : null,
                   recipe.timeMin ? `${recipe.timeMin} min` : null,
@@ -195,13 +195,13 @@ function RecipeSheet({
                 {recipe.tags.length > 0 && (
                   <span className="ml-2">
                     {recipe.tags.map((t) => (
-                      <span key={t} className="inline-block px-1.5 py-0.5 bg-gray-800 rounded-full text-[10px] text-gray-400 mr-1">{t}</span>
+                      <span key={t} className="inline-block px-1.5 py-0.5 bg-ghost rounded-full text-[10px] text-moss font-bold mr-1">{t}</span>
                     ))}
                   </span>
                 )}
               </p>
 
-              <h3 className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-1.5">Ingredients</h3>
+              <h3 className="label-xs mb-1.5">Ingredients</h3>
               <div className="space-y-1 mb-4">
                 {recipe.ingredients.map((ing, i) => (
                   <button
@@ -209,37 +209,37 @@ function RecipeSheet({
                     onClick={() => setChecked((prev) => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n; })}
                     className="flex items-start gap-2.5 w-full text-left group"
                   >
-                    <span className={`mt-0.5 w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center text-[10px] transition-colors ${
-                      checked.has(i) ? "bg-green-600 border-green-600 text-white" : "border-gray-600 group-hover:border-green-500"
+                    <span className={`mt-0.5 w-4 h-4 rounded-md border-2 flex-shrink-0 flex items-center justify-center text-[10px] font-bold transition-colors ${
+                      checked.has(i) ? "bg-brocco border-ink text-ink" : "border-ink bg-card group-hover:bg-sprout"
                     }`}>
                       {checked.has(i) && "✓"}
                     </span>
-                    <span className={`text-sm ${checked.has(i) ? "text-gray-600 line-through" : "text-gray-200"}`}>{ing}</span>
+                    <span className={`text-sm ${checked.has(i) ? "text-sage line-through" : "text-ink font-semibold"}`}>{ing}</span>
                   </button>
                 ))}
               </div>
 
-              <h3 className="text-[10px] font-bold text-gray-600 uppercase tracking-widest mb-1.5">Steps</h3>
+              <h3 className="label-xs mb-1.5">Steps</h3>
               <ol className="space-y-2.5 mb-4">
                 {recipe.steps.map((step, i) => (
                   <li key={i} className="flex gap-2.5">
-                    <span className="flex-shrink-0 w-5 h-5 bg-gray-800 rounded-full text-[11px] text-green-400 font-semibold flex items-center justify-center mt-0.5">{i + 1}</span>
-                    <p className="text-sm text-gray-200 leading-relaxed">{step}</p>
+                    <span className="flex-shrink-0 w-5 h-5 bg-sprout border border-ink/60 rounded-full text-[11px] text-leaf font-bold flex items-center justify-center mt-0.5 tabular-nums">{i + 1}</span>
+                    <p className="text-sm text-ink font-semibold leading-relaxed">{step}</p>
                   </li>
                 ))}
               </ol>
 
               {recipe.notes && (
-                <p className="text-xs text-gray-500 italic mb-4 border-l-2 border-gray-700 pl-2">{recipe.notes}</p>
+                <p className="text-xs text-moss font-semibold italic mb-4 border-l-2 border-shade pl-2">{recipe.notes}</p>
               )}
 
               <div className="space-y-2 pt-1">
                 <div className="flex gap-2">
-                  <button onClick={handleCooked} className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-xl transition-colors">
+                  <button onClick={handleCooked} className="btn-brocco flex-1 py-2.5 text-sm">
                     I cooked this 🥦
                   </button>
-                  <button onClick={() => setEditing(true)} className="px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors">Edit</button>
-                  <button onClick={handleDelete} className="px-4 py-2.5 bg-red-900/40 hover:bg-red-900/60 text-red-300 text-sm rounded-xl transition-colors">Delete</button>
+                  <button onClick={() => setEditing(true)} className="btn-quiet px-4 py-2.5 text-sm">Edit</button>
+                  <button onClick={handleDelete} className="btn-danger px-4 py-2.5 text-sm">Delete</button>
                 </div>
               </div>
             </>
@@ -298,9 +298,9 @@ function StaplesSection() {
   }
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3">
-      <p className="text-sm font-medium text-gray-100">🧂 Always in stock</p>
-      <p className="text-[11px] text-gray-500 mt-0.5 mb-2">
+    <div className="sticker px-4 py-3">
+      <p className="text-sm font-bold text-ink">🧂 Always in stock</p>
+      <p className="text-[11px] text-moss font-semibold mt-0.5 mb-2">
         Brocco assumes these in every recipe idea — no need to list them each time.
       </p>
       {loaded && staples.length > 0 && (
@@ -308,13 +308,13 @@ function StaplesSection() {
           {staples.map((s) => (
             <span
               key={s}
-              className="inline-flex items-center gap-1 bg-gray-800 border border-gray-700 rounded-full pl-2.5 pr-1 py-0.5 text-xs text-gray-200"
+              className="inline-flex items-center gap-1 bg-ghost border-2 border-ink rounded-full pl-2.5 pr-1 py-0.5 text-xs text-ink font-bold"
             >
               {s}
               <button
                 onClick={() => save(staples.filter((x) => x !== s))}
                 aria-label={`Remove ${s}`}
-                className="w-4 h-4 flex items-center justify-center rounded-full text-gray-500 hover:text-red-400"
+                className="w-4 h-4 flex items-center justify-center rounded-full text-moss hover:text-clay"
               >
                 ×
               </button>
@@ -328,12 +328,12 @@ function StaplesSection() {
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") addFromInput(); }}
           placeholder="curry paste, chickpeas…"
-          className="flex-1 px-3 py-1.5 bg-gray-950 border border-gray-700 rounded-lg text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-green-500"
+          className="field flex-1"
         />
         <button
           onClick={addFromInput}
           disabled={!input.trim()}
-          className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 disabled:opacity-40 text-gray-200 text-xs rounded-lg transition-colors"
+          className="btn-quiet px-3 text-xs disabled:opacity-40"
         >
           Add
         </button>
@@ -442,19 +442,19 @@ export default function KitchenView() {
           <button
             onClick={() => fileRef.current?.click()}
             disabled={scanning || pages.length >= MAX_PAGES}
-            className="flex flex-col items-center gap-1 bg-gray-900 border border-gray-700 hover:border-gray-600 disabled:opacity-60 rounded-xl px-4 py-4 transition-colors"
+            className="sticker sticker-press flex flex-col items-center gap-1 disabled:opacity-60 px-4 py-4"
           >
             <span className="text-2xl">📸</span>
-            <span className="text-sm font-medium text-white">Scan a recipe</span>
-            <span className="text-[10px] text-gray-500">Photo a cookbook page — multi-page works too</span>
+            <span className="text-sm font-bold text-ink">Scan a recipe</span>
+            <span className="text-[10px] text-moss font-semibold">Photo a cookbook page — multi-page works too</span>
           </button>
           <Link
             href={`/chat?msg=${encodeURIComponent("What can I cook tonight? Here's what I have: ")}`}
-            className="flex flex-col items-center gap-1 bg-green-600/90 hover:bg-green-600 border border-green-500/30 rounded-xl px-4 py-4 transition-colors"
+            className="btn-brocco flex flex-col items-center gap-1 px-4 py-4"
           >
             <span className="text-2xl">🥦</span>
-            <span className="text-sm font-medium text-white">What can I cook?</span>
-            <span className="text-[10px] text-green-200/70">Tell Brocco your ingredients</span>
+            <span className="text-sm font-extrabold">What can I cook?</span>
+            <span className="text-[10px] text-leaf font-bold">Tell Brocco your ingredients</span>
           </Link>
         </div>
         <input
@@ -470,21 +470,21 @@ export default function KitchenView() {
 
         {/* Staged pages tray — collect all pages of a recipe, then scan once */}
         {pages.length > 0 && (
-          <div className="bg-gray-900 border border-green-800/50 rounded-xl p-3" data-testid="scan-tray">
-            <p className="text-xs font-medium text-gray-300 mb-2">
+          <div className="sticker bg-sprout p-3" data-testid="scan-tray">
+            <p className="text-xs font-bold text-ink mb-2">
               📄 Recipe pages ({pages.length}/{MAX_PAGES})
             </p>
             <div className="flex gap-2 mb-3 overflow-x-auto">
               {pages.map((p, i) => (
                 <div key={p.url} className="relative flex-shrink-0">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={p.url} alt={`Page ${i + 1}`} className="w-16 h-20 object-cover rounded-lg border border-gray-700" />
-                  <span className="absolute bottom-0.5 left-0.5 px-1 bg-black/70 rounded text-[9px] text-gray-300">{i + 1}</span>
+                  <img src={p.url} alt={`Page ${i + 1}`} className="w-16 h-20 object-cover rounded-lg border-2 border-ink" />
+                  <span className="absolute bottom-0.5 left-0.5 px-1 bg-ink/80 rounded text-[9px] text-cream font-bold">{i + 1}</span>
                   <button
                     onClick={() => removePage(i)}
                     disabled={scanning}
                     aria-label={`Remove page ${i + 1}`}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-gray-800 border border-gray-600 rounded-full text-gray-300 hover:text-red-400 text-xs leading-none"
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-card border-2 border-ink rounded-full text-ink hover:text-clay text-xs leading-none"
                   >
                     ×
                   </button>
@@ -494,7 +494,7 @@ export default function KitchenView() {
                 <button
                   onClick={() => fileRef.current?.click()}
                   disabled={scanning}
-                  className="flex-shrink-0 w-16 h-20 border border-dashed border-gray-600 hover:border-green-500 rounded-lg text-gray-500 hover:text-green-400 text-xs transition-colors"
+                  className="flex-shrink-0 w-16 h-20 border-2 border-dashed border-ink/40 hover:border-ink rounded-lg text-moss hover:text-ink text-xs font-bold transition-colors"
                 >
                   + Add<br />page
                 </button>
@@ -504,14 +504,14 @@ export default function KitchenView() {
               <button
                 onClick={clearPages}
                 disabled={scanning}
-                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm rounded-xl transition-colors disabled:opacity-40"
+                className="btn-quiet px-4 py-2 text-sm disabled:opacity-40"
               >
                 Cancel
               </button>
               <button
                 onClick={scanPages}
                 disabled={scanning}
-                className="flex-1 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-60 text-white text-sm font-medium rounded-xl transition-colors"
+                className="btn-brocco flex-1 py-2 text-sm"
               >
                 {scanning ? "Reading pages…" : `Scan recipe (${pages.length} page${pages.length === 1 ? "" : "s"})`}
               </button>
@@ -527,18 +527,18 @@ export default function KitchenView() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search recipes, ingredients, tags…"
-          className="w-full px-3 py-2.5 bg-gray-900 border border-gray-800 rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-green-500"
+          className="field"
         />
 
         {/* Library */}
         {loading ? (
-          <p className="text-center text-sm text-gray-600 py-8">Loading…</p>
+          <p className="text-center text-sm text-moss font-semibold py-8">Loading…</p>
         ) : recipes.length === 0 ? (
           <div className="text-center py-10">
             <p className="text-3xl mb-2">🍳</p>
-            <p className="text-sm text-gray-400">{query ? "No recipes match." : "Your recipe library is empty."}</p>
+            <p className="text-sm text-ink font-bold">{query ? "No recipes match." : "Your recipe library is empty."}</p>
             {!query && (
-              <p className="text-xs text-gray-600 mt-1">Photograph a recipe from a cookbook, or ask Brocco to save one from chat.</p>
+              <p className="text-xs text-moss font-semibold mt-1">Photograph a recipe from a cookbook, or ask Brocco to save one from chat.</p>
             )}
           </div>
         ) : (
@@ -547,14 +547,14 @@ export default function KitchenView() {
               <button
                 key={r.id}
                 onClick={() => setOpen({ recipe: r, isNewScan: false })}
-                className="w-full text-left bg-gray-900 border border-gray-800 hover:border-gray-700 rounded-xl px-4 py-3 transition-colors"
+                className="sticker sticker-press w-full text-left px-4 py-3"
               >
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-medium text-gray-100 truncate flex-1">{r.title}</p>
+                  <p className="text-sm font-bold text-ink truncate flex-1">{r.title}</p>
                   {r.source === "photo" && <span className="text-[10px] flex-shrink-0">📸</span>}
-                  {r.timesCooked > 0 && <span className="text-[10px] text-gray-600 flex-shrink-0">{r.timesCooked}×</span>}
+                  {r.timesCooked > 0 && <span className="text-[10px] text-sage font-bold flex-shrink-0 tabular-nums">{r.timesCooked}×</span>}
                 </div>
-                <p className="text-xs text-gray-500 truncate mt-0.5">
+                <p className="text-xs text-moss font-semibold truncate mt-0.5">
                   {[r.timeMin ? `${r.timeMin} min` : null, r.servings ? `${r.servings} servings` : null, ...r.tags.slice(0, 3)]
                     .filter(Boolean).join(" · ") || `${r.ingredients.length} ingredients`}
                 </p>

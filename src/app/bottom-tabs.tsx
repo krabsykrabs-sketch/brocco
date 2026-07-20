@@ -138,7 +138,7 @@ export function BottomTabBar() {
       {/* Spacer to prevent content from hiding behind fixed tab bar */}
       <div className="md:hidden h-16" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }} />
       {/* Tab bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-gray-900 border-t border-gray-700" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-paper border-t-2 border-ink" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
         <div className="flex items-center justify-around h-14 max-w-2xl mx-auto">
           {tabs.map((tab) => {
             const active = tab.match(pathname);
@@ -146,7 +146,7 @@ export function BottomTabBar() {
               <Link
                 key={tab.name}
                 href={tab.href}
-                className={`flex flex-col items-center justify-center gap-0.5 w-full h-full transition-colors ${active ? "text-green-400" : "text-gray-500"}`}
+                className={`flex flex-col items-center justify-center gap-0.5 w-full h-full transition-colors font-bold ${active ? "text-leaf" : "text-sage"}`}
               >
                 {tab.icon(active)}
                 <span className="text-[10px] leading-none">{tab.name}</span>
