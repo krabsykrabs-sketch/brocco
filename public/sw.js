@@ -1,5 +1,5 @@
-// v3: precache brand assets (boot splash artwork + icons)
-const CACHE_NAME = 'brocco-v3';
+// v4: precache brand assets (boot splash artwork + icons)
+const CACHE_NAME = 'brocco-v4';
 const SHELL_URLS = [
   '/', '/chat', '/plan', '/history', '/settings', '/legal',
   '/brand/brocco-runner.png', '/icons/icon-64.png', '/icons/icon-192.png',
@@ -79,7 +79,7 @@ self.addEventListener('fetch', (event) => {
           if (cached) return cached;
           if (event.request.mode === 'navigate') {
             return new Response(
-              '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Brocco</title><style>body{background:#030712;color:#e5e7eb;font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;text-align:center}.c{max-width:300px}img{width:72px;height:72px;margin-bottom:0.75rem}p{color:#9ca3af;font-size:0.875rem}</style></head><body><div class="c"><img src="/icons/icon-192.png" alt=""><p>You\'re offline. Check your connection and try again.</p></div></body></html>',
+              '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Brocco</title><style>body{background:#faf6ea;color:#26301a;font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;text-align:center}.c{max-width:300px}img{width:72px;height:72px;margin-bottom:0.75rem;border-radius:9999px;border:2px solid #26301a}p{color:#7d8468;font-size:0.875rem;font-weight:600}</style></head><body><div class="c"><img src="/icons/icon-192.png" alt=""><p>You\'re offline. Check your connection and try again.</p></div></body></html>',
               { headers: { 'Content-Type': 'text/html' } }
             );
           }
