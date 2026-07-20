@@ -42,7 +42,6 @@ interface TodayData {
   hasActivePlan: boolean; planExpired: boolean; activePlanName: string | null;
   stravaConnected: boolean; activityCount: number;
 }
-interface PlanAdjustment { id: string; summary: string; }
 
 function timeOf(e: EventOccurrence): string {
   return e.allDay ? "" : e.start.slice(11, 16);
@@ -324,7 +323,6 @@ export default function TodayView() {
   const [data, setData] = useState<TodayData | null>(null);
   const [briefing, setBriefing] = useState<string | null>(null);
   const [briefingLoading, setBriefingLoading] = useState(true);
-  const [adjustments, setAdjustments] = useState<PlanAdjustment[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(() => {
@@ -341,7 +339,6 @@ export default function TodayView() {
   useEffect(() => {
     fetchData();
     fetch("/api/briefing").then((r) => r.json()).then((d) => setBriefing(d.briefing || null)).catch(() => {}).finally(() => setBriefingLoading(false));
-    fetch("/api/plan/adjustments").then((r) => r.json()).then((d) => setAdjustments(d.adjustments || [])).catch(() => {});
     // Weekly outline→detailed promotion (moved from the old dashboard)
     const lastPromo = localStorage.getItem("brocco_last_promo");
     const today = new Date().toISOString().slice(0, 10);
@@ -379,11 +376,6 @@ export default function TodayView() {
           : prev
       );
     }
-  }
-
-  async function handleUndoAdjustment(id: string) {
-    const res = await fetch("/api/plan/adjustments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
-    if (res.ok) setAdjustments((prev) => prev.filter((a) => a.id !== id));
   }
 
   if (loading || !data) {
@@ -455,17 +447,6 @@ export default function TodayView() {
         </div>
       )}
 
-      {/* Auto-adjustments with undo */}
-      {adjustments.length > 0 && (
-        <div className="mb-3 space-y-1">
-          {adjustments.map((a) => (
-            <div key={a.id} className="bg-[#e3eefa] border-2 border-ink rounded-xl px-3 py-1.5 flex items-center justify-between shadow-[2px_2px_0_var(--color-shade)]">
-              <p className="text-xs text-ink font-semibold truncate flex-1">{a.summary}</p>
-              <button onClick={() => handleUndoAdjustment(a.id)} className="text-xs text-moss font-bold hover:text-clay ml-2 flex-shrink-0">Undo</button>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* New user CTAs (compact — life features work regardless) */}
       {showNewUserCTAs && (
