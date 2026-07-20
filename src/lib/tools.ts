@@ -166,7 +166,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: "modify_plan",
     description:
-      "Propose structural changes to the training plan. Requires user confirmation. Use for: adding/deleting workouts, changing workout types, moving workouts across weeks, modifying weekly mileage targets or phase boundaries, any change beyond 7 days out.",
+      "Propose structural changes to the training plan. Requires user confirmation. Use for: adding/deleting workouts, changing workout types, moving workouts across weeks, modifying weekly mileage targets or phase boundaries, any change beyond 7 days out. ONE WORKOUT = ONE SPORT, ONE SESSION: when adding a brick or double day, add it as separate single-sport workouts on the same date (each its own activity_type/title/targets), never one combined entry — combined workouts don't sync to the watch.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -293,7 +293,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
         },
         workouts: {
           type: "array",
-          description: "Individual workouts ONLY for 'detailed' weeks (1-2, full specs) and 'outline' weeks (3-4, type + approximate distance only). Do NOT include workouts for 'target' weeks.",
+          description: "Individual workouts ONLY for 'detailed' weeks (1-2, full specs) and 'outline' weeks (3-4, type + approximate distance only). Do NOT include workouts for 'target' weeks. ONE WORKOUT = ONE SPORT, ONE SESSION: never combine sports or sessions in a single entry. A brick or double day (e.g. run + ride, or AM/PM sessions) is TWO entries on the same date, each with its own activity_type, title, and targets — this is required for the workout to sync to the user's watch.",
           items: {
             type: "object",
             properties: {
@@ -312,7 +312,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
               activity_type: {
                 type: "string",
                 enum: ["run", "cycle", "swim", "hike", "strength", "rest", "other"],
-                description: "Defaults to 'run'",
+                description: "The single sport for this workout (defaults to 'run'). Each workout is exactly one sport — split combined sessions into separate workouts.",
               },
               target_distance_km: { type: "number" },
               target_pace: { type: "string", description: "For detailed workouts only, e.g., '4:15-4:30/km'" },

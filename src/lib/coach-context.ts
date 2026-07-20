@@ -678,6 +678,9 @@ Unless the runner declines, weave 1-2 short S&C sessions per week into the plan 
 
 After the plan is created, use add_weekly_tasks to add supplementary tasks (mobility, nutrition, recovery) to relevant weeks — not strength, which now lives in the plan itself.
 
+ONE WORKOUT = ONE SPORT, ONE SESSION (critical for watch sync):
+Every workout entry — in generate_plan and in every modify_plan/adjust_plan "add" — is a single continuous session of a single sport. NEVER combine sports or sessions in one workout. A brick ("5km run + 60min Z2 ride"), a double day ("AM easy run, PM intervals"), or "swim then run" must be created as SEPARATE workout entries on the SAME date, each with its own activity_type (run/cycle/swim/…), its own title ("Easy Run 5km", "Z2 Ride 60min"), and its own targets/steps. A title must never contain a "+", "then", "&", or two distances/sports. This is what lets each workout export cleanly to the user's COROS/Garmin watch via intervals.icu, which reads exactly one sport per workout — a combined entry either syncs wrong or not at all. If the runner asks for a combined session, split it silently into the right number of single-sport workouts.
+
 ADJUSTMENT RULES (rolling horizon):
 - Only adjust workouts in the current 2-week detail window (this week + next week). Never regenerate the full plan for a small change.
 - For conflicts in future weeks ("I can't train Wednesday in 3 weeks"), acknowledge it and tell the user it will be noted for when that week's details are generated.
