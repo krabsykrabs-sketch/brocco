@@ -201,11 +201,12 @@ function TaskRow({ task, onToggle }: { task: TodoItem; onToggle: (t: TodoItem) =
   );
 }
 
-// --- Weekly review card ---
+// --- Weekly review card (collapsed to a teaser row until tapped) ---
 
 function WeeklyReviewCard() {
   const [review, setReview] = useState<{ text: string; weekStart: string } | null>(null);
   const [dismissed, setDismissed] = useState(true); // assume dismissed until checked
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/weekly-review")
@@ -222,10 +223,13 @@ function WeeklyReviewCard() {
   if (!review || dismissed) return null;
 
   return (
-    <section className="mb-4">
-      <div className="sticker-lg bg-sprout px-4 py-3.5">
-        <div className="flex items-start justify-between gap-2 mb-1.5">
-          <p className="label-xs text-leaf!">📋 Your week in review</p>
+    <section className="mb-3">
+      <div className="sticker bg-sprout px-3.5 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+            <p className="label-xs text-leaf!">📋 Your week in review</p>
+            <span className={`text-leaf text-xs transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+          </button>
           <button
             onClick={() => {
               localStorage.setItem("brocco_review_dismissed", review.weekStart);
@@ -237,7 +241,43 @@ function WeeklyReviewCard() {
             &times;
           </button>
         </div>
-        <p className="text-sm text-ink font-semibold leading-relaxed whitespace-pre-wrap">{review.text}</p>
+        {open && (
+          <p className="text-sm text-ink font-semibold leading-relaxed whitespace-pre-wrap mt-2">{review.text}</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// --- Morning briefing (clamped to two lines until expanded) ---
+
+function BriefingCard({ briefing, loading }: { briefing: string | null; loading: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const text = briefing || "Have a good one. Speak into the mic to add anything to your day.";
+  const isLong = text.length > 120;
+
+  return (
+    <section className="mb-4">
+      <div className="sticker-lg bg-[#eef6d4] px-4 py-3 flex gap-3 items-start">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/icons/icon-64.png" alt="" className="w-7 h-7 flex-shrink-0 rounded-full border-2 border-ink" />
+        {loading ? (
+          <div className="flex-1 space-y-2 py-1">
+            <div className="h-3 bg-shade/60 rounded animate-pulse w-full" />
+            <div className="h-3 bg-shade/60 rounded animate-pulse w-2/3" />
+          </div>
+        ) : (
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm text-ink font-semibold leading-relaxed ${!expanded && isLong ? "line-clamp-2" : ""}`}>
+              {text}
+            </p>
+            {isLong && (
+              <button onClick={() => setExpanded((e) => !e)} className="text-xs text-leaf font-bold mt-0.5">
+                {expanded ? "less" : "more"}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -401,20 +441,7 @@ export default function TodayView() {
       </div>
 
       {/* Morning briefing */}
-      <section className="mb-4">
-        <div className="sticker-lg bg-[#eef6d4] px-4 py-3.5 flex gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/icons/icon-64.png" alt="" className="w-8 h-8 flex-shrink-0 rounded-full border-2 border-ink" />
-          {briefingLoading ? (
-            <div className="flex-1 space-y-2 py-1">
-              <div className="h-3 bg-shade/60 rounded animate-pulse w-full" />
-              <div className="h-3 bg-shade/60 rounded animate-pulse w-2/3" />
-            </div>
-          ) : (
-            <p className="text-sm text-ink font-semibold leading-relaxed">{briefing || "Have a good one. Speak into the mic to add anything to your day."}</p>
-          )}
-        </div>
-      </section>
+      <BriefingCard briefing={briefing} loading={briefingLoading} />
 
       {/* Weekly review (Sunday evening / Monday only) */}
       <WeeklyReviewCard />
