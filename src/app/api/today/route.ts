@@ -79,8 +79,13 @@ export async function GET() {
     const weekRunKm = weekActivities
       .filter((a) => RUN_TYPES.includes(a.activityType))
       .reduce((s, a) => s + (a.distanceKm ? Number(a.distanceKm) : 0), 0);
-    const weekPlannedKm = weekPlanned
-      .filter((w) => w.workoutType !== "rest")
+    // Planned volume is a RUNNING metric. Summing per-workout distances
+    // undercounts whenever a run carries no target_distance_km (e.g. a plain
+    // "Easy Run"), which made actual mileage look over target. The plan's
+    // per-week target_km is the authoritative figure — fetched below and used
+    // when present; the run-only workout sum is just a fallback.
+    const weekPlannedKmFallback = weekPlanned
+      .filter((w) => w.workoutType !== "rest" && w.activityType === "run")
       .reduce((s, w) => s + (w.targetDistanceKm ? Number(w.targetDistanceKm) : 0), 0);
 
     let completedSessions = 0;
@@ -96,17 +101,23 @@ export async function GET() {
 
     let totalWeeks = 0;
     let currentPhaseName: string | null = null;
+    let currentWeekTargetKm: number | null = null;
     const currentWeekNumber = weekPlanned[0]?.weekNumber ?? null;
     if (activePlan) {
       const weeks = await prisma.planWeek.findMany({
         where: { planId: activePlan.id },
-        select: { weekNumber: true, phase: { select: { name: true } } },
+        select: { weekNumber: true, targetKm: true, phase: { select: { name: true } } },
       });
       totalWeeks = weeks.length;
       if (currentWeekNumber != null) {
-        currentPhaseName = weeks.find((w) => w.weekNumber === currentWeekNumber)?.phase?.name ?? null;
+        const cw = weeks.find((w) => w.weekNumber === currentWeekNumber);
+        currentPhaseName = cw?.phase?.name ?? null;
+        currentWeekTargetKm = cw?.targetKm != null ? Number(cw.targetKm) : null;
       }
     }
+    // Authoritative planned running volume: the week's target_km, falling back
+    // to the run-only workout sum when a plan has no per-week target.
+    const weekPlannedKm = currentWeekTargetKm ?? weekPlannedKmFallback;
 
     const planExpired = activePlan?.raceDate ? new Date(activePlan.raceDate) < new Date() : false;
 

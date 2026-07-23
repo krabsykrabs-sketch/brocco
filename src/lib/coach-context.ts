@@ -269,6 +269,8 @@ async function buildPlanContext(userId: string, timezone: string): Promise<strin
   let currentWeekStart: string | null = null;
   let currentWeekEnd: string | null = null;
   let currentPhaseName: string | null = null;
+  let currentWeekTargetKm: number | null = null;
+  let currentWeekTargetSessions: number | null = null;
   let totalWeeks = 0;
   let completedWeeks = 0;
 
@@ -284,6 +286,8 @@ async function buildPlanContext(userId: string, timezone: string): Promise<strin
         currentWeekStart = format(new Date(pw.startDate), "MMM d");
         currentWeekEnd = format(weDate, "MMM d");
         currentPhaseName = pw.phase?.name || null;
+        currentWeekTargetKm = pw.targetKm != null ? Number(pw.targetKm) : null;
+        currentWeekTargetSessions = pw.targetSessions ?? null;
       }
     }
     if (currentWeekNum !== null) {
@@ -329,7 +333,14 @@ async function buildPlanContext(userId: string, timezone: string): Promise<strin
   let block = "CURRENT PLAN:\n";
   if (currentWeekNum !== null) {
     const phaseStr = currentPhaseName ? ` Phase: ${currentPhaseName}.` : "";
-    block += `CURRENT WEEK: Week ${currentWeekNum} of ${totalWeeks} (${currentWeekStart}-${currentWeekEnd}).${phaseStr} ${completedWeeks} week${completedWeeks !== 1 ? "s" : ""} completed.\n\n`;
+    // The week's target_km is the AUTHORITATIVE planned running volume — use
+    // it, never sum the workout list below (some runs carry no distance, so
+    // summing under-counts and makes actual mileage look over target).
+    const targetStr =
+      currentWeekTargetKm != null
+        ? ` Weekly running target: ${currentWeekTargetKm}km${currentWeekTargetSessions ? ` across ${currentWeekTargetSessions} sessions` : ""} (this is the planned volume — do NOT add up the per-workout distances below, some are time-based).`
+        : "";
+    block += `CURRENT WEEK: Week ${currentWeekNum} of ${totalWeeks} (${currentWeekStart}-${currentWeekEnd}).${phaseStr} ${completedWeeks} week${completedWeeks !== 1 ? "s" : ""} completed.${targetStr}\n\n`;
   }
 
   // This week (from Monday, INCLUDING days already past) + next week, so the
@@ -680,6 +691,9 @@ After the plan is created, use add_weekly_tasks to add supplementary tasks (mobi
 
 ONE WORKOUT = ONE SPORT, ONE SESSION (critical for watch sync):
 Every workout entry — in generate_plan and in every modify_plan/adjust_plan "add" — is a single continuous session of a single sport. NEVER combine sports or sessions in one workout. A brick ("5km run + 60min Z2 ride"), a double day ("AM easy run, PM intervals"), or "swim then run" must be created as SEPARATE workout entries on the SAME date, each with its own activity_type (run/cycle/swim/…), its own title ("Easy Run 5km", "Z2 Ride 60min"), and its own targets/steps. A title must never contain a "+", "then", "&", or two distances/sports. This is what lets each workout export cleanly to the user's COROS/Garmin watch via intervals.icu, which reads exactly one sport per workout — a combined entry either syncs wrong or not at all. If the runner asks for a combined session, split it silently into the right number of single-sport workouts.
+
+EVERY WORKOUT NEEDS A MEASURABLE TARGET (no bare "Easy Run"):
+Never create a non-rest workout without something to measure it by. Runs are measured in KILOMETRES — always set target_distance_km (a plain easy run still gets one, e.g. 6km). Cycling and other secondary sports in a running plan are measured in MINUTES — set target_duration_min, not distance (e.g. a Z2 ride is target_duration_min 60, no km). A run with no distance breaks the weekly volume maths (it silently counts as 0km and makes the runner look over target) and gives the watch nothing to guide by, so it is never acceptable. Weekly running volume is tracked in km from runs only; rides are tracked as completed/not-completed sessions by their minutes, and never fold into the km total.
 
 ADJUSTMENT RULES (rolling horizon):
 - Only adjust workouts in the current 2-week detail window (this week + next week). Never regenerate the full plan for a small change.
