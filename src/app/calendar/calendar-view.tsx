@@ -216,7 +216,7 @@ function EventChip({ event, onTap }: { event: EventOccurrence; onTap: () => void
  */
 function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matched: ActivityItem | null; state: WorkoutState }) {
   return (
-    <Link href={matched ? `/activity/${matched.activityId}` : "/plan"} className={`sticker sticker-press grid grid-cols-2 overflow-hidden ${state === "today" ? "shadow-[3px_3px_0_var(--color-brocco)]" : ""}`}>
+    <Link href={matched ? `/activity/${matched.activityId}` : `/plan?w=${workout.workoutId}`} className={`sticker sticker-press grid grid-cols-2 overflow-hidden ${state === "today" ? "shadow-[3px_3px_0_var(--color-brocco)]" : ""}`}>
       <div className="px-2.5 py-1.5 border-r-2 border-dashed border-shade min-w-0">
         <p className="label-xs">Planned</p>
         <p className={`text-xs font-bold truncate flex items-center gap-1.5 ${state === "missed" ? "text-moss" : "text-ink"}`}>

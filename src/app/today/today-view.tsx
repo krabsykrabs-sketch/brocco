@@ -118,7 +118,7 @@ function WorkoutRow({ workout, matched }: { workout: WorkoutItem; matched: Activ
 
   // Strength sessions are playable: deep-link into the guided workout timer
   const isStrength = workout.workoutType === "strength" || workout.activityType === "strength";
-  const href = isStrength && !done ? `/workout?planned=${workout.workoutId}` : matched ? `/activity/${matched.id}` : "/plan";
+  const href = isStrength && !done ? `/workout?planned=${workout.workoutId}` : matched ? `/activity/${matched.id}` : `/plan?w=${workout.workoutId}`;
 
   return (
     <Link href={href} className="sticker sticker-press grid grid-cols-2 overflow-hidden">

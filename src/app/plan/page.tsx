@@ -322,6 +322,7 @@ function MobilePlanView({
   workoutsByWeek,
   tasksByWeek,
   currentWeekIdx,
+  initialWeekIdx,
   onToggleTask,
   activitiesByDate,
 }: {
@@ -329,10 +330,13 @@ function MobilePlanView({
   workoutsByWeek: Map<number, Workout[]>;
   tasksByWeek: Map<number, WeeklyTask[]>;
   currentWeekIdx: number;
+  initialWeekIdx: number;
   onToggleTask: (id: string, status: string) => void;
   activitiesByDate: Record<string, DayActivity[]>;
 }) {
-  const [activeIdx, setActiveIdx] = useState(Math.max(0, currentWeekIdx));
+  // Opens on the deep-linked week when arriving from a calendar/today tap,
+  // otherwise on the current week.
+  const [activeIdx, setActiveIdx] = useState(Math.max(0, initialWeekIdx));
   const touchStartX = useRef(0);
   const touchDeltaX = useRef(0);
   const [swiping, setSwiping] = useState(false);
@@ -516,17 +520,23 @@ function DesktopWorkoutCard({ workout, dayActivities }: { workout: Workout; dayA
 }
 
 function DesktopWeekRow({
-  weekData, workouts, tasks, isCurrentWeek, isNextWeek, onToggleTask, activitiesByDate,
+  weekData, workouts, tasks, isCurrentWeek, isNextWeek, isFocus, onToggleTask, activitiesByDate,
 }: {
   weekData: PlanWeekData; workouts: Workout[]; tasks: WeeklyTask[];
-  isCurrentWeek: boolean; isNextWeek: boolean;
+  isCurrentWeek: boolean; isNextWeek: boolean; isFocus: boolean;
   onToggleTask: (id: string, status: string) => void;
   activitiesByDate: Record<string, DayActivity[]>;
 }) {
   const isOutline = weekData.detailLevel === "outline";
   const isTarget = weekData.detailLevel === "target";
   const isPast = new Date(weekData.startDate) < new Date(todayStr);
-  const [expanded, setExpanded] = useState(isCurrentWeek || isNextWeek);
+  const [expanded, setExpanded] = useState(isCurrentWeek || isNextWeek || isFocus);
+  const rowRef = useRef<HTMLDivElement>(null);
+  // Deep-linked from a calendar/today tap: reveal this week.
+  useEffect(() => {
+    if (isFocus) rowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const hasWorkouts = workouts.length > 0;
   const canExpand = hasWorkouts;
   const weekKm = workouts.reduce((s, w) => s + (w.targetDistanceKm || 0), 0);
@@ -544,7 +554,7 @@ function DesktopWeekRow({
   const sessionCodes = weekData.sessionTypes as string[] | null;
 
   return (
-    <div className={`mb-3 ${isCurrentWeek ? "ring-2 ring-brocco rounded-xl p-3 -mx-3" : ""}`}>
+    <div ref={rowRef} className={`mb-3 ${isCurrentWeek ? "ring-2 ring-brocco rounded-xl p-3 -mx-3" : ""}`}>
       {isCurrentWeek && <div className="text-xs text-leaf mb-2 font-bold">Current Week</div>}
       <button
         onClick={() => canExpand && setExpanded((v) => !v)}
@@ -707,6 +717,15 @@ function PlanPageContent() {
   const currentWeekNum = currentWeekIdx >= 0 ? weekList[currentWeekIdx].weekNumber : undefined;
   const totalWeeks = weekList.length || 1;
 
+  // Deep link: /plan?w=<workoutId> opens the week that contains that workout
+  // (calendar / today taps land on the exact session, not a default week).
+  const focusWorkoutId = searchParams.get("w");
+  const focusWeekNum = focusWorkoutId
+    ? plan.workouts.find((w) => w.id === focusWorkoutId)?.weekNumber
+    : undefined;
+  const focusWeekIdx = focusWeekNum != null ? weekList.findIndex((w) => w.weekNumber === focusWeekNum) : -1;
+  const initialWeekIdx = focusWeekIdx >= 0 ? focusWeekIdx : Math.max(0, currentWeekIdx);
+
   return (
     <>
       {/* MOBILE VIEW */}
@@ -717,6 +736,7 @@ function PlanPageContent() {
           workoutsByWeek={workoutsByWeek}
           tasksByWeek={tasksByWeek}
           currentWeekIdx={currentWeekIdx >= 0 ? currentWeekIdx : 0}
+          initialWeekIdx={initialWeekIdx}
           onToggleTask={handleToggleTask}
           activitiesByDate={plan.activitiesByDate || {}}
         />
@@ -769,6 +789,7 @@ function PlanPageContent() {
             tasks={tasksByWeek.get(wd.weekNumber) || []}
             isCurrentWeek={wd.weekNumber === currentWeekNum}
             isNextWeek={currentWeekNum !== undefined && wd.weekNumber === currentWeekNum + 1}
+            isFocus={focusWeekNum !== undefined && wd.weekNumber === focusWeekNum}
             onToggleTask={handleToggleTask}
             activitiesByDate={plan.activitiesByDate || {}}
           />
