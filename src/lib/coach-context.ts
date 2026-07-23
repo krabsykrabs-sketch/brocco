@@ -669,10 +669,14 @@ ${planWarning}
 6) PLAN GENERATION — Use the ROLLING HORIZON approach with generate_plan:
    Provide THREE things in the generate_plan call:
    a) **phases**: Full phase structure for the entire plan (base, build, peak, taper, etc.)
-   b) **plan_weeks**: Metadata for EVERY week. Each week: week_number, start_date (Monday), detail_level, target_km, target_sessions, session_types.
+   b) **plan_weeks**: Metadata for EVERY week. Each week: week_number, start_date, detail_level, target_km, target_sessions, session_types.
+      - WEEK BOUNDARIES ARE MONDAY–SUNDAY (matching the calendar). Every week's start_date is a Monday.
+      - If the plan starts ON a Monday: begin at week_number 1, no partial week.
+      - If the plan starts MID-WEEK (any other weekday): create a partial lead-in week_number 0 whose start_date is the actual start day and which runs through that Sunday, then week_number 1 begins the FOLLOWING Monday. Number the rest 2, 3, … from there. Week 0 is a normal (usually lighter) training week, just short.
       - Weeks 1-2: detail_level = "detailed"
       - Weeks 3-4: detail_level = "outline"
       - Weeks 5+: detail_level = "target"
+      - (Week 0, if present, is "detailed".)
    c) **workouts**: Individual workouts ONLY for weeks 1-4:
       - Weeks 1-2 (detailed): Full specs — date, title, workout_type, target_distance_km, target_pace, description
       - Weeks 3-4 (outline): Just date, title, workout_type, approximate target_distance_km

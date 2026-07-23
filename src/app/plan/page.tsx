@@ -710,7 +710,11 @@ function PlanPageContent() {
     });
   }
 
-  const currentWeekIdx = weekList.findIndex((w) => {
+  // findLast, not findIndex: a partial "Week 0" (mid-week start) spans fewer
+  // than 7 days but its naive +6 range can overlap Week 1's Monday — picking
+  // the last match resolves that in Week 1's favour. Non-overlapping full
+  // weeks match exactly once, so this is a no-op for them.
+  const currentWeekIdx = weekList.findLastIndex((w) => {
     const end = new Date(w.startDate); end.setDate(end.getDate() + 6);
     return w.startDate.split("T")[0] <= todayStr && end.toISOString().split("T")[0] >= todayStr;
   });

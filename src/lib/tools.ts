@@ -234,7 +234,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: "generate_plan",
     description:
-      "Generate a training plan using the rolling horizon approach. Creates phases for the full plan, plan_weeks metadata for every week, and individual workouts ONLY for weeks with detail_level 'detailed' (weeks 1-2) and 'outline' (weeks 3-4). Do NOT generate workouts for 'target' weeks (week 5+). This dramatically reduces output size. Plan dates should start from next Monday.",
+      "Generate a training plan using the rolling horizon approach. Creates phases for the full plan, plan_weeks metadata for every week, and individual workouts ONLY for weeks with detail_level 'detailed' (weeks 1-2) and 'outline' (weeks 3-4). Do NOT generate workouts for 'target' weeks (week 5+). This dramatically reduces output size. WEEKS ARE MONDAY–SUNDAY: every plan_week start_date is a Monday. If the plan starts mid-week, add a partial lead-in week_number 0 (start_date = the actual start day, running to that Sunday) and begin week_number 1 the following Monday; if it starts on a Monday, begin at week 1 with no week 0.",
     input_schema: {
       type: "object" as const,
       properties: {
