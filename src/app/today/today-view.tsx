@@ -449,24 +449,37 @@ export default function TodayView() {
 
 
       {/* New user CTAs (compact — life features work regardless) */}
+      {/* New-user CTAs. Strava leads while it's disconnected — Brocco learns
+          far more from a real history than from interview answers, so the
+          plan CTA steps back to secondary until it's linked. */}
       {showNewUserCTAs && (
         <div className="mb-4 space-y-2">
-          {!data.stravaConnected && (
-            <Link href="/api/strava/auth?returnTo=/today" className="sticker sticker-press flex items-center gap-3 px-4 py-3">
-              <span className="text-lg">🏃</span>
-              <div className="flex-1">
-                <p className="text-sm font-bold text-ink">Connect Strava</p>
-                <p className="text-xs text-moss font-semibold">Import your runs so Brocco knows your fitness</p>
+          {!data.stravaConnected ? (
+            <>
+              <Link href="/api/strava/auth?returnTo=/today" className="btn-brocco flex items-center gap-3 px-4 py-3">
+                <span className="text-lg">🏃</span>
+                <div className="flex-1 text-left">
+                  <p className="text-sm font-extrabold">Connect Strava first</p>
+                  <p className="text-xs text-leaf font-bold">Brocco reads your history and builds the plan around it</p>
+                </div>
+              </Link>
+              <Link href={`/chat?msg=${encodeURIComponent("I'd like to build a training plan")}`} className="sticker sticker-press flex items-center gap-3 px-4 py-3">
+                <span className="text-lg">💬</span>
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-ink">Or build a plan without it</p>
+                  <p className="text-xs text-moss font-semibold">Brocco will ask you a few questions instead</p>
+                </div>
+              </Link>
+            </>
+          ) : (
+            <Link href={`/chat?msg=${encodeURIComponent("I'd like to build a training plan")}`} className="btn-brocco flex items-center gap-3 px-4 py-3">
+              <span className="text-lg">💬</span>
+              <div className="flex-1 text-left">
+                <p className="text-sm font-extrabold">Build my training plan</p>
+                <p className="text-xs text-leaf font-bold">Chat with Brocco to create one</p>
               </div>
             </Link>
           )}
-          <Link href={`/chat?msg=${encodeURIComponent("I'd like to build a training plan")}`} className="btn-brocco flex items-center gap-3 px-4 py-3">
-            <span className="text-lg">💬</span>
-            <div className="flex-1 text-left">
-              <p className="text-sm font-extrabold">Build my training plan</p>
-              <p className="text-xs text-leaf font-bold">Chat with Brocco to create one</p>
-            </div>
-          </Link>
         </div>
       )}
 

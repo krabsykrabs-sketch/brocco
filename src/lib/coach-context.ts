@@ -67,6 +67,10 @@ export async function buildCoachContext(userId: string): Promise<string> {
   const userName = user?.name || "Runner";
 
   // --- Profile ---
+  // Strava state is part of the profile: without it Brocco can't tell a
+  // brand-new user (no history to learn from — ask them to connect) from
+  // someone who genuinely hasn't run lately.
+  const stravaConnected = !!profile.stravaAccessToken;
   const profileBlock = [
     `PROFILE:`,
     `- Name: ${userName}`,
@@ -75,6 +79,9 @@ export async function buildCoachContext(userId: string): Promise<string> {
     profile.yearsRunning != null ? `- Running experience: ${profile.yearsRunning} years` : null,
     profile.weeklyKmBaseline ? `- Baseline: ~${Number(profile.weeklyKmBaseline)} km/week` : null,
     `- Timezone: ${profile.timezone}`,
+    stravaConnected
+      ? `- Strava: connected (their recorded history is below — trust it)`
+      : `- Strava: NOT CONNECTED — no training history available. See STRAVA FIRST below.`,
   ].filter(Boolean).join("\n");
 
   // --- Coaching notes ---
@@ -556,6 +563,21 @@ export async function buildSystemPrompt(
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
   const coachingNotes = profile?.coachingNotes as Record<string, unknown> | null;
   const hasCoachingNotes = coachingNotes && Object.keys(coachingNotes).length > 0;
+  const stravaConnected = !!profile?.stravaAccessToken;
+
+  // Without Strava there is no training history, so every fitness judgement
+  // would be guesswork. Getting it connected is the highest-value first move
+  // with a new runner — more than any interview question.
+  const stravaFirst = stravaConnected
+    ? ""
+    : `
+STRAVA FIRST — the runner has NOT connected Strava:
+This is your top priority in the conversation, ahead of building anything. Their Strava history is where you learn their real mileage, paces, consistency and injury-free load — without it you are guessing, and any plan you build is generic.
+- Open your FIRST message to a new runner by introducing yourself briefly and asking them to connect Strava, saying plainly what it buys them ("I'll read your last months of running and build the plan around what you actually do, instead of asking you twenty questions"). Point them to Settings → Connect Strava, or the "Connect Strava" button on the Today screen.
+- If they ask for a training plan while Strava is disconnected, ask to connect it BEFORE the interview: "Connect Strava first and I can skip most of the questions — want to do that now, or shall we build it from what you tell me?"
+- If they decline or say they don't use Strava, accept it immediately and move on without nagging — run the interview from their answers instead, and ask a few extra questions about recent weekly volume, longest recent run and current paces to compensate. Ask at most once more, much later, and only if it would visibly help.
+- Never claim they haven't been training when Strava is disconnected — you simply have no data.
+`;
 
   // Check for existing active plan
   const activePlan = await prisma.plan.findFirst({
@@ -646,6 +668,7 @@ ${!hasCoachingNotes ? `
 GETTING TO KNOW A NEW RUNNER:
 If you don't have coaching notes about this runner yet, before diving into plan creation, first ask about their running background: how long they've been running, any injuries or niggles, how many days a week they can train, morning/evening preference. Use save_profile with coaching_notes_update to store what you learn. Keep it quick and conversational — 3-5 exchanges, one or two questions at a time.
 ` : ""}
+${stravaFirst}
 PLAN CREATION:
 When the runner asks you to create a training plan, conduct a structured interview:
 ${planWarning}
@@ -655,7 +678,7 @@ ${planWarning}
    - Hybrid / Hyrox (or other hybrid race like a marathon+Hyrox block): a periodized plan that balances RUNNING volume with FUNCTIONAL / gym sessions. Ask the race date and how many gym days per week they want. You manage the running (volume, quality sessions, long runs, compromised-running work where relevant) and SCHEDULE their functional sessions — you do NOT prescribe the exercises. The athlete runs their own Hyrox/strength session in the gym; your job is the days, the load balance, and the taper. See HYBRID / HYROX PLANS below.
    - If they're unsure, suggest goals based on their data and fitness level.
 
-2) CURRENT FITNESS — Reference their Strava data and coaching notes. Acknowledge honestly where they're starting from.
+2) CURRENT FITNESS — Reference their Strava data and coaching notes. Acknowledge honestly where they're starting from. If Strava is NOT connected, ask them to connect it here before going further (see STRAVA FIRST) — it replaces most of this step. If they'd rather not, ask instead: recent weekly volume, longest run in the last month, and a rough easy/threshold pace.
 
 3) SCHEDULE — Which days are available for this training block. Known conflicts: holidays, travel, work trips. Any intermediate races along the way?
 
@@ -758,105 +781,5 @@ This conversation happens in the Kitchen tab — a dedicated cooking chat, separ
 - Stay training-aware in your suggestions (carbs before tomorrow's long run, protein after strength) — the context block tells you what's coming up. But keep the conversation about food: for actual coaching questions, point them to the coach chat.
 - Groceries, portions, substitutions, technique questions — all fair game.
 - Status lines still apply. Vegetable enthusiasm is permitted at slightly elevated levels; you are, after all, an ingredient.` : ""}`;
-}
-
-/**
- * Build a context summary of the user's Strava data for plan creation context.
- */
-async function buildStravaContext(userId: string): Promise<string> {
-  const profile = await prisma.userProfile.findUnique({ where: { userId } });
-  if (!profile) return "";
-
-  const hasStrava = !!profile.stravaAccessToken;
-  if (!hasStrava) return "STRAVA: Not connected. No activity data available.\n";
-
-  const now = new Date();
-  const activities = await prisma.activity.findMany({
-    where: { userId },
-    orderBy: { startDateLocal: "desc" },
-    select: {
-      activityType: true,
-      distanceKm: true,
-      durationMin: true,
-      avgPacePerKm: true,
-      avgHeartRate: true,
-      startDateLocal: true,
-      name: true,
-    },
-  });
-
-  if (activities.length === 0) return "STRAVA: Connected but no activities found.\n";
-
-  // Summary stats
-  const runTypes = ["Run", "TrailRun", "VirtualRun", "Treadmill"];
-  const runs = activities.filter((a) => runTypes.includes(a.activityType));
-  const totalActivities = activities.length;
-
-  // Recent 30 days
-  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  const recentRuns = runs.filter((a) => a.startDateLocal >= thirtyDaysAgo);
-  const recentWeeklyKm = recentRuns.reduce((sum, a) => sum + (a.distanceKm ? Number(a.distanceKm) : 0), 0) / 4.3;
-
-  // Recent easy pace (last 5 easy/moderate runs)
-  const recentPaces = recentRuns
-    .filter((a) => a.avgPacePerKm && a.distanceKm && Number(a.distanceKm) > 3)
-    .slice(0, 5)
-    .map((a) => a.avgPacePerKm);
-
-  // Days per week
-  const recentWeeks = new Set(recentRuns.map((a) =>
-    `${a.startDateLocal.getFullYear()}-${Math.ceil((a.startDateLocal.getMonth() * 30 + a.startDateLocal.getDate()) / 7)}`
-  ));
-  const runsPerWeek = recentWeeks.size > 0 ? (recentRuns.length / Math.max(recentWeeks.size, 1)).toFixed(1) : "0";
-
-  // Activity types breakdown
-  const typeCount: Record<string, number> = {};
-  for (const a of activities.slice(0, 100)) {
-    typeCount[a.activityType] = (typeCount[a.activityType] || 0) + 1;
-  }
-
-  let ctx = "STRAVA DATA SUMMARY:\n";
-  ctx += `- Total activities imported: ${totalActivities}\n`;
-  ctx += `- Recent running (last 30 days): ~${recentWeeklyKm.toFixed(1)} km/week, ~${runsPerWeek} runs/week\n`;
-  if (recentPaces.length > 0) {
-    ctx += `- Recent paces: ${recentPaces.join(", ")}\n`;
-  }
-  ctx += `- Activity types: ${Object.entries(typeCount).map(([t, c]) => `${t}: ${c}`).join(", ")}\n`;
-
-  // Recent activities list (last 10)
-  ctx += "\nRecent activities:\n";
-  for (const a of activities.slice(0, 10)) {
-    const date = format(a.startDateLocal, "MMM d");
-    const dist = a.distanceKm ? `${Number(a.distanceKm).toFixed(1)}km` : "";
-    const pace = a.avgPacePerKm || "";
-    ctx += `- ${date}: ${a.activityType} "${a.name}" ${dist} ${pace}\n`;
-  }
-
-  // Training history summary if available
-  const notes = profile.coachingNotes as Record<string, unknown> | null;
-  const historySummary = notes?.training_history_summary as Record<string, unknown> | undefined;
-  if (historySummary) {
-    ctx += "\nTRAINING HISTORY ANALYSIS:\n";
-    const races = historySummary.races as Array<Record<string, unknown>> | undefined;
-    if (races && races.length > 0) {
-      ctx += "Race results:\n";
-      for (const r of races) {
-        ctx += `- ${r.date}: ${r.name} (${r.distance_km}km) — ${r.time}\n`;
-      }
-    }
-    const peak = historySummary.peak_mileage as Record<string, unknown> | null;
-    if (peak) {
-      ctx += `Peak training: ${peak.avg_weekly_km} km/week (${peak.period})\n`;
-    }
-    const gaps = historySummary.inactivity_gaps as Array<Record<string, unknown>> | undefined;
-    if (gaps && gaps.length > 0) {
-      ctx += "Inactivity gaps:\n";
-      for (const g of gaps) {
-        ctx += `- ${g.from} to ${g.to} (${g.duration_days} days)\n`;
-      }
-    }
-  }
-
-  return ctx;
 }
 

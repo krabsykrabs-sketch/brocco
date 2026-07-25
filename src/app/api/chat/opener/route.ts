@@ -189,7 +189,11 @@ export async function POST(request: NextRequest) {
 
   if (!activePlan) {
     analysisContext = `${userName} has no active training plan. They have ${weekActivities.length} activities this week.`;
-    triggerHint += "\nSuggest building a plan, or ask what they'd like to work on.";
+    // With no Strava there's no history to coach from, so connecting it beats
+    // jumping into a plan built on guesswork.
+    triggerHint += profile?.stravaAccessToken
+      ? "\nSuggest building a plan, or ask what they'd like to work on."
+      : "\nThey have NOT connected Strava, so you have no training history for them. Introduce yourself in a sentence and ask them to connect Strava (Settings, or the button on Today), explaining it lets you build the plan around what they actually run instead of a pile of questions. Mention they can still build a plan without it if they prefer.";
   }
 
   const timeNow = nowInTimezone(tz).slice(11, 16);
