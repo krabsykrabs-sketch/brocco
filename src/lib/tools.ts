@@ -149,7 +149,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
               updates: {
                 type: "object",
                 description:
-                  "Fields to change (distance, pace, duration)",
+                  "For update_targets: distance, pace, duration. For swap_rest_day: date (ISO date to move this workout to) and optionally swap_with_workout_id (the workout to trade dates with). Not used by mark_covered.",
               },
               reason: { type: "string" },
             },
@@ -890,7 +890,12 @@ async function handleAdjustPlan(
     return { success: false, error: "No adjustments provided" };
   }
 
-  const results: Array<{ workoutId: string; action: string; success: boolean }> = [];
+  const results: Array<{
+    workoutId: string;
+    action: string;
+    success: boolean;
+    error?: string;
+  }> = [];
 
   for (const adj of adjustments) {
     const workout = await prisma.plannedWorkout.findFirst({
@@ -898,38 +903,81 @@ async function handleAdjustPlan(
     });
 
     if (!workout) {
-      results.push({ workoutId: adj.workout_id, action: adj.action, success: false });
+      results.push({
+        workoutId: adj.workout_id,
+        action: adj.action,
+        success: false,
+        error:
+          "No workout with that id on the active plan. The workout_id is wrong or stale — re-read the plan context and use an id listed there.",
+      });
       continue;
     }
 
     const beforeState = {
+      date: wallDateString(workout.date),
       targetDistanceKm: workout.targetDistanceKm ? Number(workout.targetDistanceKm) : null,
       targetPace: workout.targetPace,
       targetDurationMin: workout.targetDurationMin,
       status: workout.status,
     };
 
+    // swap_rest_day moves a workout to another date (optionally trading dates
+    // with a second workout). It touches two rows, so it can't go through the
+    // single-row updateData path below.
+    if (adj.action === "swap_rest_day") {
+      const swap = await applyRestDaySwap(userId, workout, adj.updates);
+      if (!swap.success) {
+        results.push({
+          workoutId: adj.workout_id,
+          action: adj.action,
+          success: false,
+          error: swap.error,
+        });
+        continue;
+      }
+      await prisma.planAdjustmentLog.create({
+        data: {
+          userId,
+          workoutId: adj.workout_id,
+          action: "swap_rest_day",
+          beforeState,
+          afterState: { ...beforeState, date: swap.newDate },
+          reason: adj.reason || summary,
+          summary,
+        },
+      });
+      results.push({ workoutId: adj.workout_id, action: adj.action, success: true });
+      continue;
+    }
+
     const updateData: Record<string, unknown> = {};
     if (adj.action === "update_targets" && adj.updates) {
       if (adj.updates.distance !== undefined) updateData.targetDistanceKm = Number(adj.updates.distance);
       if (adj.updates.pace !== undefined) updateData.targetPace = String(adj.updates.pace);
       if (adj.updates.duration !== undefined) updateData.targetDurationMin = Number(adj.updates.duration);
-      updateData.status = "modified";
+      if (Object.keys(updateData).length > 0) updateData.status = "modified";
     } else if (adj.action === "mark_covered") {
       updateData.status = "completed";
     }
 
-    if (Object.keys(updateData).length > 0) {
-      await prisma.plannedWorkout.update({
-        where: { id: adj.workout_id },
-        data: updateData,
+    // Nothing to write means nothing changed — never report that as applied.
+    if (Object.keys(updateData).length === 0) {
+      results.push({
+        workoutId: adj.workout_id,
+        action: adj.action,
+        success: false,
+        error:
+          adj.action === "update_targets"
+            ? "update_targets needs at least one of distance, pace or duration in `updates`."
+            : `Unsupported action "${adj.action}".`,
       });
+      continue;
     }
 
-    const afterState = {
-      ...beforeState,
-      ...updateData,
-    };
+    await prisma.plannedWorkout.update({
+      where: { id: adj.workout_id },
+      data: updateData,
+    });
 
     await prisma.planAdjustmentLog.create({
       data: {
@@ -937,7 +985,7 @@ async function handleAdjustPlan(
         workoutId: adj.workout_id,
         action: adj.action as "update_targets" | "swap_rest_day" | "mark_covered",
         beforeState,
-        afterState,
+        afterState: { ...beforeState, ...updateData },
         reason: adj.reason || summary,
         summary,
       },
@@ -946,17 +994,81 @@ async function handleAdjustPlan(
     results.push({ workoutId: adj.workout_id, action: adj.action, success: true });
   }
 
+  const failed = results.filter((r) => !r.success);
+  const appliedCount = results.length - failed.length;
+
+  // Nothing landed in the database — report a failure so the coach tells the
+  // user instead of announcing a change that never happened.
+  if (appliedCount === 0) {
+    return {
+      success: false,
+      error: `No adjustments were applied. ${failed
+        .map((f) => `${f.action} on ${f.workoutId}: ${f.error}`)
+        .join(" | ")}`,
+      data: { adjustments: results },
+    };
+  }
+
   syncWorkoutsInBackground(userId); // push adjusted targets to the watch calendar
 
   return {
     success: true,
-    data: { adjustments: results },
+    data: { adjustments: results, appliedCount, failedCount: failed.length },
     notification: {
-      type: "plan_adjusted",
-      message: summary,
+      type: failed.length > 0 ? "plan_adjusted_partial" : "plan_adjusted",
+      message:
+        failed.length > 0
+          ? `${summary} — but ${failed.length} of ${results.length} change(s) could not be applied.`
+          : summary,
       data: { results },
     },
   };
+}
+
+/**
+ * Moves a workout to a different date, optionally trading dates with another
+ * workout (the "swap" in swap_rest_day). Both rows are scoped through the
+ * plan's userId, and the two dates are written in one transaction so a swap
+ * can never leave both workouts on the same day.
+ */
+async function applyRestDaySwap(
+  userId: string,
+  workout: { id: string; date: Date; planId: string },
+  updates: Record<string, unknown> | undefined
+): Promise<{ success: true; newDate: string } | { success: false; error: string }> {
+  const partnerId = updates?.swap_with_workout_id as string | undefined;
+
+  if (partnerId) {
+    const partner = await prisma.plannedWorkout.findFirst({
+      where: { id: partnerId, plan: { userId, status: "active" } },
+    });
+    if (!partner) {
+      return {
+        success: false,
+        error: `swap_with_workout_id "${partnerId}" is not a workout on the active plan.`,
+      };
+    }
+    await prisma.$transaction([
+      prisma.plannedWorkout.update({ where: { id: workout.id }, data: { date: partner.date } }),
+      prisma.plannedWorkout.update({ where: { id: partner.id }, data: { date: workout.date } }),
+    ]);
+    return { success: true, newDate: wallDateString(partner.date) };
+  }
+
+  const dateStr = updates?.date as string | undefined;
+  if (!dateStr) {
+    return {
+      success: false,
+      error: "swap_rest_day needs `updates.date` (the ISO date to move the workout to) or `updates.swap_with_workout_id`.",
+    };
+  }
+  const newDate = new Date(dateStr);
+  if (Number.isNaN(newDate.getTime())) {
+    return { success: false, error: `"${dateStr}" is not a valid ISO date.` };
+  }
+
+  await prisma.plannedWorkout.update({ where: { id: workout.id }, data: { date: newDate } });
+  return { success: true, newDate: wallDateString(newDate) };
 }
 
 // --- modify_plan ---
@@ -982,14 +1094,32 @@ async function handleModifyPlan(
   // Apply changes directly (Brocco should have asked for verbal confirmation first)
   const results = await applyPlanModifications(userId, changes);
 
+  const failed = results.filter((r) => !r.success);
+  const appliedCount = results.length - failed.length;
+
+  // Nothing landed in the database — report a failure so the coach tells the
+  // user instead of announcing a change that never happened.
+  if (appliedCount === 0) {
+    return {
+      success: false,
+      error: `No plan changes were applied. ${failed
+        .map((f) => `${f.action}${f.workoutId ? ` on ${f.workoutId}` : ""}: ${f.error}`)
+        .join(" | ")}`,
+      data: { modifications: results },
+    };
+  }
+
   syncWorkoutsInBackground(userId); // reflect structural changes on the watch calendar
 
   return {
     success: true,
-    data: { modifications: results, summary },
+    data: { modifications: results, summary, appliedCount, failedCount: failed.length },
     notification: {
-      type: "plan_modified",
-      message: summary,
+      type: failed.length > 0 ? "plan_modified_partial" : "plan_modified",
+      message:
+        failed.length > 0
+          ? `${summary} — but ${failed.length} of ${results.length} change(s) could not be applied.`
+          : summary,
     },
   };
 }

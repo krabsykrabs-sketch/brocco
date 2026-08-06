@@ -40,10 +40,22 @@ function ToolNotificationBadge({ notification }: { notification: ToolNotificatio
     plan_adjusted: "\ud83d\udd27",
     plan_created: "\ud83d\udcdd",
     plan_modified: "\ud83d\udd27",
+    plan_adjusted_partial: "\u26a0\ufe0f",
+    plan_modified_partial: "\u26a0\ufe0f",
   };
 
+  // Partial applications must not read as a clean success \u2014 a green tick on a
+  // change that only half landed is what made silent failures invisible.
+  const partial = notification.type.endsWith("_partial");
+
   return (
-    <div className="flex items-center gap-2 bg-sprout border-2 border-ink rounded-lg px-3 py-1.5 text-xs font-bold text-ink mb-1">
+    <div
+      className={`flex items-center gap-2 border-2 rounded-lg px-3 py-1.5 text-xs font-bold mb-1 ${
+        partial
+          ? "bg-clay-soft border-clay text-clay"
+          : "bg-sprout border-ink text-ink"
+      }`}
+    >
       <span>{icons[notification.type] || "\u2705"}</span>
       <span>{notification.message}</span>
     </div>

@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
         await prisma.chatMessage.update({
           where: { id: assistantMsg.id },
           data: {
-            content: [{ type: "text", text: result.fullText }],
+            content: buildAssistantContent(result.fullText, result.toolLog),
             displayText: result.fullText,
           },
         });
@@ -207,6 +207,29 @@ export async function POST(request: NextRequest) {
 
 interface ToolUseResult {
   fullText: string;
+  // One line per tool call with its real outcome. Persisted alongside the
+  // assistant's text (see buildAssistantContent) so later turns in the same
+  // conversation know which tools ran and whether they actually succeeded.
+  toolLog: string[];
+}
+
+// Chat history is replayed as text only, so a tool call and its result would
+// otherwise vanish the moment the turn ends — leaving the coach to re-assert
+// that it made a change it has no record of making (or failing to make).
+// This block is stored in `content` but never in `displayText`, so the model
+// sees it on replay and the user never does.
+function buildAssistantContent(fullText: string, toolLog: string[]) {
+  const blocks: Array<{ type: "text"; text: string }> = [{ type: "text", text: fullText }];
+  if (toolLog.length > 0) {
+    blocks.push({
+      type: "text",
+      text:
+        `\n\n[tool activity — internal record, never shown to the user]\n` +
+        toolLog.join("\n") +
+        `\nIf a tool FAILED, the change did not happen. Tell the user plainly instead of repeating the claim.`,
+    });
+  }
+  return blocks;
 }
 
 async function runWithTools(
@@ -222,6 +245,7 @@ async function runWithTools(
   maxIterations = 5
 ): Promise<ToolUseResult> {
   let fullText = "";
+  const toolLog: string[] = [];
   let currentMessages = [...messages];
 
   // High max_tokens needed because generate_plan can output 70+ workouts
@@ -296,6 +320,18 @@ async function runWithTools(
         chatMessageId
       );
 
+      toolLog.push(
+        result.success
+          ? `${toolUse.name} → OK: ${result.notification?.message ?? "applied"}`
+          : `${toolUse.name} → FAILED: ${result.error ?? "unknown error"}`
+      );
+
+      if (!result.success) {
+        console.warn(
+          `[chat] tool ${toolUse.name} failed (session=${sessionId}): ${result.error}`
+        );
+      }
+
       if (result.notification) {
         controller.enqueue(
           encoder.encode(
@@ -347,7 +383,7 @@ async function runWithTools(
     }
   }
 
-  return { fullText };
+  return { fullText, toolLog };
 }
 
 async function generateTitle(sessionId: string, userMessage: string, assistantResponse: string) {

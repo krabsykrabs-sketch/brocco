@@ -146,7 +146,15 @@ export async function applyPlanModifications(
     reason?: string;
   }>
 ) {
-  const results: Array<{ action: string; success: boolean }> = [];
+  const results: Array<{
+    action: string;
+    workoutId?: string;
+    success: boolean;
+    error?: string;
+  }> = [];
+
+  const notFound =
+    "No workout with that id on this user's plan. The workout_id is wrong or stale — re-read the plan context and use an id listed there.";
 
   for (const c of changes) {
     // workout_id values come from LLM tool output — never trust them alone.
@@ -168,21 +176,44 @@ export async function applyPlanModifications(
         where: { id: c.workout_id, plan: { userId } },
         data: updateData,
       });
-      results.push({ action: "update", success: count > 0 });
+      results.push({
+        action: "update",
+        workoutId: c.workout_id,
+        success: count > 0,
+        error: count > 0 ? undefined : notFound,
+      });
     } else if (c.action === "skip" && c.workout_id) {
       const { count } = await prisma.plannedWorkout.updateMany({
         where: { id: c.workout_id, plan: { userId } },
         data: { status: "skipped" },
       });
-      results.push({ action: "skip", success: count > 0 });
+      results.push({
+        action: "skip",
+        workoutId: c.workout_id,
+        success: count > 0,
+        error: count > 0 ? undefined : notFound,
+      });
     } else if (c.action === "delete" && c.workout_id) {
       const { count } = await prisma.plannedWorkout.deleteMany({
         where: { id: c.workout_id, plan: { userId } },
       });
-      results.push({ action: "delete", success: count > 0 });
+      results.push({
+        action: "delete",
+        workoutId: c.workout_id,
+        success: count > 0,
+        error: count > 0 ? undefined : notFound,
+      });
     } else if (c.action === "add" && c.date) {
       const plan = await prisma.plan.findFirst({ where: { userId, status: "active" } });
-      if (plan && c.updates) {
+      if (!plan) {
+        results.push({ action: "add", success: false, error: "No active plan to add a workout to." });
+      } else if (!c.updates) {
+        results.push({
+          action: "add",
+          success: false,
+          error: "add needs an `updates` object describing the workout (title, workout_type, distance, ...).",
+        });
+      } else {
         await prisma.plannedWorkout.create({
           data: {
             planId: plan.id,
@@ -199,6 +230,22 @@ export async function applyPlanModifications(
         });
         results.push({ action: "add", success: true });
       }
+    } else {
+      // Unknown action, or a known action missing its required field
+      // (update/skip/delete without workout_id, add without date). Previously
+      // these fell through and recorded nothing at all, so the caller saw an
+      // empty result set and reported success.
+      results.push({
+        action: c.action,
+        workoutId: c.workout_id,
+        success: false,
+        error:
+          c.action === "add"
+            ? "add needs a `date`."
+            : ["update", "skip", "delete"].includes(c.action)
+              ? `${c.action} needs a \`workout_id\`.`
+              : `Unknown action "${c.action}".`,
+      });
     }
   }
 
