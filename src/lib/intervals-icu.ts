@@ -37,6 +37,35 @@ export interface RepeatBlock {
 }
 export type StepsJson = Array<WorkoutStep | RepeatBlock>;
 
+/**
+ * Steps are authored by the coach against a snake_case tool schema
+ * (`distance_km`, `duration_min`) and stored verbatim, but everything here
+ * reads camelCase. Unnormalised, `s.distanceKm` was always undefined and every
+ * interval step silently fell back to "5 minutes" — so a 6×800m session
+ * reached the watch as six 5-minute blocks. Accept either spelling on read
+ * rather than migrating stored rows.
+ */
+function normaliseStep<T extends Record<string, unknown>>(raw: T): T {
+  const r = raw as Record<string, unknown>;
+  return {
+    ...r,
+    distanceKm: r.distanceKm ?? r.distance_km,
+    durationMin: r.durationMin ?? r.duration_min,
+  } as unknown as T;
+}
+
+/** Normalises a whole steps array, including the steps inside repeat blocks. */
+export function normaliseSteps(steps: StepsJson): StepsJson {
+  return steps.map((s) => {
+    const step = normaliseStep(s as unknown as Record<string, unknown>);
+    if ((step as unknown as RepeatBlock).kind === "repeat") {
+      const block = step as unknown as RepeatBlock;
+      return { ...block, steps: (block.steps || []).map((inner) => normaliseStep(inner as unknown as Record<string, unknown>)) } as unknown as RepeatBlock;
+    }
+    return step as unknown as WorkoutStep;
+  });
+}
+
 function authHeader(apiKey: string): string {
   return "Basic " + Buffer.from(`API_KEY:${apiKey}`).toString("base64");
 }
@@ -107,9 +136,10 @@ function stepLine(s: WorkoutStep): string {
  * distance/duration/pace targets — still gives the watch a target to guide.
  */
 export function renderWorkoutDsl(w: Pick<PlannedWorkout, "steps" | "targetDistanceKm" | "targetPace" | "targetDurationMin" | "description">): string {
-  const steps = (w.steps as StepsJson | null) || null;
+  const raw = (w.steps as StepsJson | null) || null;
+  const steps = raw && Array.isArray(raw) ? normaliseSteps(raw) : null;
 
-  if (steps && Array.isArray(steps) && steps.length > 0) {
+  if (steps && steps.length > 0) {
     const parts: string[] = [];
     for (const s of steps) {
       if (s.kind === "repeat") {

@@ -55,6 +55,8 @@ interface ReconciledDay {
   extras: ActivityItem[];
 }
 
+const EMPTY_DAY = { events: [] as EventOccurrence[], workouts: [] as WorkoutItem[], activities: [] as ActivityItem[] };
+
 function reconcileDay(workouts: WorkoutItem[], activities: ActivityItem[], today: string): ReconciledDay {
   const used = new Set<string>();
   const rows = workouts.map((w) => {
@@ -266,11 +268,13 @@ function SwipePager({
         className="will-change-transform relative"
         style={{ transform, transition: useTransition ? "transform 0.24s ease-out" : "none" }}
       >
-        <div key={pageKey(-1)} className="absolute top-0 right-full w-full" aria-hidden>
+        {/* inert, not aria-hidden: the off-screen pages are full of links, and
+            they must not take focus or be read out while parked. */}
+        <div key={pageKey(-1)} inert className="absolute top-0 right-full w-full">
           {renderPage(-1)}
         </div>
         <div key={pageKey(0)}>{renderPage(0)}</div>
-        <div key={pageKey(1)} className="absolute top-0 left-full w-full" aria-hidden>
+        <div key={pageKey(1)} inert className="absolute top-0 left-full w-full">
           {renderPage(1)}
         </div>
       </div>
@@ -497,11 +501,9 @@ function WorkoutDetailCard({
             <p className="label-xs">
               Last {comparable.sameSessionType ? WORKOUT_TYPE_LABEL[workout.workoutType] || "similar session" : "similar session"}
             </p>
-            <Link
-              href={`/activity/${comparable.activityId}`}
-              className="block text-sm font-bold text-ink tabular-nums underline decoration-shade decoration-2 underline-offset-2"
-            >
-              {comparableLine(comparable)}
+            <Link href={`/activity/${comparable.activityId}`} className="mt-1 block sticker sticker-press px-2.5 py-1.5">
+              <p className="text-sm font-bold text-ink tabular-nums">{comparableLine(comparable)}</p>
+              <p className="text-[10px] text-moss font-semibold truncate">{comparable.name}</p>
             </Link>
           </div>
         ) : (
@@ -583,7 +585,7 @@ function DayView({
 
       {extras.length > 0 && (
         <div className="space-y-1.5">
-          <p className="label-xs">{rows.length > 0 ? "Also done today" : "Done anyway"}</p>
+          <p className="label-xs">{rows.length > 0 ? "Also done" : "Done anyway"}</p>
           {extras.map((a) => <ActivityChip key={a.activityId} activity={a} />)}
         </div>
       )}
@@ -888,6 +890,10 @@ export default function CalendarView() {
   useEffect(() => {
     if (view !== "day") return;
     for (const w of workouts) {
+      // Arriving from the month view, `workouts` still holds the whole month
+      // until the day's fetch lands — the three days on the track are all that
+      // can be read.
+      if (w.date < fetchStart || w.date > fetchEnd) continue;
       if (detailsRequested.current.has(w.workoutId)) continue;
       detailsRequested.current.add(w.workoutId);
       fetch(`/api/workouts/${w.workoutId}/detail`)
@@ -895,7 +901,7 @@ export default function CalendarView() {
         .then((d: WorkoutDetail | null) => setDetails((prev) => ({ ...prev, [w.workoutId]: d })))
         .catch(() => setDetails((prev) => ({ ...prev, [w.workoutId]: null })));
     }
-  }, [view, workouts]);
+  }, [view, workouts, fetchStart, fetchEnd]);
 
   useScreenContext(
     {
@@ -1031,10 +1037,10 @@ export default function CalendarView() {
           {anchor !== today && (
             <button onClick={() => setAnchor(today)} className="px-2 py-1 text-xs text-leaf font-bold hover:opacity-70">Today</button>
           )}
-          <button onClick={() => navigate(1)} className="p-1.5 text-moss hover:text-ink">
+          <button onClick={() => navigate(-1)} aria-label="Previous" className="p-1.5 text-moss hover:text-ink">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <button onClick={() => navigate(-1)} className="p-1.5 text-moss hover:text-ink">
+          <button onClick={() => navigate(1)} aria-label="Next" className="p-1.5 text-moss hover:text-ink">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
           </button>
         </div>
@@ -1043,26 +1049,12 @@ export default function CalendarView() {
       <p className="text-sm font-extrabold text-ink mb-2">{headerLabel}</p>
 
       {/* Views */}
-      <SwipePager contentKey={`${view}:${rangeStart}`} onSwipe={navigate} className="flex-1">
-        {view === "month" ? (
-          <MonthGrid
-            rangeStart={rangeStart}
-            rangeEnd={rangeEnd}
-            anchorMonth={anchor.slice(0, 7)}
-            today={today}
-            byDate={byDate}
-            onDayTap={(d) => { setAnchor(d); setView("day"); }}
-          />
-        ) : view === "week" ? (
-          <div className="divide-y-2 divide-shade/40">
-            {Array.from({ length: 7 }, (_, i) => addDaysStr(rangeStart, i)).map((d) => (
-              <DaySection key={d} date={d} compact />
-            ))}
-          </div>
-        ) : (
-          <DaySection date={anchor} />
-        )}
-      </SwipePager>
+      <SwipePager
+        className="flex-1"
+        pageKey={(o) => `${view}:${shiftAnchor(view, anchor, o)}`}
+        renderPage={renderPage}
+        onSwipe={navigate}
+      />
 
       {/* Add-event FAB (left of the mic) */}
       <button
@@ -1075,14 +1067,14 @@ export default function CalendarView() {
       </button>
 
       {formOpen && (
-        <EventFormModal form={formOpen} onClose={() => setFormOpen(null)} onSaved={fetchData} />
+        <EventFormModal form={formOpen} onClose={() => setFormOpen(null)} onSaved={refresh} />
       )}
       {detail && (
         <EventDetailSheet
           occurrence={detail}
           onClose={() => setDetail(null)}
           onEdit={(f) => setFormOpen(f)}
-          onChanged={fetchData}
+          onChanged={refresh}
         />
       )}
     </main>
