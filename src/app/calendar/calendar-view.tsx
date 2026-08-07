@@ -16,7 +16,7 @@ interface EventOccurrence {
 }
 interface WorkoutItem {
   workoutId: string; date: string; title: string; workoutType: string; activityType: string;
-  targetDistanceKm: number | null; targetPace: string | null; status: string;
+  targetDistanceKm: number | null; targetPace: string | null; targetDurationMin: number | null; status: string;
 }
 interface ActivityItem {
   activityId: string; date: string; name: string; activityType: string;
@@ -44,6 +44,23 @@ function reconcileDay(workouts: WorkoutItem[], activities: ActivityItem[], today
     return { workout: w, matched, state };
   });
   return { rows, extras: activities.filter((a) => !used.has(a.activityId)) };
+}
+
+/**
+ * The planned targets, mirroring activityDetail's shape on the "actual" side.
+ * Duration-only sessions — rides, S&C — used to fall through to the bare
+ * "training plan" label, hiding the one number that defines them.
+ */
+export function plannedDetail(w: WorkoutItem): string {
+  return (
+    [
+      w.targetDistanceKm ? `${w.targetDistanceKm} km` : null,
+      w.targetPace,
+      w.targetDurationMin ? `${Math.round(w.targetDurationMin)} min` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ") || "training plan"
+  );
 }
 
 function activityDetail(a: ActivityItem): string {
@@ -224,7 +241,7 @@ function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matche
           {workout.title}
         </p>
         <p className="text-[10px] text-moss font-semibold truncate tabular-nums">
-          {[workout.targetDistanceKm ? `${workout.targetDistanceKm} km` : null, workout.targetPace].filter(Boolean).join(" · ") || "training plan"}
+          {plannedDetail(workout)}
         </p>
       </div>
       {state === "done" ? (
