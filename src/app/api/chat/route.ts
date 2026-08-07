@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
         );
 
         // Update assistant message with final text
-        const groundedText = groundStatusMarker(result.fullText, result.toolLog);
+        const groundedText = groundStatusMarker(result.fullText, result.appliedMutation);
         await prisma.chatMessage.update({
           where: { id: assistantMsg.id },
           data: {
@@ -217,24 +217,28 @@ interface ToolUseResult {
   // assistant's text (see buildAssistantContent) so later turns in the same
   // conversation know which tools ran and whether they actually succeeded.
   toolLog: string[];
+  // True when at least one tool actually wrote something this turn. Derived
+  // from notification presence, which every mutating handler emits and no
+  // read-only path does.
+  appliedMutation: boolean;
 }
-
-// Read-only tools answer questions; they never constitute "completing an
-// action", so a turn that only queried has not earned a [STATUS:done].
-const READ_ONLY_TOOLS = ["query_data", "query_schedule"];
 
 /**
  * A [STATUS:done] marker asserts to the user that an action was carried out —
  * the UI renders it as a green "completed" strip. The model writes it itself,
  * with nothing checking it, so it happily claims "Weekend adjusted" on a turn
  * where it described changes and never called a tool. Downgrade the claim to
- * :info unless a mutating tool actually succeeded this turn.
+ * :info unless something was actually written this turn.
+ *
+ * `appliedMutation` is derived from whether a handler emitted a notification,
+ * not from a list of tool names: every mutating handler emits one and every
+ * read path (query_data, query_schedule, manage_recipe's search/get/list)
+ * emits none, so this stays exact as tools are added. Read/write is a per-call
+ * property — manage_recipe both reads and writes depending on its `action` —
+ * which a name allow-list cannot express.
  */
-export function groundStatusMarker(fullText: string, toolLog: string[]): string {
-  const appliedSomething = toolLog.some(
-    (line) => line.includes("→ OK") && !READ_ONLY_TOOLS.some((t) => line.startsWith(`${t} `))
-  );
-  if (appliedSomething) return fullText;
+export function groundStatusMarker(fullText: string, appliedMutation: boolean): string {
+  if (appliedMutation) return fullText;
   return fullText.replace(/\[STATUS:done\]/gi, "[STATUS:info]");
 }
 
@@ -271,6 +275,7 @@ async function runWithTools(
 ): Promise<ToolUseResult> {
   let fullText = "";
   const toolLog: string[] = [];
+  let appliedMutation = false;
   let currentMessages = [...messages];
 
   // High max_tokens needed because generate_plan can output 70+ workouts
@@ -358,6 +363,7 @@ async function runWithTools(
       }
 
       if (result.notification) {
+        appliedMutation = true;
         controller.enqueue(
           encoder.encode(
             `data: ${JSON.stringify({ tool: result.notification })}\n\n`
@@ -379,36 +385,15 @@ async function runWithTools(
       { role: "user", content: toolResults },
     ];
 
-    // If Claude signaled end_turn alongside tool use, run one more iteration
-    // so it can produce a final text response after seeing tool results
-    if (response.stop_reason === "end_turn") {
-      // Execute one final turn to let Claude respond to tool results, then stop
-      const finalStream = anthropic.messages.stream({
-        model,
-        max_tokens: maxTokens,
-        system: systemPrompt,
-        messages: currentMessages,
-        tools,
-      });
-
-      finalStream.on("text", (text) => {
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ text })}\n\n`)
-        );
-      });
-
-      const finalResponse = await finalStream.finalMessage();
-
-      for (const block of finalResponse.content) {
-        if (block.type === "text") {
-          fullText += block.text;
-        }
-      }
-      break;
-    }
+    // The end_turn case used to be special-cased here with a one-off extra
+    // request whose content was scanned for text ONLY — any tool_use block it
+    // returned was silently dropped and never executed, while the narration
+    // that came with it ("I've moved your long run") was still shown. Letting
+    // the normal loop run the next iteration does the same job (Claude sees
+    // the tool results and replies) without discarding tool calls.
   }
 
-  return { fullText, toolLog };
+  return { fullText, toolLog, appliedMutation };
 }
 
 async function generateTitle(sessionId: string, userMessage: string, assistantResponse: string) {

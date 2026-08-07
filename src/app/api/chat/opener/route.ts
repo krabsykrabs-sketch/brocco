@@ -6,6 +6,7 @@ import { format } from "date-fns";
 import { todayInTimezone, nowInTimezone, dateInTimezone, parseWall, addDaysWall, wallDateString } from "@/lib/schedule";
 import { groupActivitiesByDay, workoutOutcome, activityDayKey } from "@/lib/plan-progress";
 import { ensureFreshStravaData } from "@/lib/strava-fresh";
+import { groundStatusMarker } from "@/app/api/chat/route";
 
 const anthropic = new Anthropic();
 
@@ -215,16 +216,19 @@ export async function POST(request: NextRequest) {
       ? textBlock.text.trim()
       : `Week check-in: ${weekRunKm.toFixed(1)}km of ${plannedKm.toFixed(0)}km so far. What's on your mind?`;
 
+    // The opener calls no tools, so a [STATUS:done] here can never be true.
+    const grounded = groundStatusMarker(openerText, false);
+
     await prisma.chatMessage.create({
       data: {
         sessionId,
         role: "assistant",
-        content: [{ type: "text", text: openerText }],
-        displayText: openerText,
+        content: [{ type: "text", text: grounded }],
+        displayText: grounded,
       },
     });
 
-    return NextResponse.json({ opener: openerText });
+    return NextResponse.json({ opener: grounded });
   } catch (err) {
     console.error("Opener generation error:", err);
     const fallback = `Week check-in: ${weekRunKm.toFixed(1)}km of ${plannedKm.toFixed(0)}km planned so far. What's on your mind?`;

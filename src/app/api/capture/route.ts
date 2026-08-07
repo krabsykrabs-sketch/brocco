@@ -4,6 +4,7 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { buildCoachContext, buildSystemPrompt } from "@/lib/coach-context";
 import { toolsForFeatures, handleToolCall } from "@/lib/tools";
+import { groundStatusMarker, buildAssistantContent } from "@/app/api/chat/route";
 import { resolveFeatures } from "@/lib/features";
 import { nowInTimezone } from "@/lib/schedule";
 
@@ -131,6 +132,8 @@ export async function POST(request: NextRequest) {
 
   // --- Tool loop (non-streaming, small budget — captures must be snappy) ---
   const notifications: Array<{ type: string; message: string; data?: Record<string, unknown> }> = [];
+  const toolLog: string[] = [];
+  let appliedMutation = false;
   let finalText = "";
   let currentMessages = [...messages];
 
@@ -165,7 +168,15 @@ export async function POST(request: NextRequest) {
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const tu of toolUses) {
         const result = await handleToolCall(tu.name, tu.input as Record<string, unknown>, userId);
-        if (result.notification) notifications.push(result.notification);
+        toolLog.push(
+          result.success
+            ? `${tu.name} → OK: ${result.notification?.message ?? "applied"}`
+            : `${tu.name} → FAILED: ${result.error ?? "unknown error"}`
+        );
+        if (result.notification) {
+          appliedMutation = true;
+          notifications.push(result.notification);
+        }
         toolResults.push({
           type: "tool_result",
           tool_use_id: tu.id,
@@ -184,15 +195,21 @@ export async function POST(request: NextRequest) {
   }
 
   // --- Persist assistant side ---
+  // Capture uses the same system prompt as chat, so the model can still emit a
+  // [STATUS:done] here despite being told not to — and this row is rendered by
+  // the normal chat UI later, green strip and all. Ground it the same way.
+  const groundedFinal = groundStatusMarker(finalText, appliedMutation);
   const persistText =
-    [notifications.map((n) => `✓ ${n.message}`).join("\n"), finalText].filter(Boolean).join("\n") ||
+    [notifications.map((n) => `✓ ${n.message}`).join("\n"), groundedFinal].filter(Boolean).join("\n") ||
     "(no response)";
   await prisma.chatMessage.create({
     data: {
       sessionId,
       role: "assistant",
-      content: [{ type: "text", text: finalText || persistText }],
-      displayText: persistText,
+      // Same tool-activity record as the chat route, so a later chat turn in
+      // this session knows what the capture actually did.
+      content: buildAssistantContent(groundedFinal || persistText, toolLog),
+      displayText: groundStatusMarker(persistText, appliedMutation),
     },
   });
   await prisma.chatSession.update({ where: { id: sessionId }, data: { updatedAt: new Date() } });

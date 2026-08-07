@@ -384,11 +384,17 @@ export default function ChatUI({
             displayText: autoMessage,
           }]);
 
+          let buffer = "";
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            const chunk = decoder.decode(value, { stream: true });
-            for (const line of chunk.split("\n")) {
+            // SSE frames can straddle chunk boundaries. Splitting each chunk in
+            // isolation drops any frame that got cut in half — which the `done`
+            // frame now can be, since it carries the corrected message text.
+            buffer += decoder.decode(value, { stream: true });
+            const pending = buffer.split("\n");
+            buffer = pending.pop() ?? "";
+            for (const line of pending) {
               if (!line.startsWith("data: ")) continue;
               try {
                 const d = JSON.parse(line.slice(6));
@@ -518,12 +524,17 @@ export default function ChatUI({
       let accumulated = "";
       const notifications: ToolNotification[] = [];
 
+      let buffer = "";
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n");
+        // SSE frames can straddle chunk boundaries. Splitting each chunk in
+        // isolation drops any frame that got cut in half — which the `done`
+        // frame now can be, since it carries the corrected message text.
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
 
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
@@ -659,11 +670,20 @@ export default function ChatUI({
               ))}
               {streamingText && (() => {
                 const { cleanText, statusType, statusText } = parseStatus(streamingText);
+                // Mirror the server's grounding while streaming: a green "done"
+                // strip is only honest if a tool actually wrote something, and
+                // a tool notification is exactly that signal. Without this the
+                // raw [STATUS:done] shows green for the tail of the stream and
+                // only flips to blue once the corrected text arrives.
+                const shown =
+                  statusType === "done" && streamingNotifications.length === 0
+                    ? "info"
+                    : statusType;
                 return (
                   <div className="bg-card border-2 border-ink rounded-2xl rounded-bl-md shadow-[2px_2px_0_var(--color-shade)] px-4 py-2.5">
                     <ChatMarkdown text={cleanText} />
-                    {statusType && statusText && (
-                      <StatusStrip type={statusType} text={statusText} />
+                    {shown && statusText && (
+                      <StatusStrip type={shown} text={statusText} />
                     )}
                   </div>
                 );

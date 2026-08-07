@@ -149,21 +149,49 @@ const UPDATABLE = [
   "date",
 ];
 
-/** Plan week containing `date`, so a moved workout keeps a correct weekNumber. */
-async function weekNumberForDate(userId: string, date: Date): Promise<number | null> {
-  const plan = await prisma.plan.findFirst({ where: { userId, status: "active" }, select: { id: true } });
-  if (!plan) return null;
+/** Keys `add` actually writes. Same contract as UPDATABLE: reject, never drop. */
+const ADDABLE = [
+  "title",
+  "workout_type",
+  "activity_type",
+  "distance",
+  "pace",
+  "duration",
+  "description",
+  "steps",
+];
+
+type WeekLookup =
+  | { kind: "resolved"; weekNumber: number }
+  | { kind: "no_weeks" } // legacy plan with no PlanWeek rows — UI groups by the workout's own weekNumber
+  | { kind: "outside" }; // date falls outside every week of the plan
+
+/**
+ * Plan week containing `date`, so a moved workout keeps a correct weekNumber.
+ * Scoped to the workout's OWN plan, not the active one — modifying a workout on
+ * an archived plan must not stamp it with the active plan's week numbers.
+ *
+ * Matches the LAST overlapping week, exactly as the Plan tab does
+ * (plan/page.tsx findLastIndex): a partial "Week 0" from a mid-week start spans
+ * fewer than 7 days, so its naive +6 range can overlap Week 1's Monday, and the
+ * last match resolves that in Week 1's favour. Resolving it the other way here
+ * would file the workout under a different week than the UI displays it in.
+ */
+export async function weekNumberForDate(planId: string, date: Date): Promise<WeekLookup> {
   const weeks = await prisma.planWeek.findMany({
-    where: { planId: plan.id },
+    where: { planId },
     orderBy: { weekNumber: "asc" },
     select: { weekNumber: true, startDate: true },
   });
+  if (weeks.length === 0) return { kind: "no_weeks" };
+
+  let match: number | null = null;
   for (const w of weeks) {
     const start = new Date(w.startDate);
     const end = new Date(start.getTime() + 6 * 86400000);
-    if (date >= start && date <= end) return w.weekNumber;
+    if (date >= start && date <= end) match = w.weekNumber;
   }
-  return null;
+  return match === null ? { kind: "outside" } : { kind: "resolved", weekNumber: match };
 }
 
 export async function applyPlanModifications(
@@ -230,9 +258,29 @@ export async function applyPlanModifications(
             });
             continue;
           }
+          const existing = await prisma.plannedWorkout.findFirst({
+            where: { id: c.workout_id, plan: { userId } },
+            select: { planId: true },
+          });
+          if (!existing) {
+            results.push({ action: "update", workoutId: c.workout_id, success: false, error: notFound });
+            continue;
+          }
+          const week = await weekNumberForDate(existing.planId, newDate);
+          // Moving a workout outside every week of the plan would leave it
+          // filed under a week it no longer falls in — the Plan tab groups
+          // strictly by weekNumber, so it would vanish from the view.
+          if (week.kind === "outside") {
+            results.push({
+              action: "update",
+              workoutId: c.workout_id,
+              success: false,
+              error: `${String(c.updates.date)} falls outside every week of this plan, so the workout would not show up anywhere. Nothing was changed.`,
+            });
+            continue;
+          }
           updateData.date = newDate;
-          const week = await weekNumberForDate(userId, newDate);
-          if (week !== null) updateData.weekNumber = week;
+          if (week.kind === "resolved") updateData.weekNumber = week.weekNumber;
         }
       }
       updateData.status = "modified";
@@ -278,17 +326,51 @@ export async function applyPlanModifications(
           error: "add needs an `updates` object describing the workout (title, workout_type, distance, ...).",
         });
       } else {
+        const unknownAdd = Object.keys(c.updates).filter((k) => !ADDABLE.includes(k));
+        if (unknownAdd.length > 0) {
+          results.push({
+            action: "add",
+            success: false,
+            error: `add does not support ${unknownAdd
+              .map((k) => `\`${k}\``)
+              .join(", ")}. Nothing was created. Supported: ${ADDABLE.join(", ")}.`,
+          });
+          continue;
+        }
+
+        const addDate = new Date(c.date);
+        if (Number.isNaN(addDate.getTime())) {
+          results.push({ action: "add", success: false, error: `"${c.date}" is not a valid ISO date.` });
+          continue;
+        }
+
+        // weekNumber was hard-coded to 0. The Plan tab groups strictly by
+        // weekNumber against the plan's PlanWeek rows, so a week-0 workout on
+        // a plan with no Week 0 rendered nowhere — created successfully,
+        // reported as done, and invisible to the user.
+        const week = await weekNumberForDate(plan.id, addDate);
+        if (week.kind === "outside") {
+          results.push({
+            action: "add",
+            success: false,
+            error: `${c.date} falls outside every week of this plan, so the workout would not show up anywhere. Nothing was created.`,
+          });
+          continue;
+        }
+
         await prisma.plannedWorkout.create({
           data: {
             planId: plan.id,
-            weekNumber: 0,
-            date: new Date(c.date),
+            weekNumber: week.kind === "resolved" ? week.weekNumber : 0,
+            date: addDate,
             title: (c.updates.title as string) || "New workout",
             workoutType: ((c.updates.workout_type as string) || "easy") as WorkoutType,
-            targetDistanceKm: c.updates.distance ? Number(c.updates.distance) : null,
-            targetPace: c.updates.pace ? String(c.updates.pace) : null,
-            targetDurationMin: c.updates.duration ? Number(c.updates.duration) : null,
-            description: c.updates.description ? String(c.updates.description) : null,
+            // Dropping this silently turned a requested bike session into a run.
+            activityType: ((c.updates.activity_type as string) || "run") as ActivityKind,
+            targetDistanceKm: c.updates.distance != null ? Number(c.updates.distance) : null,
+            targetPace: c.updates.pace != null ? String(c.updates.pace) : null,
+            targetDurationMin: c.updates.duration != null ? Number(c.updates.duration) : null,
+            description: c.updates.description != null ? String(c.updates.description) : null,
             steps: (c.updates.steps as object | undefined) ?? undefined,
           },
         });

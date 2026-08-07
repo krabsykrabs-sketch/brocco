@@ -1,7 +1,11 @@
 import { prisma } from "@/lib/db";
 import { startOfWeek, endOfWeek, subWeeks, format, subDays } from "date-fns";
 import type Anthropic from "@anthropic-ai/sdk";
-import { applyPlanGeneration, applyPlanModifications } from "@/lib/apply-plan";
+import {
+  applyPlanGeneration,
+  applyPlanModifications,
+  weekNumberForDate as weekNumberForPlanDate,
+} from "@/lib/apply-plan";
 import { syncWorkoutsInBackground } from "@/lib/intervals-icu";
 
 // --- Tool definitions for the Anthropic API ---
@@ -946,6 +950,21 @@ async function handleAdjustPlan(
           summary,
         },
       });
+      // A swap mutates two rows; log the partner's move as well or the audit
+      // trail claims only half the change happened.
+      if (swap.partnerId) {
+        await prisma.planAdjustmentLog.create({
+          data: {
+            userId,
+            workoutId: swap.partnerId,
+            action: "swap_rest_day",
+            beforeState: { date: swap.newDate },
+            afterState: { date: beforeState.date },
+            reason: adj.reason || summary,
+            summary,
+          },
+        });
+      }
       results.push({ workoutId: adj.workout_id, action: adj.action, success: true });
       continue;
     }
@@ -1035,7 +1054,9 @@ async function handleAdjustPlan(
       type: failed.length > 0 ? "plan_adjusted_partial" : "plan_adjusted",
       message:
         failed.length > 0
-          ? `${summary} — but ${failed.length} of ${results.length} change(s) could not be applied.`
+          ? `Partly applied — ${failed.length} of ${results.length} change(s) failed: ${failed
+              .map((f) => f.error)
+              .join(" ")}`
           : summary,
       data: { results },
     },
@@ -1050,9 +1071,12 @@ async function handleAdjustPlan(
  */
 async function applyRestDaySwap(
   userId: string,
-  workout: { id: string; date: Date; planId: string },
+  workout: { id: string; date: Date; planId: string; weekNumber: number },
   updates: Record<string, unknown> | undefined
-): Promise<{ success: true; newDate: string } | { success: false; error: string }> {
+): Promise<
+  | { success: true; newDate: string; partnerId?: string }
+  | { success: false; error: string }
+> {
   const partnerId = updates?.swap_with_workout_id as string | undefined;
 
   if (partnerId) {
@@ -1065,11 +1089,20 @@ async function applyRestDaySwap(
         error: `swap_with_workout_id "${partnerId}" is not a workout on the active plan.`,
       };
     }
+    // Each row takes the other's weekNumber along with its date — the Plan tab
+    // groups strictly by weekNumber, so a swap across a week boundary would
+    // otherwise leave a workout displayed under a week it no longer falls in.
     await prisma.$transaction([
-      prisma.plannedWorkout.update({ where: { id: workout.id }, data: { date: partner.date } }),
-      prisma.plannedWorkout.update({ where: { id: partner.id }, data: { date: workout.date } }),
+      prisma.plannedWorkout.update({
+        where: { id: workout.id },
+        data: { date: partner.date, weekNumber: partner.weekNumber, status: "modified" },
+      }),
+      prisma.plannedWorkout.update({
+        where: { id: partner.id },
+        data: { date: workout.date, weekNumber: workout.weekNumber, status: "modified" },
+      }),
     ]);
-    return { success: true, newDate: wallDateString(partner.date) };
+    return { success: true, newDate: wallDateString(partner.date), partnerId: partner.id };
   }
 
   const dateStr = updates?.date as string | undefined;
@@ -1084,7 +1117,22 @@ async function applyRestDaySwap(
     return { success: false, error: `"${dateStr}" is not a valid ISO date.` };
   }
 
-  await prisma.plannedWorkout.update({ where: { id: workout.id }, data: { date: newDate } });
+  const week = await weekNumberForPlanDate(workout.planId, newDate);
+  if (week.kind === "outside") {
+    return {
+      success: false,
+      error: `${dateStr} falls outside every week of this plan, so the workout would not show up anywhere. Nothing was changed.`,
+    };
+  }
+
+  await prisma.plannedWorkout.update({
+    where: { id: workout.id },
+    data: {
+      date: newDate,
+      status: "modified",
+      ...(week.kind === "resolved" ? { weekNumber: week.weekNumber } : {}),
+    },
+  });
   return { success: true, newDate: wallDateString(newDate) };
 }
 
@@ -1135,7 +1183,9 @@ async function handleModifyPlan(
       type: failed.length > 0 ? "plan_modified_partial" : "plan_modified",
       message:
         failed.length > 0
-          ? `${summary} — but ${failed.length} of ${results.length} change(s) could not be applied.`
+          ? `Partly applied — ${failed.length} of ${results.length} change(s) failed: ${failed
+              .map((f) => f.error)
+              .join(" ")}`
           : summary,
     },
   };
@@ -1740,12 +1790,23 @@ async function handleSaveProfile(
     savedFields.push("coaching_notes");
   }
 
-  if (Object.keys(updateData).length > 0) {
-    await prisma.userProfile.update({
-      where: { userId },
-      data: updateData,
-    });
+  // No recognised field means nothing is written. Returning success here
+  // produced a "Profile updated: " badge over an unchanged profile — the same
+  // false success the plan tools had.
+  if (Object.keys(updateData).length === 0) {
+    return {
+      success: false,
+      error:
+        "Nothing was saved — none of the supplied keys are fields save_profile can write. " +
+        "Supported: name, years_running, weekly_km_baseline, goal_race, goal_race_date, goal_time, hr_max_bpm, coaching_notes_update. " +
+        "Anything else belongs in coaching_notes_update.",
+    };
   }
+
+  await prisma.userProfile.update({
+    where: { userId },
+    data: updateData,
+  });
 
   return {
     success: true,
