@@ -109,20 +109,36 @@ async function scenario2_hallucinatedId() {
 }
 
 async function scenario3_roccosExactCall() {
-  console.log("\n[3] The call Rocco said it *should* have made (date inside update_targets)");
+  console.log("\n[3] Rocco's real call: date + distance_km + pace in ONE update_targets");
   const { user, sat } = await setup();
   try {
     const t = await turn(user.id, DONE_TEXT, [{
       name: "adjust_plan",
-      input: { adjustments: [{ workout_id: sat.id, action: "update_targets", updates: { date: "2026-08-07", distance_km: 5, pace: "6:00-6:30/km" }, reason: "move to Fri" }], summary: "Moved Sat run to Fri" },
+      input: { adjustments: [{ workout_id: sat.id, action: "update_targets", updates: { date: "2026-08-07", distance_km: 5, pace: "6:00-6:30/km" }, reason: "move to Fri" }], summary: "Moved Sat run to Fri, 5km" },
     }]);
-    check("rejected rather than half-applied", t.results[0].success === false);
-    check("error names the unsupported keys", /date/.test(String(t.results[0].error)));
-    check("error points at the right action", /swap_rest_day|modify_plan/.test(String(t.results[0].error)));
-    check("no success badge", t.notifications.length === 0);
-    check("status downgraded to :info", t.status === "info", `got :${t.status}`);
+    check("call SUCCEEDS (aliases accepted, date supported)", t.results[0].success === true, String(t.results[0].error));
+    check("success badge emitted", t.notifications[0]?.type === "plan_adjusted", t.notifications[0]?.type);
+    check("status :done preserved", t.status === "done", `got :${t.status}`);
     const after = await prisma.plannedWorkout.findUnique({ where: { id: sat.id } });
-    check("date NOT silently left behind", after?.date.toISOString().slice(0, 10) === "2026-08-08");
+    check("date really moved to Fri Aug 7", after?.date.toISOString().slice(0, 10) === "2026-08-07", after?.date.toISOString().slice(0, 10));
+    check("distance_km really applied (3km -> 5km)", String(after?.targetDistanceKm) === "5", String(after?.targetDistanceKm));
+    check("pace really applied", after?.targetPace === "6:00-6:30/km", String(after?.targetPace));
+    check("weekNumber still correct", after?.weekNumber === 1, String(after?.weekNumber));
+  } finally { await prisma.user.delete({ where: { id: user.id } }); }
+}
+
+async function scenario3b_genuinelyUnknownKey() {
+  console.log("\n[3b] A key with no meaning is still rejected, not dropped");
+  const { user, sat } = await setup();
+  try {
+    const t = await turn(user.id, DONE_TEXT, [{
+      name: "adjust_plan",
+      input: { adjustments: [{ workout_id: sat.id, action: "update_targets", updates: { distance: 5, elevation_gain: 300 } }], summary: "x" },
+    }]);
+    check("rejected", t.results[0].success === false);
+    check("names the bad key", /elevation_gain/.test(String(t.results[0].error)));
+    check("no success badge", t.notifications.length === 0);
+    const after = await prisma.plannedWorkout.findUnique({ where: { id: sat.id } });
     check("distance NOT partially applied", String(after?.targetDistanceKm) === "3");
   } finally { await prisma.user.delete({ where: { id: user.id } }); }
 }
@@ -302,8 +318,9 @@ async function scenario14_addRejects() {
       name: "modify_plan",
       input: { changes: [{ action: "add", date: "2026-08-11", updates: { title: "X", target_distance_km: 5 } }], summary: "x" },
     }]);
-    check("unknown key rejected (generate_plan-style naming)", bad.results[0].success === false);
-    check("names the bad key", /target_distance_km/.test(String(bad.results[0].error)));
+    check("generate_plan-style naming now ACCEPTED on add", bad.results[0].success === true, String(bad.results[0].error));
+    const made = await prisma.plannedWorkout.findFirst({ where: { title: "X" } });
+    check("target_distance_km mapped to the real column", String(made?.targetDistanceKm) === "5", String(made?.targetDistanceKm));
 
     const far = await turn(user.id, DONE_TEXT, [{
       name: "modify_plan",
@@ -340,6 +357,7 @@ async function main() {
   await scenario1_noToolCall();
   await scenario2_hallucinatedId();
   await scenario3_roccosExactCall();
+  await scenario3b_genuinelyUnknownKey();
   await scenario4_correctCall();
   await scenario5_partial();
   await scenario6_dateMove();

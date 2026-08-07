@@ -138,6 +138,56 @@ export async function applyPlanGeneration(
 
 // Keys `update` actually writes. Anything else is rejected rather than
 // dropped, so a caller never gets a success for a change that didn't happen.
+// The model reliably emits field names borrowed from generate_plan's schema
+// (target_distance_km) or from natural phrasing (distance_km) rather than the
+// short names these tools document. Rejecting those is honest but useless —
+// the user's change still doesn't happen. Accept every spelling that has one
+// unambiguous meaning, and reject only genuinely unknown keys.
+const UPDATE_ALIASES: Record<string, string> = {
+  distance: "distance",
+  distance_km: "distance",
+  target_distance_km: "distance",
+  km: "distance",
+  pace: "pace",
+  target_pace: "pace",
+  duration: "duration",
+  duration_min: "duration",
+  target_duration_min: "duration",
+  date: "date",
+  new_date: "date",
+  title: "title",
+  description: "description",
+  steps: "steps",
+  workout_type: "workout_type",
+  type: "workout_type",
+  activity_type: "activity_type",
+  sport: "activity_type",
+  swap_with_workout_id: "swap_with_workout_id",
+};
+
+/**
+ * Maps whatever spelling the model used onto canonical field names, keeping
+ * only those the caller supports. `unknown` holds keys with no meaning here,
+ * which callers reject rather than silently drop.
+ */
+export function normalizeUpdates(
+  updates: Record<string, unknown> | undefined,
+  allowed: string[]
+): { values: Record<string, unknown>; unknown: string[] } {
+  const values: Record<string, unknown> = {};
+  const unknown: string[] = [];
+  for (const [key, value] of Object.entries(updates || {})) {
+    const canonical = UPDATE_ALIASES[key];
+    if (!canonical || !allowed.includes(canonical)) {
+      unknown.push(key);
+      continue;
+    }
+    values[canonical] = value;
+  }
+  return { values, unknown };
+}
+
+/** Canonical fields `update` can write. */
 const UPDATABLE = [
   "distance",
   "pace",
@@ -222,7 +272,8 @@ export async function applyPlanModifications(
       // An unrecognised key means the caller asked for something this action
       // cannot do. Silently dropping it applies part of the requested change
       // and reports it as fully done — reject the whole change instead.
-      const unknown = Object.keys(c.updates || {}).filter((k) => !UPDATABLE.includes(k));
+      const norm = normalizeUpdates(c.updates, UPDATABLE);
+      const unknown = norm.unknown;
       if (unknown.length > 0) {
         results.push({
           action: "update",
@@ -235,26 +286,27 @@ export async function applyPlanModifications(
         continue;
       }
 
+      const u = norm.values;
       const updateData: Record<string, unknown> = {};
-      if (c.updates) {
-        if (c.updates.distance !== undefined) updateData.targetDistanceKm = Number(c.updates.distance);
-        if (c.updates.pace !== undefined) updateData.targetPace = String(c.updates.pace);
-        if (c.updates.duration !== undefined) updateData.targetDurationMin = Number(c.updates.duration);
-        if (c.updates.workout_type !== undefined) updateData.workoutType = c.updates.workout_type;
-        if (c.updates.title !== undefined) updateData.title = c.updates.title;
-        if (c.updates.description !== undefined) updateData.description = c.updates.description;
-        if (c.updates.steps !== undefined) updateData.steps = c.updates.steps;
+      {
+        if (u.distance !== undefined) updateData.targetDistanceKm = Number(u.distance);
+        if (u.pace !== undefined) updateData.targetPace = String(u.pace);
+        if (u.duration !== undefined) updateData.targetDurationMin = Number(u.duration);
+        if (u.workout_type !== undefined) updateData.workoutType = u.workout_type;
+        if (u.title !== undefined) updateData.title = u.title;
+        if (u.description !== undefined) updateData.description = u.description;
+        if (u.steps !== undefined) updateData.steps = u.steps;
         // modify_plan's whole purpose includes "moving workouts across weeks",
         // so `date` has to actually move the row — and carry week_number with
         // it, or the workout lands in the right day but the wrong plan week.
-        if (c.updates.date !== undefined) {
-          const newDate = new Date(String(c.updates.date));
+        if (u.date !== undefined) {
+          const newDate = new Date(String(u.date));
           if (Number.isNaN(newDate.getTime())) {
             results.push({
               action: "update",
               workoutId: c.workout_id,
               success: false,
-              error: `"${String(c.updates.date)}" is not a valid ISO date. Nothing was changed.`,
+              error: `"${String(u.date)}" is not a valid ISO date. Nothing was changed.`,
             });
             continue;
           }
@@ -275,7 +327,7 @@ export async function applyPlanModifications(
               action: "update",
               workoutId: c.workout_id,
               success: false,
-              error: `${String(c.updates.date)} falls outside every week of this plan, so the workout would not show up anywhere. Nothing was changed.`,
+              error: `${String(u.date)} falls outside every week of this plan, so the workout would not show up anywhere. Nothing was changed.`,
             });
             continue;
           }
@@ -326,7 +378,8 @@ export async function applyPlanModifications(
           error: "add needs an `updates` object describing the workout (title, workout_type, distance, ...).",
         });
       } else {
-        const unknownAdd = Object.keys(c.updates).filter((k) => !ADDABLE.includes(k));
+        const normAdd = normalizeUpdates(c.updates, ADDABLE);
+        const unknownAdd = normAdd.unknown;
         if (unknownAdd.length > 0) {
           results.push({
             action: "add",
@@ -363,15 +416,15 @@ export async function applyPlanModifications(
             planId: plan.id,
             weekNumber: week.kind === "resolved" ? week.weekNumber : 0,
             date: addDate,
-            title: (c.updates.title as string) || "New workout",
-            workoutType: ((c.updates.workout_type as string) || "easy") as WorkoutType,
+            title: (normAdd.values.title as string) || "New workout",
+            workoutType: ((normAdd.values.workout_type as string) || "easy") as WorkoutType,
             // Dropping this silently turned a requested bike session into a run.
-            activityType: ((c.updates.activity_type as string) || "run") as ActivityKind,
-            targetDistanceKm: c.updates.distance != null ? Number(c.updates.distance) : null,
-            targetPace: c.updates.pace != null ? String(c.updates.pace) : null,
-            targetDurationMin: c.updates.duration != null ? Number(c.updates.duration) : null,
-            description: c.updates.description != null ? String(c.updates.description) : null,
-            steps: (c.updates.steps as object | undefined) ?? undefined,
+            activityType: ((normAdd.values.activity_type as string) || "run") as ActivityKind,
+            targetDistanceKm: normAdd.values.distance != null ? Number(normAdd.values.distance) : null,
+            targetPace: normAdd.values.pace != null ? String(normAdd.values.pace) : null,
+            targetDurationMin: normAdd.values.duration != null ? Number(normAdd.values.duration) : null,
+            description: normAdd.values.description != null ? String(normAdd.values.description) : null,
+            steps: (normAdd.values.steps as object | undefined) ?? undefined,
           },
         });
         results.push({ action: "add", success: true });

@@ -6,6 +6,7 @@ import {
   applyPlanModifications,
   weekNumberForDate as weekNumberForPlanDate,
 } from "@/lib/apply-plan";
+import { normalizeUpdates } from "@/lib/apply-plan";
 import { syncWorkoutsInBackground } from "@/lib/intervals-icu";
 
 // --- Tool definitions for the Anthropic API ---
@@ -136,7 +137,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: "adjust_plan",
     description:
-      "Make reactive micro-adjustments to workouts within the current week. Auto-applied immediately, no user confirmation needed. Use for: adjusting distance/pace of upcoming sessions this week, shifting rest days within the week, reducing intensity after fatigue signals, marking a workout as covered. Do NOT use for: adding/deleting workouts, changing workout types, anything beyond 7 days out, changing weekly mileage targets or phase boundaries.",
+      "Make reactive micro-adjustments to workouts within the current week. Auto-applied immediately, no user confirmation needed. Use for: changing the distance, pace or duration of a session this week, MOVING a session to a different day this week (pass `date` in updates — you can move it and retarget it in the same adjustment), reducing intensity after fatigue signals, marking a workout as covered. Do NOT use for: adding/deleting workouts, changing workout types, anything beyond 7 days out, changing weekly mileage targets or phase boundaries.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -153,7 +154,21 @@ export const toolDefinitions: Anthropic.Tool[] = [
               updates: {
                 type: "object",
                 description:
-                  "For update_targets: distance, pace, duration. For swap_rest_day: date (ISO date to move this workout to) and optionally swap_with_workout_id (the workout to trade dates with). Not used by mark_covered.",
+                  "Fields to change. Use exactly these names. Not used by mark_covered.",
+                properties: {
+                  distance: { type: "number", description: "Target distance in KILOMETRES" },
+                  pace: { type: "string", description: "Target pace, e.g. '6:15-6:45/km'" },
+                  duration: { type: "number", description: "Target duration in MINUTES" },
+                  date: {
+                    type: "string",
+                    description:
+                      "ISO date (YYYY-MM-DD) to move this workout to. Works with update_targets — you can move a session and change its targets in ONE adjustment.",
+                  },
+                  swap_with_workout_id: {
+                    type: "string",
+                    description: "swap_rest_day only: the workout to trade dates with.",
+                  },
+                },
               },
               reason: { type: "string" },
             },
@@ -193,7 +208,19 @@ export const toolDefinitions: Anthropic.Tool[] = [
               },
               updates: {
                 type: "object",
-                description: "Fields to change",
+                description:
+                  "Fields to change (update) or the new workout's fields (add). Use exactly these names.",
+                properties: {
+                  title: { type: "string" },
+                  workout_type: { type: "string", description: "easy, long, tempo, interval, recovery, race_pace, cross_training, strength, rest, race" },
+                  activity_type: { type: "string", description: "run, cycle, swim, other — REQUIRED for non-running sessions" },
+                  distance: { type: "number", description: "KILOMETRES" },
+                  pace: { type: "string" },
+                  duration: { type: "number", description: "MINUTES" },
+                  date: { type: "string", description: "update only: ISO date to move the workout to" },
+                  description: { type: "string" },
+                  steps: STEPS_SCHEMA,
+                },
               },
               reason: { type: "string" },
             },
@@ -971,26 +998,60 @@ async function handleAdjustPlan(
 
     const updateData: Record<string, unknown> = {};
     if (adj.action === "update_targets" && adj.updates) {
-      // An unrecognised key means the caller asked for something this action
-      // cannot do (most often `date`). Silently dropping it applies half the
-      // requested change and reports it as fully done — reject instead.
-      const unknown = Object.keys(adj.updates).filter(
-        (k) => !["distance", "pace", "duration"].includes(k)
-      );
+      // Accepts the aliases the model actually emits (distance_km,
+      // target_distance_km, target_pace, duration_min…). Anything with no
+      // meaning here is rejected rather than dropped, since dropping applies
+      // part of the change and reports all of it as done.
+      const { values: u, unknown } = normalizeUpdates(adj.updates, [
+        "distance",
+        "pace",
+        "duration",
+        "date",
+      ]);
       if (unknown.length > 0) {
         results.push({
           workoutId: adj.workout_id,
           action: adj.action,
           success: false,
           error:
-            `update_targets does not support ${unknown.map((k) => `\`${k}\``).join(", ")} — it only changes distance, pace and duration. ` +
-            `Nothing was changed. To move a workout to another date use action "swap_rest_day" with updates.date, or modify_plan for changes beyond this week.`,
+            `update_targets does not support ${unknown.map((k) => `\`${k}\``).join(", ")} — it changes distance, pace, duration and date. ` +
+            `Nothing was changed. For anything structural (adding, deleting or changing a workout's type) use modify_plan.`,
         });
         continue;
       }
-      if (adj.updates.distance !== undefined) updateData.targetDistanceKm = Number(adj.updates.distance);
-      if (adj.updates.pace !== undefined) updateData.targetPace = String(adj.updates.pace);
-      if (adj.updates.duration !== undefined) updateData.targetDurationMin = Number(adj.updates.duration);
+
+      if (u.distance !== undefined) updateData.targetDistanceKm = Number(u.distance);
+      if (u.pace !== undefined) updateData.targetPace = String(u.pace);
+      if (u.duration !== undefined) updateData.targetDurationMin = Number(u.duration);
+
+      // Moving a session within the week is the single most common request
+      // ("do Saturday's run today instead"), and the model kept sending `date`
+      // here regardless of what the schema said. Handle it rather than reject.
+      if (u.date !== undefined) {
+        const newDate = new Date(String(u.date));
+        if (Number.isNaN(newDate.getTime())) {
+          results.push({
+            workoutId: adj.workout_id,
+            action: adj.action,
+            success: false,
+            error: `"${String(u.date)}" is not a valid ISO date. Nothing was changed.`,
+          });
+          continue;
+        }
+        const week = await weekNumberForPlanDate(workout.planId, newDate);
+        if (week.kind === "outside") {
+          results.push({
+            workoutId: adj.workout_id,
+            action: adj.action,
+            success: false,
+            error: `${String(u.date)} falls outside every week of this plan, so the workout would not show up anywhere. Nothing was changed.`,
+          });
+          continue;
+        }
+        updateData.date = newDate;
+        if (week.kind === "resolved") updateData.weekNumber = week.weekNumber;
+      }
+
       if (Object.keys(updateData).length > 0) updateData.status = "modified";
     } else if (adj.action === "mark_covered") {
       updateData.status = "completed";
