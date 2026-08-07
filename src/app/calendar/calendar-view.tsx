@@ -16,13 +16,35 @@ interface EventOccurrence {
 }
 interface WorkoutItem {
   workoutId: string; date: string; title: string; workoutType: string; activityType: string;
-  targetDistanceKm: number | null; targetPace: string | null; targetDurationMin: number | null; status: string;
+  targetDistanceKm: number | null; targetPace: string | null; targetDurationMin: number | null;
+  description: string | null; status: string;
 }
 interface ActivityItem {
   activityId: string; date: string; name: string; activityType: string;
   distanceKm: number | null; durationMin: number | null; avgPacePerKm: string | null; source: string;
 }
 type ViewMode = "day" | "week" | "month";
+/** Position in the swipe track: -1 = the page before the anchor, +1 = after it. */
+type PageOffset = -1 | 0 | 1;
+
+/** One step of a structured session, as normalised by /api/workouts/[id]/detail. */
+interface DetailStep {
+  kind: string; label: string | null; distanceKm: number | null; durationMin: number | null;
+  pace: string | null; times: number | null; steps: DetailStep[] | null;
+}
+interface WorkoutDetail {
+  workout: {
+    id: string; date: string; title: string; workoutType: string; activityType: string;
+    targetDistanceKm: number | null; targetPace: string | null; targetDurationMin: number | null;
+    description: string | null; steps: DetailStep[]; status: string;
+  };
+  adjustment: { reason: string; summary: string; action: string; createdAt: string } | null;
+  comparable: {
+    activityId: string; date: string; name: string; activityType: string;
+    distanceKm: number | null; durationMin: number | null; avgPacePerKm: string | null;
+    avgHeartRate: number | null; sameSessionType: boolean;
+  } | null;
+}
 
 // --- Planned ↔ done reconciliation (same rule as the plan tab) ---
 
@@ -63,6 +85,22 @@ export function plannedDetail(w: WorkoutItem): string {
   );
 }
 
+/** The prescription in one line: how far, how long, how fast. */
+function targetLine(w: WorkoutItem): string {
+  const amount = [
+    w.targetDistanceKm ? `${w.targetDistanceKm} km` : null,
+    w.targetDurationMin ? `${Math.round(w.targetDurationMin)} min` : null,
+  ].filter(Boolean).join(" · ");
+  if (amount && w.targetPace) return `${amount} @ ${w.targetPace}`;
+  return amount || w.targetPace || "no target set — run it by feel";
+}
+
+const WORKOUT_TYPE_LABEL: Record<string, string> = {
+  easy: "easy run", long: "long run", tempo: "tempo run", interval: "interval session",
+  race_pace: "race-pace session", recovery: "recovery run", rest: "rest day",
+  cross_training: "cross-training session", strength: "strength session", race: "race",
+};
+
 function activityDetail(a: ActivityItem): string {
   if (a.distanceKm) {
     return `${a.distanceKm.toFixed(1)} km${a.avgPacePerKm ? ` · ${a.avgPacePerKm.replace("/km", "")}` : ""}`;
@@ -98,17 +136,49 @@ function fmt(s: string, opts: Intl.DateTimeFormatOptions): string {
   return toDate(s).toLocaleDateString("en-GB", opts);
 }
 
+/** The dates one page of a view covers (the month grid spans whole weeks). */
+function rangeFor(view: ViewMode, anchor: string): [string, string] {
+  if (view === "day") return [anchor, anchor];
+  if (view === "week") {
+    const ws = startOfWeekStr(anchor);
+    return [ws, addDaysStr(ws, 6)];
+  }
+  const gridStart = startOfWeekStr(startOfMonthStr(anchor));
+  const lastDay = addDaysStr(addMonthsStr(anchor, 1), -1);
+  return [gridStart, addDaysStr(startOfWeekStr(lastDay), 6)];
+}
+
+/** The anchor one page earlier (-1) or later (+1), in this view's unit. */
+function shiftAnchor(view: ViewMode, anchor: string, offset: PageOffset): string {
+  if (offset === 0) return anchor;
+  if (view === "day") return addDaysStr(anchor, offset);
+  if (view === "week") return addDaysStr(anchor, offset * 7);
+  return addMonthsStr(anchor, offset);
+}
+
 // --- Swipe pager (same animation pattern as the plan page) ---
 
+/**
+ * A three-page track: the page you are swiping towards is mounted and moving
+ * with your finger the whole time. Mounting only the anchor made a swipe read
+ * as two — an empty screen slid in, the anchor changed, and the real page slid
+ * in after it, so a single gesture looked like skipping a week.
+ *
+ * The neighbours are absolutely positioned rather than laid out in a flex
+ * track: this page scrolls with the document, and a flex row would stretch the
+ * viewport to the tallest of the three days (a bare day next to a full session
+ * detail would grow a screenful of blank space). Only the anchor page sits in
+ * flow, so the page is exactly as tall as what you are looking at.
+ */
 function SwipePager({
-  contentKey,
+  pageKey,
+  renderPage,
   onSwipe,
-  children,
   className,
 }: {
-  contentKey: string;
-  onSwipe: (dir: 1 | -1) => void; // 1 = previous (swipe right), -1 = next (swipe left)
-  children: React.ReactNode;
+  pageKey: (offset: PageOffset) => string;
+  renderPage: (offset: PageOffset) => React.ReactNode;
+  onSwipe: (delta: -1 | 1) => void; // -1 = previous, +1 = next
   className?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -117,33 +187,34 @@ function SwipePager({
   const touchDeltaX = useRef(0);
   const directionLocked = useRef<"horizontal" | "vertical" | null>(null);
   const animatingRef = useRef(false);
-  const [offset, setOffset] = useState(0);
+  const [dragOffset, setDragOffset] = useState(0);
   const [swiping, setSwiping] = useState(false);
-  const [phase, setPhase] = useState<"idle" | "exit" | "entering">("idle");
-  const pendingKey = useRef(contentKey);
+  // The neighbour being committed to, or null at rest.
+  const [target, setTarget] = useState<-1 | 1 | null>(null);
+  // One frame after the anchor swap, transitions are off so re-centring the
+  // track on the new anchor is invisible.
+  const [settling, setSettling] = useState(false);
 
-  const slide = useCallback((dir: 1 | -1) => {
+  const slide = useCallback((delta: -1 | 1) => {
     if (animatingRef.current) return;
     animatingRef.current = true;
-    const width = containerRef.current?.offsetWidth || 400;
     setSwiping(false);
-    setPhase("exit");
-    setOffset(dir * width);
+    setDragOffset(0);
+    setTarget(delta);
     setTimeout(() => {
-      onSwipe(dir);
-      setPhase("entering");
-      setOffset(-dir * width);
+      // Swap the anchor and re-centre the track in one commit, transitions
+      // suppressed — the page on screen is the same either side of this.
+      setSettling(true);
+      onSwipe(delta);
+      setTarget(null);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          setPhase("idle");
-          setOffset(0);
-          setTimeout(() => { animatingRef.current = false; }, 250);
+          setSettling(false);
+          animatingRef.current = false;
         });
       });
-    }, 200);
+    }, 240);
   }, [onSwipe]);
-
-  useEffect(() => { pendingKey.current = contentKey; }, [contentKey]);
 
   function onTouchStart(e: React.TouchEvent) {
     if (animatingRef.current) return;
@@ -152,7 +223,6 @@ function SwipePager({
     touchDeltaX.current = 0;
     directionLocked.current = null;
     setSwiping(true);
-    setPhase("idle");
   }
   function onTouchMove(e: React.TouchEvent) {
     if (animatingRef.current) return;
@@ -164,36 +234,45 @@ function SwipePager({
     }
     if (directionLocked.current === "vertical") { setSwiping(false); return; }
     touchDeltaX.current = dx;
-    setOffset(dx);
+    setDragOffset(dx);
   }
   function onTouchEnd() {
     if (animatingRef.current || directionLocked.current === "vertical") {
-      setSwiping(false); directionLocked.current = null; setOffset(0); return;
+      setSwiping(false); directionLocked.current = null; setDragOffset(0); return;
     }
     const width = containerRef.current?.offsetWidth || 400;
     const threshold = width * 0.25;
-    if (touchDeltaX.current < -threshold) slide(-1);
-    else if (touchDeltaX.current > threshold) slide(1);
-    else { setSwiping(false); setOffset(0); }
+    if (touchDeltaX.current < -threshold) slide(1);
+    else if (touchDeltaX.current > threshold) slide(-1);
+    else { setSwiping(false); setDragOffset(0); }
     directionLocked.current = null;
   }
 
-  const useTransition = !swiping && phase !== "entering";
+  // Percent while committing (the neighbour is exactly one viewport away),
+  // pixels while the finger is down.
+  const transform = target !== null ? `translateX(${-target * 100}%)` : `translateX(${dragOffset}px)`;
+  const useTransition = !swiping && !settling;
 
   return (
     <div
       ref={containerRef}
-      className={`overflow-hidden ${className || ""}`}
+      className={`overflow-hidden relative ${className || ""}`}
       style={{ touchAction: "pan-y" }}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
       <div
-        className="will-change-transform h-full"
-        style={{ transform: `translateX(${offset}px)`, transition: useTransition ? "transform 0.22s ease-out" : "none" }}
+        className="will-change-transform relative"
+        style={{ transform, transition: useTransition ? "transform 0.24s ease-out" : "none" }}
       >
-        {children}
+        <div key={pageKey(-1)} className="absolute top-0 right-full w-full" aria-hidden>
+          {renderPage(-1)}
+        </div>
+        <div key={pageKey(0)}>{renderPage(0)}</div>
+        <div key={pageKey(1)} className="absolute top-0 left-full w-full" aria-hidden>
+          {renderPage(1)}
+        </div>
       </div>
     </div>
   );
@@ -281,6 +360,232 @@ function ActivityChip({ activity }: { activity: ActivityItem }) {
         </p>
       </div>
     </Link>
+  );
+}
+
+// --- Day view: the full brief for one session ---
+
+const STEP_KIND_LABEL: Record<string, string> = {
+  warmup: "Warm-up", steady: "Steady", work: "Work", recovery: "Recovery", cooldown: "Cool-down",
+};
+
+function stepAmount(s: DetailStep): string {
+  const amount =
+    s.distanceKm != null
+      ? s.distanceKm >= 1 ? `${Number(s.distanceKm.toFixed(2))} km` : `${Math.round(s.distanceKm * 1000)} m`
+      : s.durationMin != null ? `${Math.round(s.durationMin)} min`
+      : "";
+  return [amount, s.pace].filter(Boolean).join(" @ ") || "—";
+}
+
+function StepRow({ step, nested }: { step: DetailStep; nested?: boolean }) {
+  return (
+    <div className="flex items-baseline gap-3 py-1">
+      <span className={`text-xs font-bold flex-shrink-0 ${nested ? "text-moss" : "text-ink"}`}>
+        {step.label || STEP_KIND_LABEL[step.kind] || step.kind}
+      </span>
+      <span className="flex-1 border-b border-dotted border-shade" />
+      <span className="text-xs font-semibold text-moss tabular-nums text-right">{stepAmount(step)}</span>
+    </div>
+  );
+}
+
+/** Warm-up / N × (work, recovery) / cool-down, as the watch will guide it. */
+function StepList({ steps }: { steps: DetailStep[] }) {
+  return (
+    <div>
+      <p className="label-xs">The session</p>
+      <div className="mt-1 border-2 border-shade rounded-xl px-2.5 py-1 bg-paper">
+        {steps.map((s, i) =>
+          s.kind === "repeat" && s.steps?.length ? (
+            <div key={i} className="py-1">
+              <p className="text-xs font-extrabold text-ink tabular-nums">{s.times || 2} ×</p>
+              <div className="pl-3 border-l-2 border-shade ml-1">
+                {s.steps.map((inner, j) => <StepRow key={j} step={inner} nested />)}
+              </div>
+            </div>
+          ) : (
+            <StepRow key={i} step={s} />
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** "2 Aug · 10 km · 5:34/km · HR 148" */
+function comparableLine(c: NonNullable<WorkoutDetail["comparable"]>): string {
+  return [
+    fmt(c.date, { day: "numeric", month: "short" }),
+    c.distanceKm ? `${c.distanceKm.toFixed(1)} km` : null,
+    c.durationMin && !c.distanceKm ? `${Math.round(c.durationMin)} min` : null,
+    c.avgPacePerKm,
+    c.avgHeartRate ? `HR ${c.avgHeartRate}` : null,
+  ].filter(Boolean).join(" · ");
+}
+
+/**
+ * The day view's reason to exist: the target, the structure, why the coach
+ * prescribed it, and the last comparable session to judge it against — none of
+ * which fits in the week view's one-line row.
+ */
+function WorkoutDetailCard({
+  workout,
+  matched,
+  state,
+  detail,
+}: {
+  workout: WorkoutItem;
+  matched: ActivityItem | null;
+  state: WorkoutState;
+  detail: WorkoutDetail | undefined;
+}) {
+  // The range endpoint already carries the description, so the "why" is on
+  // screen before the detail request lands.
+  const description = detail?.workout.description ?? workout.description;
+  const adjustment = detail?.adjustment;
+  const comparable = detail?.comparable;
+  const steps = detail?.workout.steps || [];
+
+  return (
+    <article className="sticker-lg overflow-hidden">
+      <div className="px-3 py-2.5 border-b-2 border-shade flex items-start gap-2">
+        <span
+          className="w-3 h-3 rounded-full border-2 border-ink/60 flex-shrink-0 mt-1"
+          style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }}
+        />
+        <div className="flex-1 min-w-0">
+          <h2 className="text-base font-extrabold text-ink leading-tight">{workout.title}</h2>
+          <p className="label-xs mt-0.5">
+            {fmt(workout.date, { weekday: "short", day: "numeric", month: "short" })} ·{" "}
+            {WORKOUT_TYPE_LABEL[workout.workoutType] || workout.workoutType.replace("_", " ")}
+          </p>
+        </div>
+      </div>
+
+      <div className="px-3 py-2.5 space-y-3">
+        <div>
+          <p className="label-xs">Target</p>
+          <p className="text-sm font-extrabold text-ink tabular-nums">{targetLine(workout)}</p>
+        </div>
+
+        {steps.length > 0 && <StepList steps={steps} />}
+
+        {(description || adjustment) && (
+          <div>
+            <p className="label-xs">Why this session</p>
+            {description && (
+              <p className="text-sm text-ink leading-snug whitespace-pre-wrap">{description}</p>
+            )}
+            {adjustment && (
+              <div className="mt-1.5 border-2 border-ink rounded-xl bg-sun/25 px-2.5 py-1.5">
+                <p className="text-[10px] font-extrabold uppercase tracking-wide text-ink">
+                  Changed {new Date(adjustment.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                </p>
+                <p className="text-xs text-ink font-semibold leading-snug">{adjustment.reason}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {detail === undefined ? (
+          <p className="text-xs text-sage font-semibold">Loading the rest of this session…</p>
+        ) : comparable ? (
+          <div>
+            <p className="label-xs">
+              Last {comparable.sameSessionType ? WORKOUT_TYPE_LABEL[workout.workoutType] || "similar session" : "similar session"}
+            </p>
+            <Link
+              href={`/activity/${comparable.activityId}`}
+              className="block text-sm font-bold text-ink tabular-nums underline decoration-shade decoration-2 underline-offset-2"
+            >
+              {comparableLine(comparable)}
+            </Link>
+          </div>
+        ) : (
+          <div>
+            <p className="label-xs">Last similar session</p>
+            <p className="text-xs text-sage font-semibold">Nothing comparable in the last six months.</p>
+          </div>
+        )}
+      </div>
+
+      {state === "done" ? (
+        matched ? (
+          <Link href={`/activity/${matched.activityId}`} className="block bg-sprout border-t-2 border-ink px-3 py-2 sticker-press">
+            <p className="label-xs text-leaf!">✓ Done</p>
+            <p className="text-sm font-extrabold text-ink tabular-nums">{activityDetail(matched) || matched.name}</p>
+            <p className="text-[10px] text-leaf font-bold">
+              {matched.source === "strava" ? "strava" : "logged"} · tap for the full activity
+            </p>
+          </Link>
+        ) : (
+          <div className="bg-sprout border-t-2 border-ink px-3 py-2">
+            <p className="label-xs text-leaf!">✓ Done</p>
+            <p className="text-sm font-extrabold text-ink">marked complete</p>
+          </div>
+        )
+      ) : state === "missed" ? (
+        <div className="bg-clay-soft border-t-2 border-ink px-3 py-2">
+          <p className="label-xs text-clay!">✗ Missed</p>
+          <p className="text-xs font-bold text-clay">Nothing matching was logged this day.</p>
+        </div>
+      ) : (
+        <Link href={`/plan?w=${workout.workoutId}`} className="block bg-ghost border-t-2 border-ink px-3 py-2 sticker-press">
+          <p className="text-xs font-bold text-moss">
+            {state === "today" ? "Not logged yet — open in the plan →" : "Open in the plan →"}
+          </p>
+        </Link>
+      )}
+    </article>
+  );
+}
+
+function DayView({
+  date,
+  data,
+  today,
+  details,
+  onEventTap,
+}: {
+  date: string;
+  data: { events: EventOccurrence[]; workouts: WorkoutItem[]; activities: ActivityItem[] };
+  today: string;
+  details: Record<string, WorkoutDetail>;
+  onEventTap: (e: EventOccurrence) => void;
+}) {
+  const { rows, extras } = reconcileDay(data.workouts, data.activities, today);
+  return (
+    <div className="space-y-3 pb-2">
+      {data.events.length > 0 && (
+        <div className="space-y-1.5">
+          {data.events.map((e) => <EventChip key={e.occurrenceKey} event={e} onTap={() => onEventTap(e)} />)}
+        </div>
+      )}
+
+      {rows.map(({ workout, matched, state }) => (
+        <WorkoutDetailCard
+          key={workout.workoutId}
+          workout={workout}
+          matched={matched}
+          state={state}
+          detail={details[workout.workoutId]}
+        />
+      ))}
+
+      {rows.length === 0 && (
+        <p className="text-xs text-sage font-semibold py-1">
+          {date < today ? "Nothing was planned for this day." : "Nothing planned for this day."}
+        </p>
+      )}
+
+      {extras.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="label-xs">{rows.length > 0 ? "Also done today" : "Done anyway"}</p>
+          {extras.map((a) => <ActivityChip key={a.activityId} activity={a} />)}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -543,32 +848,52 @@ export default function CalendarView() {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [formOpen, setFormOpen] = useState<EventFormData | null>(null);
   const [detail, setDetail] = useState<EventOccurrence | null>(null);
+  // Per-workout depth for the day view. null = the request failed, so the card
+  // says so instead of waiting forever.
+  const [details, setDetails] = useState<Record<string, WorkoutDetail | null>>({});
+  const detailsRequested = useRef<Set<string>>(new Set());
   const today = todayStr();
 
   // Visible range per view
-  const [rangeStart, rangeEnd] = useMemo(() => {
-    if (view === "day") return [anchor, anchor];
-    if (view === "week") {
-      const ws = startOfWeekStr(anchor);
-      return [ws, addDaysStr(ws, 6)];
-    }
-    const ms = startOfMonthStr(anchor);
-    const gridStart = startOfWeekStr(ms);
-    const nextMonth = addMonthsStr(anchor, 1);
-    const lastDay = addDaysStr(nextMonth, -1);
-    const gridEnd = addDaysStr(startOfWeekStr(lastDay), 6);
-    return [gridStart, gridEnd];
-  }, [view, anchor]);
+  const [rangeStart, rangeEnd] = useMemo(() => rangeFor(view, anchor), [view, anchor]);
+
+  // The pager's neighbours are real pages you can already see mid-swipe, so
+  // their data has to be here before the finger arrives.
+  const [fetchStart, fetchEnd] = useMemo(
+    () => [rangeFor(view, shiftAnchor(view, anchor, -1))[0], rangeFor(view, shiftAnchor(view, anchor, 1))[1]],
+    [view, anchor]
+  );
 
   const fetchData = useCallback(() => {
-    fetch(`/api/events?from=${rangeStart}&to=${rangeEnd}`)
+    fetch(`/api/events?from=${fetchStart}&to=${fetchEnd}`)
       .then((r) => r.json())
       .then((d) => { setEvents(d.events || []); setWorkouts(d.workouts || []); setActivities(d.activities || []); })
       .catch(() => {});
-  }, [rangeStart, rangeEnd]);
+  }, [fetchStart, fetchEnd]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-  useDataChanged(["calendar", "plan", "activities"], fetchData);
+
+  // A plan change rewrites targets and reasons, so the cached depth goes too.
+  const refresh = useCallback(() => {
+    detailsRequested.current.clear();
+    setDetails({});
+    fetchData();
+  }, [fetchData]);
+  useDataChanged(["calendar", "plan", "activities"], refresh);
+
+  // Only the day view shows this much; pulling it for a month of workouts
+  // would be dozens of requests nobody looks at.
+  useEffect(() => {
+    if (view !== "day") return;
+    for (const w of workouts) {
+      if (detailsRequested.current.has(w.workoutId)) continue;
+      detailsRequested.current.add(w.workoutId);
+      fetch(`/api/workouts/${w.workoutId}/detail`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: WorkoutDetail | null) => setDetails((prev) => ({ ...prev, [w.workoutId]: d })))
+        .catch(() => setDetails((prev) => ({ ...prev, [w.workoutId]: null })));
+    }
+  }, [view, workouts]);
 
   useScreenContext(
     {

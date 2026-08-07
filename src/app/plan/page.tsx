@@ -30,7 +30,14 @@ function isoOf(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-const todayStr = isoOf(new Date());
+/**
+ * Computed per call, not cached at module load: this is a PWA people leave open
+ * on a phone, so a module-level constant would still claim yesterday's date
+ * after midnight.
+ */
+function today(): string {
+  return isoOf(new Date());
+}
 
 /** The seven calendar dates of a plan week, keyed the same way as activitiesByDate. */
 function weekDates(startDate: string): string[] {
@@ -53,8 +60,8 @@ function formatWeekRange(startDate: string): string {
 
 function daysUntil(iso: string): number {
   const target = new Date(`${iso.split("T")[0]}T00:00:00`).getTime();
-  const today = new Date(`${todayStr}T00:00:00`).getTime();
-  return Math.round((target - today) / 86_400_000);
+  const todayMs = new Date(`${today()}T00:00:00`).getTime();
+  return Math.round((target - todayMs) / 86_400_000);
 }
 
 // --- Week maths ---
@@ -407,7 +414,7 @@ function PlanPageContent() {
   // weeks match exactly once, so this is a no-op for them.
   const currentWeekIdx = weekList.findLastIndex((w) => {
     const dates = weekDates(w.startDate);
-    return dates[0] <= todayStr && dates[6] >= todayStr;
+    return dates[0] <= today() && dates[6] >= today();
   });
   const currentWeekNum = currentWeekIdx >= 0 ? weekList[currentWeekIdx].weekNumber : undefined;
 
@@ -426,7 +433,7 @@ function PlanPageContent() {
     ? (plan.weeklyTasks || []).filter((t) => t.weekNumber === currentWeekNum)
     : [];
 
-  const notStarted = currentWeekIdx < 0 && todayStr < isoOf(new Date(`${plan.startDate.split("T")[0]}T00:00:00`));
+  const notStarted = currentWeekIdx < 0 && today() < isoOf(new Date(`${plan.startDate.split("T")[0]}T00:00:00`));
 
   return (
     <main className="min-h-screen max-w-2xl mx-auto px-4 pb-28 md:pb-12">

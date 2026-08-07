@@ -209,3 +209,24 @@ export async function resolveCredit(
   }
   return { ok: true };
 }
+
+/**
+ * One line per flexible weekly goal, for the bespoke prompts used by the daily
+ * opener and the morning briefing. Those build their own context rather than
+ * going through buildCoachContext, so without this the coach cannot chase a
+ * shortfall in the two places we decided it should.
+ */
+export async function renderWeeklyGoalsLine(userId: string, timezone: string): Promise<string> {
+  const weekStart = currentWeekStart(timezone);
+  const goals = await reconcileWeek(userId, weekStart);
+  if (goals.length === 0) return "";
+
+  const todayStr = todayInTimezone(timezone);
+  const weekEnd = wallDateString(addDaysWall(weekStart, 6));
+  const daysLeft = Math.max(
+    0,
+    Math.round((parseWall(weekEnd).getTime() - parseWall(todayStr).getTime()) / 86400000)
+  );
+  const parts = goals.map((g) => `${g.label} ${g.done}/${g.target}${g.met ? " ✓" : ""}`);
+  return `\nWeekly goals (${daysLeft} day(s) left this week): ${parts.join(", ")}. These have no fixed day. Mention one only if it is genuinely at risk given the days remaining — never nag, and never ask them to tick anything off.`;
+}

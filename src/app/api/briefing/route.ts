@@ -13,6 +13,7 @@ import { RUN_TYPES } from "@/lib/activity-types";
 import { resolveFeatures } from "@/lib/features";
 import { format, startOfWeek, endOfWeek } from "date-fns";
 import { COACH_MODEL } from "@/lib/models";
+import { renderWeeklyGoalsLine } from "@/lib/weekly-goals";
 
 const anthropic = new Anthropic();
 
@@ -86,6 +87,8 @@ export async function GET(request: NextRequest) {
   if (birthdays.length > 0) {
     dataBlock += `\nUpcoming birthdays: ${birthdays.map((b) => `${b.title} ${b.daysUntil === 0 ? "TODAY" : `in ${b.daysUntil}d`}`).join(", ")}.`;
   }
+
+  dataBlock += await renderWeeklyGoalsLine(userId, profile.timezone);
 
   let content: string;
   try {
