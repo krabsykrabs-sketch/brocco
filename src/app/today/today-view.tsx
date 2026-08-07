@@ -119,7 +119,13 @@ function WorkoutRow({ workout, matched }: { workout: WorkoutItem; matched: Activ
 
   // Strength sessions are playable: deep-link into the guided workout timer
   const isStrength = workout.workoutType === "strength" || workout.activityType === "strength";
-  const href = isStrength && !done ? `/workout?planned=${workout.workoutId}` : matched ? `/activity/${matched.id}` : `/plan?w=${workout.workoutId}`;
+  // Session detail lives in the calendar day view now — the plan tab shows the
+  // arc, not individual workouts.
+  const href = isStrength && !done
+    ? `/workout?planned=${workout.workoutId}`
+    : matched
+      ? `/activity/${matched.id}`
+      : `/calendar?view=day&date=${workout.date}`;
 
   return (
     <Link href={href} className="sticker sticker-press grid grid-cols-2 overflow-hidden">

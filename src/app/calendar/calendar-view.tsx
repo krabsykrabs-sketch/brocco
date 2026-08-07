@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "../nav";
 import { categoryMeta, EVENT_CATEGORY_META, getWorkoutTypeColor } from "@/lib/categories";
@@ -316,7 +317,7 @@ function EventChip({ event, onTap }: { event: EventOccurrence; onTap: () => void
  */
 function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matched: ActivityItem | null; state: WorkoutState }) {
   return (
-    <Link href={matched ? `/activity/${matched.activityId}` : `/plan?w=${workout.workoutId}`} className={`sticker sticker-press grid grid-cols-2 overflow-hidden ${state === "today" ? "shadow-[3px_3px_0_var(--color-brocco)]" : ""}`}>
+    <Link href={matched ? `/activity/${matched.activityId}` : `/calendar?view=day&date=${workout.date}`} className={`sticker sticker-press grid grid-cols-2 overflow-hidden ${state === "today" ? "shadow-[3px_3px_0_var(--color-brocco)]" : ""}`}>
       <div className="px-2.5 py-1.5 border-r-2 border-dashed border-shade min-w-0">
         <p className="label-xs">Planned</p>
         <p className={`text-xs font-bold truncate flex items-center gap-1.5 ${state === "missed" ? "text-moss" : "text-ink"}`}>
@@ -535,7 +536,7 @@ function WorkoutDetailCard({
           <p className="text-xs font-bold text-clay">Nothing matching was logged this day.</p>
         </div>
       ) : (
-        <Link href={`/plan?w=${workout.workoutId}`} className="block bg-ghost border-t-2 border-ink px-3 py-2 sticker-press">
+        <Link href={`/calendar?view=day&date=${workout.date}`} className="block bg-ghost border-t-2 border-ink px-3 py-2 sticker-press">
           <p className="text-xs font-bold text-moss">
             {state === "today" ? "Not logged yet — open in the plan →" : "Open in the plan →"}
           </p>
@@ -845,8 +846,18 @@ function EventDetailSheet({
 // --- Main calendar ---
 
 export default function CalendarView() {
-  const [view, setView] = useState<ViewMode>("week");
-  const [anchor, setAnchor] = useState(todayStr());
+  // Deep link: /calendar?date=yyyy-MM-dd&view=day. Tapping a session anywhere
+  // in the app lands here, because this is where session detail now lives —
+  // the plan tab deliberately no longer renders individual workouts.
+  const params = useSearchParams();
+  const linkedDate = params.get("date");
+  const linkedView = params.get("view");
+  const [view, setView] = useState<ViewMode>(
+    linkedView === "day" || linkedView === "week" || linkedView === "month" ? linkedView : "week"
+  );
+  const [anchor, setAnchor] = useState(
+    linkedDate && /^\d{4}-\d{2}-\d{2}$/.test(linkedDate) ? linkedDate : todayStr()
+  );
   const [events, setEvents] = useState<EventOccurrence[]>([]);
   const [workouts, setWorkouts] = useState<WorkoutItem[]>([]);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
