@@ -66,6 +66,9 @@ model UserProfile {
   // Kitchen staples the user always has in stock (string[]; considered in
   // every recipe suggestion without being listed each time)
   pantryStaples         Json?    @map("pantry_staples") @db.JsonB
+  /// Kit the athlete actually owns — "resistance bands", "16kg kettlebell".
+  /// Brocco prescribes around it instead of assuming a full gym or nothing.
+  trainingEquipment     Json?    @map("training_equipment") @db.JsonB
   // Watch sync via intervals.icu (bridges to COROS/Garmin/…): planned
   // workouts are pushed to the user's intervals.icu calendar, which their
   // watch platform pulls. API key is encrypted like the Strava tokens.

@@ -7,6 +7,7 @@ import {
   weekNumberForDate as weekNumberForPlanDate,
 } from "@/lib/apply-plan";
 import { normalizeUpdates } from "@/lib/apply-plan";
+import { normalizeEquipment } from "@/lib/equipment";
 import { syncWorkoutsInBackground } from "@/lib/intervals-icu";
 import {
   reconcileWeek,
@@ -251,6 +252,12 @@ export const toolDefinitions: Anthropic.Tool[] = [
         years_running: { type: "integer" },
         weekly_km_baseline: { type: "number" },
         goal_race: { type: "string" },
+        training_equipment: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            "Kit the athlete owns, e.g. ['resistance bands', '16kg kettlebell', 'balance board']. REPLACES the stored list, so send the full list, not just the new item — read the current one from EQUIPMENT THE ATHLETE HAS in your context first.",
+        },
         goal_race_date: {
           type: "string",
           description: "ISO date",
@@ -1881,6 +1888,13 @@ async function handleSaveProfile(
   if (input.timezone !== undefined) {
     updateData.timezone = input.timezone as string;
     savedFields.push("timezone");
+  }
+  if (input.training_equipment !== undefined) {
+    // Replaces rather than appends — the tool description says so, and the
+    // normaliser drops blanks and case-insensitive duplicates either way.
+    const equipment = normalizeEquipment(input.training_equipment);
+    updateData.trainingEquipment = equipment;
+    savedFields.push(`equipment (${equipment.length})`);
   }
 
   // Deep-merge coaching_notes_update into existing coaching_notes

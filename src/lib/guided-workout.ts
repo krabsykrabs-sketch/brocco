@@ -308,8 +308,15 @@ export const PRESET_WORKOUTS: PresetWorkout[] = [
           exercises: [
             timed("Calf raises (straight knee)", 40, 15, "Full range, slow down phase"),
             timed("Calf raises (bent knee)", 40, 15, "Targets the soleus — runners' favorite"),
-            timed("Single-leg balance (left)", 30, 5, "Eyes forward, barefoot if possible"),
-            timed("Single-leg balance (right)", 30, 15, "Eyes forward, barefoot if possible"),
+            // Tracing letters turns a static hold into an active proprioceptive
+            // drill: the free leg keeps shifting your centre of mass, so the
+            // standing ankle has to keep correcting. Picking up where you left
+            // off means the alphabet spans the three rounds instead of being
+            // rushed in one.
+            timed("Single-leg balance — write the alphabet (left)", 40, 10,
+              "Trace letters with your free foot, continuing from where you stopped last round. Eyes forward, barefoot if possible"),
+            timed("Single-leg balance — write the alphabet (right)", 40, 15,
+              "Same again on the other leg. Eyes forward, barefoot if possible"),
           ],
         },
       ],

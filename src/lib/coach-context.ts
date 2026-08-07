@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { reconcileWeek, currentWeekStart } from "@/lib/weekly-goals";
+import { normalizeEquipment } from "@/lib/equipment";
 import { subDays, subWeeks, startOfWeek, endOfWeek, format, addDays } from "date-fns";
 import {
   getAgenda,
@@ -681,6 +682,14 @@ This is your top priority in the conversation, ahead of building anything. Their
       ? `\n(No pantry staples saved yet. If the user mentions ingredients they always keep in stock, offer to save them with manage_recipe staples_add.)\n`
       : "";
 
+  // Equipment applies to every athlete, not just the life-planner ones — it is
+  // core coaching input, so it is not gated behind a feature flag.
+  const equipment = normalizeEquipment(profile?.trainingEquipment);
+  const equipmentBlock =
+    equipment.length > 0
+      ? `\nEQUIPMENT THE ATHLETE HAS: ${equipment.join(", ")}. Prescribe strength, mobility and rehab work around this — use what they own, and do not prescribe anything requiring kit that is not on this list. If they mention getting or losing something, update it with save_profile training_equipment (send the FULL list, it replaces).\n`
+      : `\n(No equipment recorded. Assume BODYWEIGHT ONLY for strength and rehab work — no bands, no weights, no machines. If they mention owning something, save the list with save_profile training_equipment.)\n`;
+
   const crossDomainBlock = life.calendar
     ? `\nCROSS-DOMAIN AWARENESS (your signature move):
 You see training AND life in one place — use it. Before adding events, and when the plan changes, check the schedule (context above, or query_schedule for other dates) and flag collisions: "Your long run is Saturday morning but you've got a 7am flight — want me to move the run to Friday?" Mention conflicts proactively; offer a concrete fix; let the user decide. Same for fatigue-vs-life logic: a packed work week or late social events around hard sessions are worth a comment.\n`
@@ -696,7 +705,7 @@ Factor the time of day into everything: at 7am, today's workout simply hasn't ha
 ${accessLine}
 
 ${context}
-${routingBlock}${staplesBlock}${crossDomainBlock}
+${routingBlock}${staplesBlock}${equipmentBlock}${crossDomainBlock}
 COACHING GUIDELINES:`;
 
   return `${identity}

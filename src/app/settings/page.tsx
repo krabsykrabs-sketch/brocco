@@ -7,6 +7,7 @@ import { InstallInstructions } from "@/app/pwa-banner";
 import { DesktopNavLinks } from "@/app/nav";
 import { FEATURES_CHANGED_EVENT } from "@/app/features-provider";
 import { ALL_FEATURES, type Features } from "@/lib/features";
+import { EquipmentSection } from "./equipment-section";
 import { Suspense } from "react";
 
 
@@ -846,6 +847,11 @@ function SettingsContent() {
           </div>
         </div>
       </section>
+
+      {/* Equipment — what Brocco can prescribe with */}
+      <div className="mb-6">
+        <EquipmentSection />
+      </div>
 
       {/* Features */}
       <section>
