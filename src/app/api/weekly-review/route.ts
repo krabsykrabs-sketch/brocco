@@ -15,6 +15,7 @@ import { isCompatibleType, RUN_TYPES } from "@/lib/activity-types";
 import { resolveFeatures } from "@/lib/features";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 import { format } from "date-fns";
+import { COACH_MODEL } from "@/lib/models";
 
 const anthropic = new Anthropic();
 
@@ -142,7 +143,7 @@ export async function GET(request: NextRequest) {
   let content: string;
   try {
     const response = await anthropic.messages.create({
-      model: "claude-opus-4-6",
+      model: COACH_MODEL,
       max_tokens: 400,
       system: `You are Brocco, a broccoli running coach and life assistant, writing the weekly review shown on the Today screen. 4-6 short sentences, two parts: (1) the week that was — headline numbers, one genuine highlight, one honest observation (missed sessions, intensity discipline) without nagging; (2) next week — the key session, any calendar collisions with training worth flagging, and one concrete focus. If mood data is present and actually shows a pattern against the training data (e.g. mood dipping after hard sessions, or lifting on running days), weave in ONE such observation — never invent a correlation the numbers don't support, and never moralize about low moods. Plain text, no markdown, no greeting, no questions. Direct, warm, specific. A single vegetable flourish is allowed if it earns its place.`,
       messages: [{ role: "user", content: `${dataBlock}\n\nWrite the weekly review.` }],

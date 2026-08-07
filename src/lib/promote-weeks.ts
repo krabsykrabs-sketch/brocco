@@ -4,6 +4,7 @@ import { buildCoachContext } from "@/lib/coach-context";
 import { format } from "date-fns";
 import { todayInTimezone, parseWall, addDaysWall } from "@/lib/schedule";
 import { syncWorkoutsInBackground } from "@/lib/intervals-icu";
+import { COACH_MODEL } from "@/lib/models";
 
 const anthropic = new Anthropic();
 
@@ -81,7 +82,7 @@ export async function promoteWeekDetails(userId: string): Promise<{ promoted: nu
     try {
       const response = await anthropic.messages
         .stream({
-          model: "claude-opus-4-6",
+          model: COACH_MODEL,
           max_tokens: 4096,
           system: `You are Brocco, a running coach. Generate detailed workouts for one week of a training plan. Return ONLY a JSON array of workout objects. No other text.
 

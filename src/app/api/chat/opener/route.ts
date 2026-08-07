@@ -7,6 +7,7 @@ import { todayInTimezone, nowInTimezone, dateInTimezone, parseWall, addDaysWall,
 import { groupActivitiesByDay, workoutOutcome, activityDayKey } from "@/lib/plan-progress";
 import { ensureFreshStravaData } from "@/lib/strava-fresh";
 import { groundStatusMarker } from "@/app/api/chat/route";
+import { COACH_MODEL } from "@/lib/models";
 
 const anthropic = new Anthropic();
 
@@ -202,7 +203,7 @@ export async function POST(request: NextRequest) {
   try {
     const response = await anthropic.messages
       .stream({
-        model: "claude-opus-4-6",
+        model: COACH_MODEL,
         max_tokens: 250,
         system: `You are Brocco, a broccoli running coach. Write a brief data-driven training check-in for ${userName}. 2-4 sentences max. Pattern: quick summary of the week so far + highlight something specific (good or concerning) + what's coming up + open question. Be direct and specific — reference actual numbers. Don't say "Hello" or generic greetings. Today is ${format(parseWall(todayStr), "EEEE, MMMM d, yyyy")} and the current LOCAL TIME is ${timeNow} — never treat today's still-pending workout as missed or overdue. End with a status line: [STATUS:question]your question[/STATUS] or [STATUS:info]key insight[/STATUS].`,
         messages: [

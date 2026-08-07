@@ -4,6 +4,7 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { validateRecipeInput, serializeRecipe } from "@/lib/recipes";
+import { UTILITY_MODEL } from "@/lib/models";
 
 const anthropic = new Anthropic();
 
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-5",
+      model: UTILITY_MODEL,
       max_tokens: 3000,
       system: `You extract recipes from photos of cookbook pages. Return ONLY a JSON object:
 {

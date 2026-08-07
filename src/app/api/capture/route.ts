@@ -7,6 +7,7 @@ import { toolsForFeatures, handleToolCall } from "@/lib/tools";
 import { groundStatusMarker, buildAssistantContent } from "@/app/api/chat/route";
 import { resolveFeatures } from "@/lib/features";
 import { nowInTimezone } from "@/lib/schedule";
+import { COACH_MODEL } from "@/lib/models";
 
 const anthropic = new Anthropic();
 
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest) {
     const MAX_ITERATIONS = 4;
     for (let i = 0; i < MAX_ITERATIONS; i++) {
       const response = await anthropic.messages.create({
-        model: "claude-opus-4-6",
+        model: COACH_MODEL,
         max_tokens: 2000,
         system: systemPrompt,
         messages: currentMessages,

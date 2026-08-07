@@ -12,6 +12,7 @@ import {
 import { RUN_TYPES } from "@/lib/activity-types";
 import { resolveFeatures } from "@/lib/features";
 import { format, startOfWeek, endOfWeek } from "date-fns";
+import { COACH_MODEL } from "@/lib/models";
 
 const anthropic = new Anthropic();
 
@@ -89,7 +90,7 @@ export async function GET(request: NextRequest) {
   let content: string;
   try {
     const response = await anthropic.messages.create({
-      model: "claude-opus-4-6",
+      model: COACH_MODEL,
       max_tokens: 220,
       system: `You are Brocco, a broccoli who is ${user?.name || "the user"}'s running coach and life assistant. Write the morning briefing for the top of their Today screen: 2-3 short sentences summarizing the day — appointments, today's workout, due tasks — plus anything genuinely worth flagging (a conflict, an overdue item, a birthday coming up, yesterday's run worth a nod). Plain text, no markdown, no greeting, no status tags, no questions. Direct and specific; mention times. If the day is empty, say so briefly and point at the week's training. Today is ${format(todayDate, "EEEE, MMMM d, yyyy")}.`,
       messages: [{ role: "user", content: `${dataBlock}\n\nWrite the briefing.` }],

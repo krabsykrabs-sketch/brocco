@@ -6,6 +6,7 @@ import { buildCoachContext, buildSystemPrompt } from "@/lib/coach-context";
 import { toolsForFeatures, handleToolCall } from "@/lib/tools";
 import { resolveFeatures } from "@/lib/features";
 import { ensureFreshStravaData } from "@/lib/strava-fresh";
+import { COACH_MODEL } from "@/lib/models";
 
 const anthropic = new Anthropic();
 
@@ -39,8 +40,6 @@ export async function POST(request: NextRequest) {
       headers: { "Content-Type": "application/json" },
     });
   }
-
-  const model = "claude-opus-4-6";
 
   // Pull anything new from Strava before building context (no-op if synced
   // in the last 15 min) — the coach must never claim a workout didn't
@@ -152,7 +151,7 @@ export async function POST(request: NextRequest) {
           assistantMsg.id,
           controller,
           encoder,
-          model,
+          COACH_MODEL,
           tools
         );
 
@@ -400,7 +399,7 @@ async function generateTitle(sessionId: string, userMessage: string, assistantRe
   try {
     const response = await anthropic.messages
       .stream({
-        model: "claude-opus-4-6",
+        model: COACH_MODEL,
         max_tokens: 30,
         messages: [
           {

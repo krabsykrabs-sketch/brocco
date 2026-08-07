@@ -4,6 +4,7 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { validateWorkoutDefinition, estimateDurationMin, type WorkoutDefinition } from "@/lib/guided-workout";
+import { UTILITY_MODEL } from "@/lib/models";
 
 const anthropic = new Anthropic();
 
@@ -90,7 +91,7 @@ export async function POST(request: NextRequest) {
   for (let attempt = 0; attempt < 2 && !def; attempt++) {
     try {
       const response = await anthropic.messages.create({
-        model: "claude-sonnet-5",
+        model: UTILITY_MODEL,
         max_tokens: 2000,
         system: `You are Brocco, a running coach designing strength & conditioning sessions for runners. ${DEFINITION_SPEC}`,
         messages: [
