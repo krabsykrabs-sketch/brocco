@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { reconcileWeek, currentWeekStart } from "@/lib/weekly-goals";
 import { subDays, subWeeks, startOfWeek, endOfWeek, format, addDays } from "date-fns";
 import {
   getAgenda,
@@ -103,6 +104,9 @@ export async function buildCoachContext(userId: string): Promise<string> {
   // --- Current plan (this week reconciled + next 2 weeks) ---
   const planBlock = await buildPlanContext(userId, profile.timezone);
 
+  // --- Flexible weekly goals (days unspecified, counted from activities) ---
+  const goalsBlock = await buildWeeklyGoalsContext(userId, profile.timezone);
+
   // --- Recent activities (last 14 days, summarized) ---
   let activitiesBlock = "RECENT TRAINING (last 14 days):\n";
   if (recentActivities.length === 0) {
@@ -151,7 +155,7 @@ export async function buildCoachContext(userId: string): Promise<string> {
   const features = resolveFeatures(profile.features);
   const blocks = [profileBlock];
   if (coachingNotesBlock) blocks.push(coachingNotesBlock);
-  blocks.push(planBlock, activitiesBlock, loadBlock, healthBlock);
+  blocks.push(planBlock, goalsBlock, activitiesBlock, loadBlock, healthBlock);
   if (features.calendar) {
     blocks.push(await buildLifeContext(userId, profile.timezone, features));
   }
@@ -252,6 +256,45 @@ function formatLapAnnotation(raw: unknown): string {
     .filter(Boolean);
   if (rendered.length < 3) return "";
   return ` [laps: ${rendered.join(", ")}]`;
+}
+
+/**
+ * This week's flexible goals with live progress, plus any session the coach
+ * still needs to attribute. Days-to-go is spelled out so the coach can judge
+ * whether a shortfall is worth raising yet.
+ */
+async function buildWeeklyGoalsContext(userId: string, timezone: string): Promise<string> {
+  const weekStart = currentWeekStart(timezone);
+  const goals = await reconcileWeek(userId, weekStart);
+  if (goals.length === 0) {
+    return "WEEKLY GOALS:\nNone set. These are 'do X N times this week' targets with no fixed day — offer one if the athlete mentions strength, mobility or rehab work they keep not getting to (manage_weekly_goals).";
+  }
+
+  const todayStr = todayInTimezone(timezone);
+  const weekEnd = wallDateString(addDaysWall(weekStart, 6));
+  const daysLeft = Math.max(
+    0,
+    Math.round((parseWall(weekEnd).getTime() - parseWall(todayStr).getTime()) / 86400000)
+  );
+
+  let block = `WEEKLY GOALS (week of ${wallDateString(weekStart)}, ${daysLeft} day(s) left):\n`;
+  block += goals
+    .map((g) => {
+      const state = g.met ? "✓ MET" : `${g.target - g.done} to go`;
+      const manual = g.autoTracked ? "" : " [not auto-counted — ask how it went]";
+      return `- ${g.label} (${g.category}): ${g.done}/${g.target} — ${state}${manual}`;
+    })
+    .join("\n");
+
+  const pending = goals.flatMap((g) =>
+    g.provisional.map((p) => `  - "${p.name}" on ${p.date} (activity id: ${p.activityId}) counted towards "${g.label}"`)
+  );
+  if (pending.length > 0) {
+    block +=
+      "\n\nSessions counted provisionally — more than one goal could have claimed them. They ARE already counted; confirm when it comes up naturally and use manage_weekly_goals action 'resolve' to move or clear one. Don't interrogate the athlete about every session:\n" +
+      pending.join("\n");
+  }
+  return block;
 }
 
 async function buildPlanContext(userId: string, timezone: string): Promise<string> {
@@ -736,6 +779,7 @@ ADJUSTMENT RULES (rolling horizon):
 - If a tool comes back with an error or reports that changes were not applied, say so plainly and tell the runner what failed. NEVER repeat a claim that something was applied when the tool said otherwise. Re-read the workout ids from the plan context above and try once with the correct id, or tell the runner you couldn't make the change.
 
 AVAILABLE TOOLS:
+- manage_weekly_goals: flexible "N times this week" targets with no fixed day — strength, mobility, rehab (applied immediately)
 - adjust_plan: micro-adjust workouts within the current week (applied immediately)
 - modify_plan: apply structural plan changes in the detail window (applied immediately — ask first!)
 - generate_plan: create a new training plan (applied immediately — ask first!)
@@ -750,6 +794,14 @@ ${[
   life.kitchen && "- manage_recipe: search/get/save/delete recipes in their kitchen library; log when they cooked one",
   life.calendar && "- query_schedule: read calendar + workouts for any date range",
 ].filter(Boolean).join("\n")}
+
+FLEXIBLE WEEKLY GOALS:
+Not everything belongs on a specific day. Strength, mobility and rehab work usually just needs to happen N times a week — the day is the athlete's business. Use manage_weekly_goals for those, and plannable dated workouts for everything where the day genuinely matters (long runs, quality sessions, anything the rest of the week is built around).
+- Offer a goal when the athlete describes work they keep meaning to do — "I should do my ankle exercises" — rather than scheduling it onto days they will then miss.
+- Progress counts itself from their activities. NEVER ask them to tick something off, and never ask "did you do your strength this week?" when the context above already tells you.
+- The WEEKLY GOALS block gives live progress and days remaining. Chase a shortfall where it belongs: in the daily opener and the briefing, not in the middle of an unrelated conversation. Judge by days left — 1/4 on Tuesday is fine, 1/4 on Saturday is worth raising.
+- A goal that ends the week unmet is worth one honest sentence and a question about what got in the way. Then factor it into next week rather than repeating the same target blindly.
+- Sessions marked provisional are ALREADY counted. Confirm them when it comes up naturally; don't interrogate the athlete session by session.
 
 STATUS LINES:
 At the end of every message, include a status line that summarizes the key takeaway or next step. Wrap it in a tag like this:

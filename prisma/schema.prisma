@@ -35,6 +35,7 @@ model User {
   journalEntries    JournalEntry[]
   guidedWorkouts    GuidedWorkout[]
   recipes           Recipe[]
+  weeklyGoals       WeeklyGoal[]
 
   @@map("users")
 }
@@ -245,6 +246,7 @@ model Activity {
   createdAt         DateTime      @default(now()) @map("created_at")
 
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goalCredits     WeeklyGoalCredit[]
 
   @@unique([userId, stravaId])
   @@map("activities")
@@ -664,4 +666,53 @@ model InviteCode {
   redeemer User? @relation("UsedInvite", fields: [usedBy], references: [id], onDelete: SetNull)
 
   @@map("invite_codes")
+}
+
+// ============================================================
+// Flexible weekly goals (August 2026)
+//
+// A target that says "do this N times this week" without pinning it to days —
+// how strength, mobility and rehab work actually happen. Deliberately scoped to
+// the USER, not to a plan, so someone who lifts and never runs can use them.
+// Progress is credited from real activities rather than ticked by hand.
+// ============================================================
+
+model WeeklyGoal {
+  id          String       @id @default(uuid()) @db.Uuid
+  userId      String       @map("user_id") @db.Uuid
+  /// Monday of the week this goal applies to, in the user's timezone.
+  weekStart   DateTime     @map("week_start") @db.Date
+  category    TaskCategory
+  /// What the athlete calls it — "Ankle strength", "Core & hips".
+  label       String
+  targetCount Int          @map("target_count")
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  user    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credits WeeklyGoalCredit[]
+
+  @@unique([userId, weekStart, label])
+  @@index([userId, weekStart])
+  @@map("weekly_goals")
+}
+
+/// One activity counted towards one goal. Credits are written eagerly — a
+/// session counts the moment it appears rather than waiting to be attributed —
+/// and flagged `provisional` when more than one goal could have claimed it, so
+/// the coach knows to confirm. `dismissed` records "asked and rejected", which
+/// stops the reconciler re-crediting it on the next pass.
+model WeeklyGoalCredit {
+  id          String   @id @default(uuid()) @db.Uuid
+  goalId      String   @map("goal_id") @db.Uuid
+  activityId  String   @map("activity_id") @db.Uuid
+  provisional Boolean  @default(false)
+  dismissed   Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  goal     WeeklyGoal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  activity Activity   @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@unique([goalId, activityId])
+  @@index([activityId])
+  @@map("weekly_goal_credits")
 }

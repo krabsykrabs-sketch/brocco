@@ -8,6 +8,12 @@ import {
 } from "@/lib/apply-plan";
 import { normalizeUpdates } from "@/lib/apply-plan";
 import { syncWorkoutsInBackground } from "@/lib/intervals-icu";
+import {
+  reconcileWeek,
+  currentWeekStart,
+  weekStartOf,
+  resolveCredit,
+} from "@/lib/weekly-goals";
 
 // --- Tool definitions for the Anthropic API ---
 
@@ -363,6 +369,37 @@ export const toolDefinitions: Anthropic.Tool[] = [
     },
   },
   {
+    name: "manage_weekly_goals",
+    description:
+      "Flexible weekly training goals — 'do this N times this week' with no fixed days. Use for strength, mobility, rehab and any work where WHEN it happens doesn't matter, only HOW OFTEN. Progress is counted automatically from the athlete's activities (Strava, manual logs, in-app workouts), so never ask them to tick anything off. Goals belong to the athlete, not to a training plan, and reset each week. Use action 'set' to create or update one, 'list' to read current progress before commenting on it, 'remove' to drop one, and 'resolve' when a session could have counted towards more than one goal and you need to say which (or that it counts for none).",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["set", "list", "remove", "resolve"] },
+        label: {
+          type: "string",
+          description: "For set/remove: what the athlete calls it, e.g. 'Ankle strength'. Reused as the identity of the goal within a week.",
+        },
+        category: {
+          type: "string",
+          enum: ["strength", "mobility", "nutrition", "recovery", "other"],
+          description: "For set. Determines which activities can count: strength counts WeightTraining/Crossfit/Workout, mobility counts Yoga/Pilates/Workout, recovery counts Yoga/Walk/Hike. nutrition and other are tracked but never auto-counted.",
+        },
+        target_count: { type: "integer", description: "For set: how many sessions this week." },
+        week_start: {
+          type: "string",
+          description: "Optional ISO date (Monday). Defaults to the current week — use that unless the athlete is explicitly planning ahead.",
+        },
+        activity_id: { type: "string", description: "For resolve: the session in question." },
+        goal_id: {
+          type: "string",
+          description: "For resolve: the goal it should count towards. Omit to count it towards none.",
+        },
+      },
+      required: ["action"],
+    },
+  },
+  {
     name: "add_weekly_tasks",
     description:
       "Add weekly tasks (non-run activities) to the training plan. Use for strength work, mobility, nutrition reminders, recovery protocols. These appear as a checklist the user can tick off. Only works when an active plan exists.",
@@ -579,6 +616,8 @@ export async function handleToolCall(
       return handleSaveProfile(input, userId);
     case "generate_plan":
       return handleGeneratePlan(input, userId, chatMessageId);
+    case "manage_weekly_goals":
+      return handleManageWeeklyGoals(input, userId);
     case "add_weekly_tasks":
       return handleAddWeeklyTasks(input, userId);
     case "manage_event":
@@ -1877,4 +1916,89 @@ async function handleSaveProfile(
       message: `Profile updated: ${savedFields.join(", ")}`,
     },
   };
+}
+
+// --- manage_weekly_goals ---
+
+async function handleManageWeeklyGoals(
+  input: Record<string, unknown>,
+  userId: string
+): Promise<ToolResult> {
+  const action = String(input.action || "");
+  const profile = await prisma.userProfile.findUnique({
+    where: { userId },
+    select: { timezone: true },
+  });
+  const tz = profile?.timezone || "Europe/Berlin";
+  const weekStart = input.week_start
+    ? weekStartOf(String(input.week_start))
+    : currentWeekStart(tz);
+
+  if (action === "list") {
+    const goals = await reconcileWeek(userId, weekStart);
+    // Read-only: no notification, so it never licenses a "done" claim.
+    return { success: true, data: { weekStart: wallDateString(weekStart), goals } };
+  }
+
+  if (action === "set") {
+    const label = String(input.label || "").trim();
+    const category = String(input.category || "");
+    const target = Number(input.target_count);
+    if (!label) return { success: false, error: "set needs a `label`." };
+    if (!["strength", "mobility", "nutrition", "recovery", "other"].includes(category)) {
+      return { success: false, error: `\`category\` must be one of strength, mobility, nutrition, recovery, other — got "${category}".` };
+    }
+    if (!Number.isFinite(target) || target < 1) {
+      return { success: false, error: "set needs a `target_count` of at least 1." };
+    }
+
+    const goal = await prisma.weeklyGoal.upsert({
+      where: { userId_weekStart_label: { userId, weekStart, label } },
+      create: { userId, weekStart, label, category: category as never, targetCount: target },
+      update: { category: category as never, targetCount: target },
+    });
+    const goals = await reconcileWeek(userId, weekStart);
+    const mine = goals.find((g) => g.id === goal.id);
+
+    return {
+      success: true,
+      data: { goal: mine, weekStart: wallDateString(weekStart) },
+      notification: {
+        type: "goal_set",
+        message: `Weekly goal: ${label} ${target}× this week${mine && mine.done > 0 ? ` (${mine.done} already done)` : ""}`,
+      },
+    };
+  }
+
+  if (action === "remove") {
+    const label = String(input.label || "").trim();
+    if (!label) return { success: false, error: "remove needs a `label`." };
+    const { count } = await prisma.weeklyGoal.deleteMany({ where: { userId, weekStart, label } });
+    if (count === 0) {
+      return { success: false, error: `No goal called "${label}" in the week starting ${wallDateString(weekStart)}. Nothing was removed.` };
+    }
+    return {
+      success: true,
+      data: { removed: label },
+      notification: { type: "goal_removed", message: `Removed weekly goal: ${label}` },
+    };
+  }
+
+  if (action === "resolve") {
+    const activityId = String(input.activity_id || "");
+    if (!activityId) return { success: false, error: "resolve needs an `activity_id`." };
+    const goalId = input.goal_id ? String(input.goal_id) : null;
+    const res = await resolveCredit(userId, activityId, goalId);
+    if (!res.ok) return { success: false, error: res.error };
+    return {
+      success: true,
+      data: { activityId, goalId },
+      notification: {
+        type: "goal_set",
+        message: goalId ? "Session attributed to the right goal" : "Session no longer counts towards a goal",
+      },
+    };
+  }
+
+  return { success: false, error: `Unknown action "${action}". Use set, list, remove or resolve.` };
 }
