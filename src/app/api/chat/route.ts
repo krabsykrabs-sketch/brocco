@@ -157,11 +157,12 @@ export async function POST(request: NextRequest) {
         );
 
         // Update assistant message with final text
+        const groundedText = groundStatusMarker(result.fullText, result.toolLog);
         await prisma.chatMessage.update({
           where: { id: assistantMsg.id },
           data: {
-            content: buildAssistantContent(result.fullText, result.toolLog),
-            displayText: result.fullText,
+            content: buildAssistantContent(groundedText, result.toolLog),
+            displayText: groundedText,
           },
         });
 
@@ -177,7 +178,12 @@ export async function POST(request: NextRequest) {
           data: { updatedAt: new Date() },
         });
 
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true })}\n\n`));
+        // Only sent when grounding actually rewrote the status marker, so the
+        // client replaces the streamed text solely in the case that needs it.
+        const donePayload: Record<string, unknown> = { done: true };
+        if (groundedText !== result.fullText) donePayload.finalText = groundedText;
+
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(donePayload)}\n\n`));
         controller.close();
       } catch (err) {
         console.error("Chat stream error:", err);
@@ -213,12 +219,31 @@ interface ToolUseResult {
   toolLog: string[];
 }
 
+// Read-only tools answer questions; they never constitute "completing an
+// action", so a turn that only queried has not earned a [STATUS:done].
+const READ_ONLY_TOOLS = ["query_data", "query_schedule"];
+
+/**
+ * A [STATUS:done] marker asserts to the user that an action was carried out —
+ * the UI renders it as a green "completed" strip. The model writes it itself,
+ * with nothing checking it, so it happily claims "Weekend adjusted" on a turn
+ * where it described changes and never called a tool. Downgrade the claim to
+ * :info unless a mutating tool actually succeeded this turn.
+ */
+export function groundStatusMarker(fullText: string, toolLog: string[]): string {
+  const appliedSomething = toolLog.some(
+    (line) => line.includes("→ OK") && !READ_ONLY_TOOLS.some((t) => line.startsWith(`${t} `))
+  );
+  if (appliedSomething) return fullText;
+  return fullText.replace(/\[STATUS:done\]/gi, "[STATUS:info]");
+}
+
 // Chat history is replayed as text only, so a tool call and its result would
 // otherwise vanish the moment the turn ends — leaving the coach to re-assert
 // that it made a change it has no record of making (or failing to make).
 // This block is stored in `content` but never in `displayText`, so the model
 // sees it on replay and the user never does.
-function buildAssistantContent(fullText: string, toolLog: string[]) {
+export function buildAssistantContent(fullText: string, toolLog: string[]) {
   const blocks: Array<{ type: "text"; text: string }> = [{ type: "text", text: fullText }];
   if (toolLog.length > 0) {
     blocks.push({

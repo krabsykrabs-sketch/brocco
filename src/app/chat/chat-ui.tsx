@@ -401,10 +401,13 @@ export default function ChatUI({
                   setStreamingNotifications([...notifications]);
                 }
                 if (d.done) {
+                  // finalText arrives when the server corrected the status
+                  // marker (a [STATUS:done] on a turn that changed nothing).
+                  const finalText = (d.finalText as string) ?? accumulated;
                   setMessages(prev => [...prev, {
                     id: `assistant-${Date.now()}`,
                     role: "assistant",
-                    displayText: accumulated || null,
+                    displayText: finalText || null,
                     toolNotifications: notifications.length > 0 ? notifications : undefined,
                   }]);
                   setStreamingText("");
@@ -536,12 +539,15 @@ export default function ChatUI({
               setStreamingNotifications([...notifications]);
             }
             if (data.done) {
+              // finalText arrives when the server corrected the status marker
+              // (a [STATUS:done] on a turn that changed nothing).
+              const finalText = (data.finalText as string) ?? accumulated;
               setMessages((prev) => [
                 ...prev,
                 {
                   id: `assistant-${Date.now()}`,
                   role: "assistant",
-                  displayText: accumulated || null,
+                  displayText: finalText || null,
                   toolNotifications: notifications.length > 0 ? notifications : undefined,
                 },
               ]);

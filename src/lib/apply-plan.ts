@@ -136,6 +136,36 @@ export async function applyPlanGeneration(
   return { planId: plan.id, planName: plan.name };
 }
 
+// Keys `update` actually writes. Anything else is rejected rather than
+// dropped, so a caller never gets a success for a change that didn't happen.
+const UPDATABLE = [
+  "distance",
+  "pace",
+  "duration",
+  "workout_type",
+  "title",
+  "description",
+  "steps",
+  "date",
+];
+
+/** Plan week containing `date`, so a moved workout keeps a correct weekNumber. */
+async function weekNumberForDate(userId: string, date: Date): Promise<number | null> {
+  const plan = await prisma.plan.findFirst({ where: { userId, status: "active" }, select: { id: true } });
+  if (!plan) return null;
+  const weeks = await prisma.planWeek.findMany({
+    where: { planId: plan.id },
+    orderBy: { weekNumber: "asc" },
+    select: { weekNumber: true, startDate: true },
+  });
+  for (const w of weeks) {
+    const start = new Date(w.startDate);
+    const end = new Date(start.getTime() + 6 * 86400000);
+    if (date >= start && date <= end) return w.weekNumber;
+  }
+  return null;
+}
+
 export async function applyPlanModifications(
   userId: string,
   changes: Array<{
@@ -161,6 +191,22 @@ export async function applyPlanModifications(
     // Every mutation is scoped through the plan's userId; count===0 means
     // the workout doesn't exist OR belongs to someone else, either way a no-op.
     if (c.action === "update" && c.workout_id) {
+      // An unrecognised key means the caller asked for something this action
+      // cannot do. Silently dropping it applies part of the requested change
+      // and reports it as fully done — reject the whole change instead.
+      const unknown = Object.keys(c.updates || {}).filter((k) => !UPDATABLE.includes(k));
+      if (unknown.length > 0) {
+        results.push({
+          action: "update",
+          workoutId: c.workout_id,
+          success: false,
+          error: `update does not support ${unknown
+            .map((k) => `\`${k}\``)
+            .join(", ")}. Nothing was changed. Supported: ${UPDATABLE.join(", ")}.`,
+        });
+        continue;
+      }
+
       const updateData: Record<string, unknown> = {};
       if (c.updates) {
         if (c.updates.distance !== undefined) updateData.targetDistanceKm = Number(c.updates.distance);
@@ -170,6 +216,24 @@ export async function applyPlanModifications(
         if (c.updates.title !== undefined) updateData.title = c.updates.title;
         if (c.updates.description !== undefined) updateData.description = c.updates.description;
         if (c.updates.steps !== undefined) updateData.steps = c.updates.steps;
+        // modify_plan's whole purpose includes "moving workouts across weeks",
+        // so `date` has to actually move the row — and carry week_number with
+        // it, or the workout lands in the right day but the wrong plan week.
+        if (c.updates.date !== undefined) {
+          const newDate = new Date(String(c.updates.date));
+          if (Number.isNaN(newDate.getTime())) {
+            results.push({
+              action: "update",
+              workoutId: c.workout_id,
+              success: false,
+              error: `"${String(c.updates.date)}" is not a valid ISO date. Nothing was changed.`,
+            });
+            continue;
+          }
+          updateData.date = newDate;
+          const week = await weekNumberForDate(userId, newDate);
+          if (week !== null) updateData.weekNumber = week;
+        }
       }
       updateData.status = "modified";
       const { count } = await prisma.plannedWorkout.updateMany({

@@ -952,6 +952,23 @@ async function handleAdjustPlan(
 
     const updateData: Record<string, unknown> = {};
     if (adj.action === "update_targets" && adj.updates) {
+      // An unrecognised key means the caller asked for something this action
+      // cannot do (most often `date`). Silently dropping it applies half the
+      // requested change and reports it as fully done — reject instead.
+      const unknown = Object.keys(adj.updates).filter(
+        (k) => !["distance", "pace", "duration"].includes(k)
+      );
+      if (unknown.length > 0) {
+        results.push({
+          workoutId: adj.workout_id,
+          action: adj.action,
+          success: false,
+          error:
+            `update_targets does not support ${unknown.map((k) => `\`${k}\``).join(", ")} — it only changes distance, pace and duration. ` +
+            `Nothing was changed. To move a workout to another date use action "swap_rest_day" with updates.date, or modify_plan for changes beyond this week.`,
+        });
+        continue;
+      }
       if (adj.updates.distance !== undefined) updateData.targetDistanceKm = Number(adj.updates.distance);
       if (adj.updates.pace !== undefined) updateData.targetPace = String(adj.updates.pace);
       if (adj.updates.duration !== undefined) updateData.targetDurationMin = Number(adj.updates.duration);
