@@ -16,7 +16,7 @@ export default async function MorePage() {
   const features = resolveFeatures(profile?.features);
 
   const items = [
-    { name: "Training Plan", href: "/plan", emoji: "📅", desc: "Phases, weeks, and workouts" },
+    { name: "Training Plan", href: "/plan", emoji: "📅", desc: "Phases, weekly targets, race countdown" },
     { name: "History", href: "/history", emoji: "🏃", desc: "All past activities" },
     { name: "Workouts", href: "/workout", emoji: "💪", desc: "Guided S&C sessions and interval timers" },
     ...(features.kitchen ? [{ name: "Kitchen", href: "/kitchen", emoji: "🍳", desc: "Recipe library, photo scans, cooking ideas" }] : []),
