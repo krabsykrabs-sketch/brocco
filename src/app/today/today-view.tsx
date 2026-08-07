@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { PageHeader } from "../nav";
 import { categoryMeta, getWorkoutTypeColor } from "@/lib/categories";
+import { useWeeklyGoals, WeeklyGoalsTracker } from "@/app/weekly-goals-tracker";
 import { useScreenContext, useDataChanged } from "@/lib/capture-context";
 import { useFeatures } from "../features-provider";
 import { anyLifeFeature } from "@/lib/features";
@@ -252,7 +253,7 @@ function WeeklyReviewCard() {
 
 function BriefingCard({ briefing, loading }: { briefing: string | null; loading: boolean }) {
   const [expanded, setExpanded] = useState(false);
-  const text = briefing || "Have a good one. Speak into the mic to add anything to your day.";
+  const text = briefing || "Have a good one. Open the chat if you want to talk anything through.";
   const isLong = text.length > 120;
 
   return (
@@ -320,6 +321,7 @@ function WeekCard({ data }: { data: TodayData }) {
 
 export default function TodayView() {
   const features = useFeatures();
+  const goals = useWeeklyGoals();
   const [data, setData] = useState<TodayData | null>(null);
   const [briefing, setBriefing] = useState<string | null>(null);
   const [briefingLoading, setBriefingLoading] = useState(true);
@@ -501,47 +503,18 @@ export default function TodayView() {
             </p>
             <p className="text-moss text-xs mt-1 font-semibold">
               {anyLifeFeature(features)
-                ? "Tap the mic and tell Brocco what's coming up."
+                ? "Nothing scheduled. Ask Brocco if you want to add something."
                 : "Rest up, or chat with Brocco about the week."}
             </p>
           </div>
         )}
       </section>
 
-      {/* Week summary */}
-      <section className="mb-4">
+      {/* Week summary — the "am I on track this week" half of this tab */}
+      <section className="mb-4 space-y-2">
         <WeekCard data={data} />
+        <WeeklyGoalsTracker goals={goals} />
       </section>
-
-      {/* Coming up */}
-      {(data.upcoming.events.length > 0 || data.upcoming.workouts.length > 0) && (
-        <section className="mb-4">
-          <h2 className="label-xs mb-2">Coming up</h2>
-          <div className="space-y-1">
-            {[...data.upcoming.events.map((e) => ({
-                key: e.occurrenceKey, date: e.date, label: e.title,
-                detail: e.allDay ? "" : e.start.slice(11, 16), color: categoryMeta(e.category).color,
-              })),
-              ...data.upcoming.workouts.map((w) => ({
-                key: w.workoutId, date: w.date, label: w.title,
-                detail: w.targetDistanceKm ? `${w.targetDistanceKm}km` : "", color: getWorkoutTypeColor(w.workoutType),
-              })),
-            ]
-              .sort((a, b) => a.date.localeCompare(b.date))
-              .slice(0, 5)
-              .map((item) => (
-                <div key={item.key} className="flex items-center gap-2.5 px-1 py-1">
-                  <span className="text-xs text-sage font-bold w-16 flex-shrink-0">
-                    {new Date(`${item.date}T00:00:00`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric" })}
-                  </span>
-                  <div className="w-2 h-2 rounded-full border border-ink/60 flex-shrink-0" style={{ backgroundColor: item.color }} />
-                  <span className="text-xs text-ink font-semibold truncate flex-1">{item.label}</span>
-                  {item.detail && <span className="text-xs text-sage font-bold flex-shrink-0 tabular-nums">{item.detail}</span>}
-                </div>
-              ))}
-          </div>
-        </section>
-      )}
 
       {/* Ask Brocco */}
       <section>

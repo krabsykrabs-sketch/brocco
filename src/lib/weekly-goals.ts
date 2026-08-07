@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/db";
 import { parseWall, wallDateString, addDaysWall, todayInTimezone } from "@/lib/schedule";
-import type { TaskCategory } from "@prisma/client";
 
 /**
  * Flexible weekly goals — "do this N times this week", days unspecified.
