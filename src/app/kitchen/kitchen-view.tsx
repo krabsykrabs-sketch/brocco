@@ -354,6 +354,10 @@ export default function KitchenView() {
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
   const fileRef = useRef<HTMLInputElement>(null);
+  // Separate input without `capture`, so desktop (and mobile "photo library")
+  // can pick existing images — screenshots of a recipe are often easier than
+  // photographing a page.
+  const uploadRef = useRef<HTMLInputElement>(null);
 
   // Release thumbnail object URLs when leaving the page mid-staging
   useEffect(() => {
@@ -377,7 +381,9 @@ export default function KitchenView() {
     // Snapshot NOW: a FileList is a live view into the input, and the value
     // reset below empties it before React's state updater runs.
     const picked = files ? Array.from(files) : [];
+    // Clear both pickers: either one may have supplied these files.
     if (fileRef.current) fileRef.current.value = "";
+    if (uploadRef.current) uploadRef.current.value = "";
     if (picked.length === 0) return;
     setPages((prev) => {
       const next = [...prev];
@@ -467,6 +473,25 @@ export default function KitchenView() {
           className="hidden"
           aria-label="Scan recipe photos"
         />
+        <input
+          ref={uploadRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={(e) => addFiles(e.target.files)}
+          className="hidden"
+          aria-label="Upload recipe images"
+        />
+
+        {pages.length < MAX_PAGES && (
+          <button
+            onClick={() => uploadRef.current?.click()}
+            disabled={scanning}
+            className="w-full text-xs font-bold text-moss underline underline-offset-4 decoration-shade py-1 disabled:opacity-60"
+          >
+            or upload images from your device
+          </button>
+        )}
 
         {/* Staged pages tray — collect all pages of a recipe, then scan once */}
         {pages.length > 0 && (

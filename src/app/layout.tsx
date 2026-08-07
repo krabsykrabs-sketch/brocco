@@ -4,7 +4,6 @@ import "./globals.css";
 import { AppFooter } from "./app-footer";
 import { BottomTabBar } from "./bottom-tabs";
 import { PWAInstallBanner } from "./pwa-banner";
-import { QuickCapture } from "./quick-capture";
 import { StravaAutoSync } from "./strava-auto-sync";
 import { ReminderWatcher } from "./reminder-watcher";
 import { FeaturesProvider } from "./features-provider";
@@ -60,7 +59,10 @@ export default function RootLayout({
           {children}
           <AppFooter />
           <BottomTabBar />
-          <QuickCapture />
+          {/* The floating voice FAB used to sit on every tab. A second, separate
+              chat outside the Chat tab was confusing, and it went unused — voice
+              now lives only in Chat, which has its own mic. QuickCapture and
+              /api/capture are left in place should we want it back. */}
           <StravaAutoSync />
           <ReminderWatcher />
           <PWAInstallBanner />

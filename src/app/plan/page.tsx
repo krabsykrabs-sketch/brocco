@@ -339,89 +339,104 @@ function MobilePlanView({
   const [activeIdx, setActiveIdx] = useState(Math.max(0, initialWeekIdx));
   const touchStartX = useRef(0);
   const touchDeltaX = useRef(0);
-  const [swiping, setSwiping] = useState(false);
-  const [swipeOffset, setSwipeOffset] = useState(0);
-  const animatingRef = useRef(false);
+  const [dragOffset, setDragOffset] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
-  // "idle" | "exit" | "entering"
-  const [phase, setPhase] = useState<"idle" | "exit" | "entering">("idle");
+  const animatingRef = useRef(false);
+  // Index being animated to, or null when at rest. While set, the track
+  // transitions to that slide's position.
+  const [target, setTarget] = useState<number | null>(null);
+  // One frame after the index swap, transitions are suppressed so re-basing
+  // the track around the new active week is invisible.
+  const [settling, setSettling] = useState(false);
 
-  const slideToWeek = useCallback((targetIdx: number, direction: number) => {
-    if (animatingRef.current) return;
-    const clamped = Math.max(0, Math.min(weekList.length - 1, targetIdx));
-    if (clamped === activeIdx) {
-      // Bounce back
-      setSwipeOffset(0);
-      setSwiping(false);
-      return;
-    }
-    animatingRef.current = true;
-    // Phase 1: slide current card off screen
-    const width = containerRef.current?.offsetWidth || 400;
-    setSwiping(false);
-    setPhase("exit");
-    setSwipeOffset(direction * width);
+  // Only the active week and its immediate neighbours are mounted — a 32-week
+  // plan would otherwise render every workout of every week. Rendering the
+  // neighbours is the point: the card you are swiping towards has to already
+  // be on screen, or you see a blank gap and it reads as two separate swipes.
+  const slides = [activeIdx - 1, activeIdx, activeIdx + 1].filter(
+    (i) => i >= 0 && i < weekList.length
+  );
+  const posOf = (idx: number) => slides.indexOf(idx);
 
-    // After exit animation completes, swap content and enter from opposite side
-    setTimeout(() => {
-      setActiveIdx(clamped);
-      setPhase("entering");
-      setSwipeOffset(-direction * width);
-      // Force a layout read so the entering position is applied instantly
-      requestAnimationFrame(() => {
+  const slideToWeek = useCallback(
+    (targetIdx: number) => {
+      if (animatingRef.current) return;
+      const clamped = Math.max(0, Math.min(weekList.length - 1, targetIdx));
+      // Neighbours only; the arrows never move more than one week at a time.
+      if (clamped === activeIdx || Math.abs(clamped - activeIdx) !== 1) {
+        setDragOffset(0);
+        return;
+      }
+      animatingRef.current = true;
+      setDragOffset(0);
+      setTarget(clamped);
+
+      window.setTimeout(() => {
+        // Swap the index and re-base the track in the same frame, with
+        // transitions off — the visible card is identical either side of this,
+        // so nothing moves on screen.
+        setSettling(true);
+        setActiveIdx(clamped);
+        setTarget(null);
         requestAnimationFrame(() => {
-          setPhase("idle");
-          setSwipeOffset(0);
-          setTimeout(() => { animatingRef.current = false; }, 250);
+          requestAnimationFrame(() => {
+            setSettling(false);
+            animatingRef.current = false;
+          });
         });
-      });
-    }, 220);
-  }, [activeIdx, weekList.length]);
+      }, 260);
+    },
+    [activeIdx, weekList.length]
+  );
 
   function onTouchStart(e: React.TouchEvent) {
     if (animatingRef.current) return;
     touchStartX.current = e.touches[0].clientX;
     touchDeltaX.current = 0;
-    setSwiping(true);
-    setPhase("idle");
   }
   function onTouchMove(e: React.TouchEvent) {
     if (animatingRef.current) return;
     touchDeltaX.current = e.touches[0].clientX - touchStartX.current;
-    // Rubber band at edges
-    if (activeIdx === 0 && touchDeltaX.current > 0) touchDeltaX.current = touchDeltaX.current * 0.3;
-    if (activeIdx === weekList.length - 1 && touchDeltaX.current < 0) touchDeltaX.current = touchDeltaX.current * 0.3;
-    setSwipeOffset(touchDeltaX.current);
+    // Rubber band at the ends, where there is no neighbour to reveal
+    if (activeIdx === 0 && touchDeltaX.current > 0) touchDeltaX.current *= 0.3;
+    if (activeIdx === weekList.length - 1 && touchDeltaX.current < 0) touchDeltaX.current *= 0.3;
+    setDragOffset(touchDeltaX.current);
   }
   function onTouchEnd() {
     if (animatingRef.current) return;
     const width = containerRef.current?.offsetWidth || 400;
-    const threshold = width * 0.3;
+    const threshold = width * 0.25;
     if (touchDeltaX.current < -threshold && activeIdx < weekList.length - 1) {
-      slideToWeek(activeIdx + 1, -1);
+      slideToWeek(activeIdx + 1);
     } else if (touchDeltaX.current > threshold && activeIdx > 0) {
-      slideToWeek(activeIdx - 1, 1);
+      slideToWeek(activeIdx - 1);
     } else {
-      // Cancel — spring back
-      setSwiping(false);
-      setSwipeOffset(0);
+      setDragOffset(0);
     }
   }
 
   const week = weekList[activeIdx];
   if (!week) return null;
 
-  // Transition style: no transition while dragging or when jumping to the entering position
-  const useTransition = !swiping && phase !== "entering";
+  // The track sits so the active (or target) slide fills the viewport.
+  const restPos = posOf(target ?? activeIdx);
+  const animating = target !== null;
+  const transform = animating
+    ? `translateX(-${restPos * 100}%)`
+    : `translateX(calc(-${restPos * 100}% + ${dragOffset}px))`;
+  // Transitions only while committing to a week — never mid-drag (the card
+  // must track the finger) and never while re-basing after the swap.
+  const useTransition = animating && !settling;
 
   return (
     <div className="flex flex-col h-[calc(100vh-52px-3.5rem)]">
       {/* Navigation arrows */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-shade flex-shrink-0">
         <button
-          onClick={() => slideToWeek(activeIdx - 1, 1)}
-          disabled={activeIdx === 0 || animatingRef.current}
+          onClick={() => slideToWeek(activeIdx - 1)}
+          disabled={activeIdx === 0 || animating}
           className="p-1.5 text-moss hover:text-ink disabled:opacity-20 disabled:cursor-default transition-colors"
+          aria-label="Previous week"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
         </button>
@@ -430,15 +445,16 @@ function MobilePlanView({
           {activeIdx === currentWeekIdx && <span className="text-[9px] text-leaf font-bold ml-2">Current</span>}
         </div>
         <button
-          onClick={() => slideToWeek(activeIdx + 1, -1)}
-          disabled={activeIdx === weekList.length - 1 || animatingRef.current}
+          onClick={() => slideToWeek(activeIdx + 1)}
+          disabled={activeIdx === weekList.length - 1 || animating}
           className="p-1.5 text-moss hover:text-ink disabled:opacity-20 disabled:cursor-default transition-colors"
+          aria-label="Next week"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
         </button>
       </div>
 
-      {/* Swipeable card area */}
+      {/* Swipeable card area — a track of adjacent weeks, translated as one */}
       <div
         ref={containerRef}
         className="flex-1 overflow-hidden relative"
@@ -447,19 +463,26 @@ function MobilePlanView({
         onTouchEnd={onTouchEnd}
       >
         <div
-          className="h-full will-change-transform"
+          className="flex h-full will-change-transform"
           style={{
-            transform: `translateX(${swipeOffset}px)`,
-            transition: useTransition ? "transform 0.25s ease-out" : "none",
+            transform,
+            transition: useTransition ? "transform 0.26s ease-out" : "none",
           }}
         >
-          <MobileWeekCard
-            weekData={week}
-            workouts={workoutsByWeek.get(week.weekNumber) || []}
-            tasks={tasksByWeek.get(week.weekNumber) || []}
-            onToggleTask={onToggleTask}
-            activitiesByDate={activitiesByDate}
-          />
+          {slides.map((idx) => {
+            const w = weekList[idx];
+            return (
+              <div key={w.id ?? idx} className="w-full h-full flex-shrink-0 overflow-y-auto">
+                <MobileWeekCard
+                  weekData={w}
+                  workouts={workoutsByWeek.get(w.weekNumber) || []}
+                  tasks={tasksByWeek.get(w.weekNumber) || []}
+                  onToggleTask={onToggleTask}
+                  activitiesByDate={activitiesByDate}
+                />
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

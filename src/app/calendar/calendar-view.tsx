@@ -734,6 +734,51 @@ export default function CalendarView() {
 
 // --- Month grid ---
 
+/**
+ * A mark in a month cell. `color` carries what the thing is (session type or
+ * event category); `shape` carries how it went, on a separate visual channel so
+ * the two can never be confused.
+ */
+interface MonthMark {
+  title: string;
+  color: string;
+  shape: "planned" | "done" | "missed" | "event";
+}
+
+function MonthDot({ mark }: { mark: MonthMark }) {
+  const base = "w-2 h-2 md:w-1.5 md:h-1.5 flex-shrink-0 border";
+  if (mark.shape === "event") {
+    // Square = life event, circle = training. Shape separates the two kinds.
+    return <span className={`${base} rounded-[2px] border-ink/50`} style={{ backgroundColor: mark.color }} />;
+  }
+  if (mark.shape === "planned") {
+    // Hollow = not yet done. Any solid circle has already happened one way or
+    // the other, so fill alone answers "did this happen?".
+    return <span className={`${base} rounded-full bg-transparent`} style={{ borderColor: mark.color, borderWidth: 2 }} />;
+  }
+  return <span className={`${base} rounded-full border-ink/50`} style={{ backgroundColor: mark.color }} />;
+}
+
+function MonthLegend() {
+  const entries: { mark: MonthMark; label: string }[] = [
+    { mark: { title: "", color: "#9ccb2e", shape: "done" }, label: "Done" },
+    { mark: { title: "", color: "#b25b33", shape: "missed" }, label: "Missed" },
+    { mark: { title: "", color: "#4a90d6", shape: "planned" }, label: "Planned — colour by session type" },
+    { mark: { title: "", color: "#a86fd1", shape: "event" }, label: "Event — colour by category" },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-3 pt-3 border-t border-shade">
+      {entries.map((e) => (
+        <span key={e.label} className="flex items-center gap-1.5">
+          <MonthDot mark={e.mark} />
+          <span className="text-[10px] font-semibold text-moss">{e.label}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+
 function MonthGrid({
   rangeStart,
   rangeEnd,
@@ -768,16 +813,25 @@ function MonthGrid({
             const inMonth = date.slice(0, 7) === anchorMonth;
             const data = byDate.get(date);
             const reconciled = reconcileDay(data?.workouts || [], data?.activities || [], today);
-            const items = [
+            // Colour says WHAT it is, shape and fill say HOW IT WENT. Colour
+            // alone was ambiguous: an easy run and a completed session are both
+            // #9ccb2e, intervals and a missed session are both #d9534c — so a
+            // green dot could mean "done" or "easy run" with no way to tell.
+            const items: MonthMark[] = [
               ...(data?.events || []).map((e) => ({
                 title: `${e.continuation ? "⟶ " : ""}${e.title}`,
                 color: categoryMeta(e.category).color,
+                shape: "event" as const,
               })),
               ...reconciled.rows.map(({ workout, state }) => ({
                 title: `${state === "done" ? "✓ " : state === "missed" ? "✗ " : ""}${workout.title}`,
-                color: state === "done" ? "#9ccb2e" : state === "missed" ? "#d9534c" : getWorkoutTypeColor(workout.workoutType),
+                color:
+                  state === "done" ? "#9ccb2e"
+                  : state === "missed" ? "#b25b33"
+                  : getWorkoutTypeColor(workout.workoutType),
+                shape: (state === "done" ? "done" : state === "missed" ? "missed" : "planned") as MonthMark["shape"],
               })),
-              ...reconciled.extras.map((a) => ({ title: `✓ ${a.name}`, color: "#9ccb2e" })),
+              ...reconciled.extras.map((a) => ({ title: `✓ ${a.name}`, color: "#9ccb2e", shape: "done" as const })),
             ];
             const dots = items.slice(0, 4);
             const isToday = date === today;
@@ -793,14 +847,14 @@ function MonthGrid({
                 {/* Mobile: color dots (cells too small for text) */}
                 <div className="flex gap-0.5 mt-0.5 md:hidden justify-center">
                   {dots.map((it, i) => (
-                    <span key={i} className="w-2 h-2 rounded-full border border-ink/50" style={{ backgroundColor: it.color }} />
+                    <MonthDot key={i} mark={it} />
                   ))}
                 </div>
                 {/* Desktop: truncated titles */}
                 <div className="hidden md:block w-full space-y-0.5 mt-0.5">
                   {items.slice(0, 2).map((it, i) => (
                     <div key={i} className="flex items-center gap-1 min-w-0">
-                      <span className="w-1.5 h-1.5 rounded-full border border-ink/50 flex-shrink-0" style={{ backgroundColor: it.color }} />
+                      <MonthDot mark={it} />
                       <span className="text-[10px] text-ink font-semibold truncate text-left">{it.title}</span>
                     </div>
                   ))}
@@ -813,6 +867,7 @@ function MonthGrid({
           })}
         </div>
       ))}
+      <MonthLegend />
     </div>
   );
 }
