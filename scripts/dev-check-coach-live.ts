@@ -103,8 +103,20 @@ async function runTurn(userId: string, messages: Anthropic.MessageParam[]) {
 
 const statusOf = (t: string) => t.match(/\[STATUS:(question|done|info)\]/)?.[1] ?? "(none)";
 
+/** Every planned workout, flattened — so "did the plan change?" means the whole plan. */
+async function snapshot(planId: string) {
+  const ws = await prisma.plannedWorkout.findMany({ where: { planId }, orderBy: { date: "asc" } });
+  return new Map(
+    ws.map((w) => [
+      w.id,
+      `${w.date.toISOString().slice(0, 10)}|${w.targetDistanceKm}|${w.targetPace}|${w.targetDurationMin}|${w.status}|${w.title}`,
+    ])
+  );
+}
+
 async function trial(n: number) {
-  const { user, sat, sun } = await setup(`t${n}`);
+  const { user, plan, sat, sun } = await setup(`t${n}`);
+  const before = await snapshot(plan.id);
   try {
     const messages: Anthropic.MessageParam[] = [{ role: "user", content: JAN_MSG }];
     const t1 = await runTurn(user.id, messages);
@@ -122,15 +134,18 @@ async function trial(n: number) {
       turns = 2;
     }
 
+    const after = await snapshot(plan.id);
+    const diffs: string[] = [];
+    for (const [id, sig] of after) {
+      const was = before.get(id);
+      if (was === undefined) diffs.push(`added ${sig.split("|")[5]}`);
+      else if (was !== sig) diffs.push(`${sig.split("|")[5]}: ${was.split("|").slice(0, 5).join("/")} -> ${sig.split("|").slice(0, 5).join("/")}`);
+    }
+    for (const [id, sig] of before) if (!after.has(id)) diffs.push(`removed ${sig.split("|")[5]}`);
+    const changed = diffs.length > 0;
+
     const satAfter = await prisma.plannedWorkout.findUnique({ where: { id: sat.id } });
     const sunAfter = await prisma.plannedWorkout.findUnique({ where: { id: sun.id } });
-    const changed =
-      String(satAfter?.targetDistanceKm) !== "3" ||
-      satAfter?.date.toISOString().slice(0, 10) !== "2026-08-08" ||
-      satAfter?.status !== "planned" ||
-      String(sunAfter?.targetDistanceKm) !== "8" ||
-      sunAfter?.targetPace !== "6:00-6:30/km" ||
-      sunAfter?.status !== "planned";
 
     const applied = all.some((c) => c.success);
     const claimedDone = statuses.includes("done");
@@ -143,6 +158,7 @@ async function trial(n: number) {
     console.log(`  plan changed : ${changed ? "YES" : "NO"}`);
     console.log(`  FALSE SUCCESS: ${lying ? "*** YES — BUG ***" : "no"}`);
     console.log(`  sat: ${satAfter?.date.toISOString().slice(0, 10)} ${satAfter?.targetDistanceKm}km · sun: ${sunAfter?.targetDistanceKm}km @ ${sunAfter?.targetPace}`);
+    for (const d of diffs) console.log(`     ~ ${d}`);
 
     return { changed, lying, applied, calls: all.length };
   } finally { await prisma.user.delete({ where: { id: user.id } }); }
