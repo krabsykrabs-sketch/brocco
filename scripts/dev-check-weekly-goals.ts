@@ -12,7 +12,7 @@ import { PrismaClient } from "@prisma/client";
 import { config } from "dotenv";
 config();
 
-import { reconcileWeek, resolveCredit, weekStartOf } from "@/lib/weekly-goals";
+import { reconcileWeek, resolveCredit, weekStartOf, renderWeeklyGoalsLine } from "@/lib/weekly-goals";
 import { handleToolCall } from "@/lib/tools";
 
 const prisma = new PrismaClient();
@@ -215,6 +215,27 @@ async function s7_isolation() {
   }
 }
 
+async function s8_followUpChannel() {
+  console.log("\n[8] The opener/briefing line — the chosen follow-up channel");
+  const user = await setup();
+  try {
+    const empty = await renderWeeklyGoalsLine(user.id, "Europe/Berlin");
+    check("silent when no goals are set", empty === "", JSON.stringify(empty));
+
+    // Goals are keyed to the CURRENT week here — this renderer always reports
+    // the live week, which is the whole point of it.
+    const { currentWeekStart } = await import("@/lib/weekly-goals");
+    const week = currentWeekStart("Europe/Berlin");
+    await prisma.weeklyGoal.create({
+      data: { userId: user.id, weekStart: week, label: "Ankle strength", category: "strength" as never, targetCount: 4 },
+    });
+    const line = await renderWeeklyGoalsLine(user.id, "Europe/Berlin");
+    check("names the goal and its progress", /Ankle strength 0\/4/.test(line), line.slice(0, 90));
+    check("states days remaining so it can judge urgency", /day\(s\) left/.test(line));
+    check("tells the coach not to nag", /never nag/.test(line));
+  } finally { await prisma.user.delete({ where: { id: user.id } }); }
+}
+
 async function main() {
   await s1_autoCount();
   await s2_wrongTypesAndWeeks();
@@ -223,6 +244,7 @@ async function main() {
   await s5_manualOnly();
   await s6_coachTool();
   await s7_isolation();
+  await s8_followUpChannel();
   console.log(`\n${"=".repeat(60)}\n  ${pass} passed, ${fail} failed\n${"=".repeat(60)}`);
   process.exitCode = fail > 0 ? 1 : 0;
 }

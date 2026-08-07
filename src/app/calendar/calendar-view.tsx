@@ -438,7 +438,7 @@ function WorkoutDetailCard({
   workout: WorkoutItem;
   matched: ActivityItem | null;
   state: WorkoutState;
-  detail: WorkoutDetail | undefined;
+  detail: WorkoutDetail | null | undefined; // undefined = still loading, null = failed
 }) {
   // The range endpoint already carries the description, so the "why" is on
   // screen before the detail request lands.
@@ -490,6 +490,8 @@ function WorkoutDetailCard({
 
         {detail === undefined ? (
           <p className="text-xs text-sage font-semibold">Loading the rest of this session…</p>
+        ) : detail === null ? (
+          <p className="text-xs text-clay font-semibold">Couldn&apos;t load the rest of this session.</p>
         ) : comparable ? (
           <div>
             <p className="label-xs">
@@ -551,7 +553,7 @@ function DayView({
   date: string;
   data: { events: EventOccurrence[]; workouts: WorkoutItem[]; activities: ActivityItem[] };
   today: string;
-  details: Record<string, WorkoutDetail>;
+  details: Record<string, WorkoutDetail | null>;
   onEventTap: (e: EventOccurrence) => void;
 }) {
   const { rows, extras } = reconcileDay(data.workouts, data.activities, today);
@@ -921,13 +923,8 @@ export default function CalendarView() {
     return map;
   }, [events, workouts, activities]);
 
-  const navigate = useCallback((dir: 1 | -1) => {
-    // dir 1 = previous, -1 = next
-    setAnchor((a) => {
-      if (view === "day") return addDaysStr(a, dir === 1 ? -1 : 1);
-      if (view === "week") return addDaysStr(a, dir === 1 ? -7 : 7);
-      return addMonthsStr(a, dir === 1 ? -1 : 1);
-    });
+  const navigate = useCallback((delta: -1 | 1) => {
+    setAnchor((a) => shiftAnchor(view, a, delta));
   }, [view]);
 
   const headerLabel = useMemo(() => {
@@ -966,6 +963,41 @@ export default function CalendarView() {
           {!compact && isEmpty && <p className="text-xs text-sage font-semibold py-2">Nothing scheduled.</p>}
         </div>
       </div>
+    );
+  }
+
+  function renderPage(offset: PageOffset) {
+    const pageAnchor = shiftAnchor(view, anchor, offset);
+    const [start, end] = rangeFor(view, pageAnchor);
+    if (view === "month") {
+      return (
+        <MonthGrid
+          rangeStart={start}
+          rangeEnd={end}
+          anchorMonth={pageAnchor.slice(0, 7)}
+          today={today}
+          byDate={byDate}
+          onDayTap={(d) => { setAnchor(d); setView("day"); }}
+        />
+      );
+    }
+    if (view === "week") {
+      return (
+        <div className="divide-y-2 divide-shade/40">
+          {Array.from({ length: 7 }, (_, i) => addDaysStr(start, i)).map((d) => (
+            <DaySection key={d} date={d} compact />
+          ))}
+        </div>
+      );
+    }
+    return (
+      <DayView
+        date={pageAnchor}
+        data={byDate.get(pageAnchor) || EMPTY_DAY}
+        today={today}
+        details={details}
+        onEventTap={setDetail}
+      />
     );
   }
 
