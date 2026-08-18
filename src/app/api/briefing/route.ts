@@ -9,11 +9,12 @@ import {
   todayInTimezone,
   parseWall,
 } from "@/lib/schedule";
-import { RUN_TYPES } from "@/lib/activity-types";
 import { resolveFeatures } from "@/lib/features";
-import { format, startOfWeek, endOfWeek } from "date-fns";
+import { format } from "date-fns";
 import { COACH_MODEL } from "@/lib/models";
 import { renderWeeklyGoalsLine } from "@/lib/weekly-goals";
+import { generateNumberChecked } from "@/lib/number-guard";
+import { weekTrainingFigures } from "@/lib/week-training";
 
 const anthropic = new Anthropic();
 
@@ -52,18 +53,12 @@ export async function GET(request: NextRequest) {
 
   // --- Gather everything the briefing should know about ---
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
-  const weekStart = startOfWeek(todayDate, { weekStartsOn: 1 });
-  const weekEnd = endOfWeek(todayDate, { weekStartsOn: 1 });
 
   const features = resolveFeatures(profile.features);
 
-  const [agenda, birthdays, weekActivities, activePlan] = await Promise.all([
+  const [agenda, birthdays, activePlan] = await Promise.all([
     getAgenda(userId, today, today, { includeOverdueTodos: true, today, includeRestWorkouts: true }),
     features.calendar ? getUpcomingBirthdays(userId, today, 7) : Promise.resolve([]),
-    prisma.activity.findMany({
-      where: { userId, startDateLocal: { gte: weekStart, lte: weekEnd } },
-      select: { activityType: true, distanceKm: true },
-    }),
     prisma.plan.findFirst({ where: { userId, status: "active" }, select: { name: true, raceDate: true } }),
   ]);
 
@@ -72,9 +67,9 @@ export async function GET(request: NextRequest) {
   if (!features.calendar) agenda.events = [];
   agenda.todos = [];
 
-  const weekRunKm = weekActivities
-    .filter((a) => RUN_TYPES.includes(a.activityType))
-    .reduce((s, a) => s + (a.distanceKm ? Number(a.distanceKm) : 0), 0);
+  // Same shared figures as the opener: one week definition, one running total,
+  // with the timezone pad trimmed off exactly once.
+  const { runKm: weekRunKm } = await weekTrainingFigures(userId, today);
 
   let dataBlock = `Today (${format(todayDate, "EEEE, MMMM d")}):\n${renderAgendaText(agenda)}\n`;
   dataBlock += `\nRunning this week so far: ${weekRunKm.toFixed(1)}km.`;
@@ -91,17 +86,27 @@ export async function GET(request: NextRequest) {
   dataBlock += await renderWeeklyGoalsLine(userId, profile.timezone);
 
   let content: string;
+  const systemPrompt = `You are Brocco, a broccoli who is ${user?.name || "the user"}'s running coach and life assistant. Write the morning briefing for the top of their Today screen: 2-3 short sentences summarizing the day — appointments, today's workout, due tasks — plus anything genuinely worth flagging (a conflict, an overdue item, a birthday coming up, yesterday's run worth a nod). Plain text, no markdown, no greeting, no status tags, no questions. Direct and specific; mention times. NUMBERS: quote only distances that appear in the data below, exactly as written — never calculate, sum or estimate one, and never add bike kilometres to running kilometres. If the day is empty, say so briefly and point at the week's training. Today is ${format(todayDate, "EEEE, MMMM d, yyyy")}.`;
+
   try {
-    const response = await anthropic.messages.create({
-      model: COACH_MODEL,
-      max_tokens: 220,
-      system: `You are Brocco, a broccoli who is ${user?.name || "the user"}'s running coach and life assistant. Write the morning briefing for the top of their Today screen: 2-3 short sentences summarizing the day — appointments, today's workout, due tasks — plus anything genuinely worth flagging (a conflict, an overdue item, a birthday coming up, yesterday's run worth a nod). Plain text, no markdown, no greeting, no status tags, no questions. Direct and specific; mention times. If the day is empty, say so briefly and point at the week's training. Today is ${format(todayDate, "EEEE, MMMM d, yyyy")}.`,
-      messages: [{ role: "user", content: `${dataBlock}\n\nWrite the briefing.` }],
+    // Same distance check as the opener — this text is generated from a data
+    // block and shown as fact, so an invented figure would read as one.
+    const checked = await generateNumberChecked(dataBlock, [], "briefing", async (correction) => {
+      const response = await anthropic.messages.create({
+        model: COACH_MODEL,
+        max_tokens: 220,
+        system: systemPrompt,
+        messages: [
+          {
+            role: "user",
+            content: `${dataBlock}\n\nWrite the briefing.${correction ? `\n\n${correction}` : ""}`,
+          },
+        ],
+      });
+      return response.content[0]?.type === "text" ? response.content[0].text.trim() : "";
     });
-    content =
-      response.content[0]?.type === "text"
-        ? response.content[0].text.trim()
-        : fallbackBriefing(agenda.events.length, agenda.todos.length);
+
+    content = checked || fallbackBriefing(agenda.events.length, agenda.todos.length);
   } catch (err) {
     console.error("Briefing generation error:", err);
     content = fallbackBriefing(agenda.events.length, agenda.todos.length);

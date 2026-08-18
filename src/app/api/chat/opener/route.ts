@@ -3,12 +3,14 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { format } from "date-fns";
-import { todayInTimezone, nowInTimezone, dateInTimezone, parseWall, addDaysWall, wallDateString } from "@/lib/schedule";
+import { todayInTimezone, nowInTimezone, dateInTimezone, parseWall, wallDateString } from "@/lib/schedule";
 import { groupActivitiesByDay, workoutOutcome, activityDayKey } from "@/lib/plan-progress";
 import { ensureFreshStravaData } from "@/lib/strava-fresh";
 import { groundStatusMarker } from "@/app/api/chat/route";
 import { COACH_MODEL } from "@/lib/models";
 import { renderWeeklyGoalsLine } from "@/lib/weekly-goals";
+import { generateNumberChecked } from "@/lib/number-guard";
+import { weekTrainingFigures } from "@/lib/week-training";
 
 const anthropic = new Anthropic();
 
@@ -82,49 +84,21 @@ export async function POST(request: NextRequest) {
   if (claim.count === 0) {
     return NextResponse.json({ skipped: true });
   }
+  // Week figures come from one shared, tested place. The pad this query needs
+  // for timezone offsets was previously never trimmed back off, so last
+  // Sunday's run counted into this week — see lib/week-training.ts.
+  const figures = await weekTrainingFigures(userId, todayStr);
+  const { weekStartWall, activities: weekActivities, planned: weekPlanned, runKm: weekRunKm, plannedKm } = figures;
 
-  const now = new Date();
-  const todayWall = parseWall(todayStr);
-  const dowNum = todayWall.getUTCDay() === 0 ? 7 : todayWall.getUTCDay();
-  const weekStartWall = addDaysWall(todayWall, -(dowNum - 1));
-  const weekEndWall = addDaysWall(weekStartWall, 6);
-  const weekStart = new Date(weekStartWall.getTime() - 86400000); // 1-day pad for tz offsets
-  const weekEnd = new Date(weekEndWall.getTime() + 2 * 86400000);
-
-  const [user, activePlan, weekActivities, weekPlanned] = await Promise.all([
+  const [user, activePlan] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
     prisma.plan.findFirst({
       where: { userId, status: "active" },
       select: { name: true, raceDate: true },
     }),
-    prisma.activity.findMany({
-      where: { userId, startDateLocal: { gte: weekStart, lte: weekEnd } },
-      orderBy: { startDateLocal: "desc" },
-      select: {
-        id: true, name: true, activityType: true, distanceKm: true, durationMin: true,
-        avgPacePerKm: true, avgHeartRate: true, startDateLocal: true, source: true,
-      },
-    }),
-    prisma.plannedWorkout.findMany({
-      where: { plan: { userId, status: "active" }, date: { gte: weekStartWall, lte: weekEndWall } },
-      orderBy: { date: "asc" },
-      select: {
-        title: true, workoutType: true, activityType: true, status: true,
-        targetDistanceKm: true, targetPace: true, date: true,
-      },
-    }),
   ]);
 
   const userName = user?.name || "Runner";
-
-  const runTypes = ["Run", "TrailRun", "VirtualRun", "Treadmill"];
-  const weekRunKm = weekActivities
-    .filter((a) => runTypes.includes(a.activityType))
-    .reduce((sum, a) => sum + (a.distanceKm ? Number(a.distanceKm) : 0), 0);
-
-  const plannedKm = weekPlanned
-    .filter((w) => w.workoutType !== "rest")
-    .reduce((sum, w) => sum + (w.targetDistanceKm ? Number(w.targetDistanceKm) : 0), 0);
 
   // Day-by-day reconciliation — the SAME matcher the plan tab and chat
   // context use, covering every activity type (incl. strength/WeightTraining
@@ -164,7 +138,16 @@ export async function POST(request: NextRequest) {
     (a) => !matchedIds.has(a.id) && activityDayKey(a.startDateLocal) >= wallDateString(weekStartWall)
   );
   const extrasSummary = extras.length > 0
-    ? `Extra (unplanned) this week: ${extras.map((a) => `${a.activityType} "${a.name}"`).join(", ")}`
+    ? `Extra (unplanned) this week: ${extras
+        .map((a) => {
+          // Distances matter here: without them the session list cannot be
+          // reconciled against the weekly total, and an unreconcilable list is
+          // an invitation to invent the missing number.
+          const dist = a.distanceKm ? ` ${Number(a.distanceKm).toFixed(1)}km` : "";
+          const dur = !a.distanceKm && a.durationMin ? ` ${Math.round(Number(a.durationMin))}min` : "";
+          return `${a.activityType} "${a.name}"${dist}${dur}`;
+        })
+        .join(", ")}`
     : "";
 
   let analysisContext = `Weekly data for ${userName}:\n`;
@@ -202,22 +185,40 @@ export async function POST(request: NextRequest) {
   const timeNow = nowInTimezone(tz).slice(11, 16);
   const goalsLine = await renderWeeklyGoalsLine(userId, tz);
 
-  try {
-    const response = await anthropic.messages
-      .stream({
-        model: COACH_MODEL,
-        max_tokens: 250,
-        system: `You are Brocco, a broccoli running coach. Write a brief data-driven training check-in for ${userName}. 2-4 sentences max. Pattern: quick summary of the week so far + highlight something specific (good or concerning) + what's coming up + open question. Be direct and specific — reference actual numbers. Don't say "Hello" or generic greetings. Today is ${format(parseWall(todayStr), "EEEE, MMMM d, yyyy")} and the current LOCAL TIME is ${timeNow} — never treat today's still-pending workout as missed or overdue. End with a status line: [STATUS:question]your question[/STATUS] or [STATUS:info]key insight[/STATUS].`,
-        messages: [
-          { role: "user", content: `${analysisContext}${triggerHint}${goalsLine}\n\nGenerate the opening analysis.` },
-        ],
-      })
-      .finalMessage();
+  const source = `${analysisContext}${triggerHint}${goalsLine}`;
+  const systemPrompt = `You are Brocco, a broccoli running coach. Write a brief data-driven training check-in for ${userName}. 2-4 sentences max. Pattern: quick summary of the week so far + highlight something specific (good or concerning) + what's coming up + open question. Be direct and specific. NUMBERS: quote only figures that appear in the data below, exactly as written. Never calculate, sum or estimate a distance — if a number you want is not in the data, leave it out and say it qualitatively instead. Running kilometres and bike kilometres are separate; never add them together. Don't say "Hello" or generic greetings. Today is ${format(parseWall(todayStr), "EEEE, MMMM d, yyyy")} and the current LOCAL TIME is ${timeNow} — never treat today's still-pending workout as missed or overdue. End with a status line: [STATUS:question]your question[/STATUS] or [STATUS:info]key insight[/STATUS].`;
 
-    const textBlock = response.content.find((c) => c.type === "text");
-    const openerText = textBlock && textBlock.type === "text"
-      ? textBlock.text.trim()
-      : `Week check-in: ${weekRunKm.toFixed(1)}km of ${plannedKm.toFixed(0)}km so far. What's on your mind?`;
+  try {
+    // Distances are checked against the data block before this reaches the
+    // athlete: the coach once reported 22.3km on a week where 12.2km was
+    // supplied, and prose was the one thing nothing verified.
+    const checked = await generateNumberChecked(
+      source,
+      // A coach may legitimately state the shortfall, which is a subtraction of
+      // two supplied figures rather than an invention.
+      [Math.max(0, plannedKm - weekRunKm)],
+      "opener",
+      async (correction) => {
+        const res = await anthropic.messages
+          .stream({
+            model: COACH_MODEL,
+            max_tokens: 250,
+            system: systemPrompt,
+            messages: [
+              {
+                role: "user",
+                content: `${source}\n\nGenerate the opening analysis.${correction ? `\n\n${correction}` : ""}`,
+              },
+            ],
+          })
+          .finalMessage();
+        const block = res.content.find((c) => c.type === "text");
+        return block && block.type === "text" ? block.text.trim() : "";
+      }
+    );
+
+    const openerText =
+      checked || `Week check-in: ${weekRunKm.toFixed(1)}km of ${plannedKm.toFixed(0)}km so far. What's on your mind?`;
 
     // The opener calls no tools, so a [STATUS:done] here can never be true.
     const grounded = groundStatusMarker(openerText, false);
