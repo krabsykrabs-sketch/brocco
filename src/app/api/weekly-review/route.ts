@@ -16,6 +16,8 @@ import { resolveFeatures } from "@/lib/features";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 import { format } from "date-fns";
 import { COACH_MODEL } from "@/lib/models";
+import { rateLimit } from "@/lib/rate-limit";
+import { generateNumberChecked } from "@/lib/number-guard";
 
 const anthropic = new Anthropic();
 
@@ -44,6 +46,11 @@ export async function GET(request: NextRequest) {
   if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
 
   const force = new URL(request.url).searchParams.get("force") === "1";
+  // force bypasses both the window AND the cache read — an Opus call on
+  // every hit. Cap it.
+  if (force && !rateLimit(`weekly-review-force:${userId}`, 5, 60 * 60 * 1000)) {
+    return NextResponse.json({ error: "Too many forced reviews." }, { status: 429 });
+  }
   const localNow = nowInTimezone(profile.timezone); // yyyy-MM-ddTHH:mm
   const today = localNow.slice(0, 10);
   const dow = parseWall(today).getUTCDay(); // 0=Sun .. 6=Sat
@@ -140,20 +147,28 @@ export async function GET(request: NextRequest) {
   if (intensityNotes.length) dataBlock += `Intensity flags: ${intensityNotes.join("; ")}.\n`;
   dataBlock += `\nNEXT WEEK:\n${renderAgendaText(agendaNext)}`;
 
-  let content: string;
+  let content: string | null = null;
   try {
-    const response = await anthropic.messages.create({
-      model: COACH_MODEL,
-      max_tokens: 400,
-      system: `You are Brocco, a broccoli running coach and life assistant, writing the weekly review shown on the Today screen. 4-6 short sentences, two parts: (1) the week that was — headline numbers, one genuine highlight, one honest observation (missed sessions, intensity discipline) without nagging; (2) next week — the key session, any calendar collisions with training worth flagging, and one concrete focus. If mood data is present and actually shows a pattern against the training data (e.g. mood dipping after hard sessions, or lifting on running days), weave in ONE such observation — never invent a correlation the numbers don't support, and never moralize about low moods. Plain text, no markdown, no greeting, no questions. Direct, warm, specific. A single vegetable flourish is allowed if it earns its place.`,
-      messages: [{ role: "user", content: `${dataBlock}\n\nWrite the weekly review.` }],
+    // Same distance check as the briefing and the opener — this is the most
+    // number-dense of the three generators and was the only one unguarded.
+    content = await generateNumberChecked(dataBlock, [], "weekly-review", async (correction) => {
+      const response = await anthropic.messages.create({
+        model: COACH_MODEL,
+        max_tokens: 400,
+        system: `You are Brocco, a broccoli running coach and life assistant, writing the weekly review shown on the Today screen. 4-6 short sentences, two parts: (1) the week that was — headline numbers, one genuine highlight, one honest observation (missed sessions, intensity discipline) without nagging; (2) next week — the key session, any calendar collisions with training worth flagging, and one concrete focus. Quote only figures that appear in the data — never calculate or estimate distances. Plain text, no markdown, no greeting, no questions. Direct, warm, specific. A single vegetable flourish is allowed if it earns its place.`,
+        messages: [
+          {
+            role: "user",
+            content: `${dataBlock}\n\nWrite the weekly review.${correction ? `\n\n${correction}` : ""}`,
+          },
+        ],
+      });
+      return response.content[0]?.type === "text" ? response.content[0].text.trim() : "";
     });
-    content =
-      response.content[0]?.type === "text"
-        ? response.content[0].text.trim()
-        : `Week done: ${runKm.toFixed(1)}km of ${plannedKm.toFixed(0)}km, ${completed}/${nonRest.length} sessions.`;
   } catch (err) {
     console.error("Weekly review generation error:", err);
+  }
+  if (!content) {
     content = `Week done: ${runKm.toFixed(1)}km of ${plannedKm.toFixed(0)}km planned, ${completed}/${nonRest.length} sessions completed.`;
   }
 

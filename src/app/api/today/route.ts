@@ -163,6 +163,7 @@ export async function GET() {
       planExpired,
       activePlanName: activePlan?.name || null,
       stravaConnected: !!profile.stravaAccessToken,
+      stravaNeedsReconnect: profile.stravaNeedsReconnect,
       activityCount,
     });
   } catch (err) {

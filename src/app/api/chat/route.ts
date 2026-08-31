@@ -7,6 +7,7 @@ import { toolsForFeatures, handleToolCall } from "@/lib/tools";
 import { resolveFeatures } from "@/lib/features";
 import { ensureFreshStravaData } from "@/lib/strava-fresh";
 import { COACH_MODEL } from "@/lib/models";
+import { rateLimit } from "@/lib/rate-limit";
 
 const anthropic = new Anthropic();
 
@@ -15,6 +16,15 @@ export async function POST(request: NextRequest) {
   if (!session.userId) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // The costliest endpoint in the app (streaming Opus + tool loop) had no
+  // limit at all. 60/hour is far above real conversational use.
+  if (!rateLimit(`chat:${session.userId}`, 60, 60 * 60 * 1000)) {
+    return new Response(JSON.stringify({ error: "Too many messages — give Brocco a minute." }), {
+      status: 429,
       headers: { "Content-Type": "application/json" },
     });
   }

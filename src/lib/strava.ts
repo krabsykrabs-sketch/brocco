@@ -63,6 +63,21 @@ export async function getValidToken(userId: string): Promise<string> {
   });
 
   if (!res.ok) {
+    // 400/401 mean the refresh token itself is dead (user revoked access in
+    // Strava, or the token expired) — no retry will ever fix it. Mark the
+    // connection broken so the UI can prompt a reconnect instead of runs
+    // just silently stopping. 429/5xx are transient: record but don't flag.
+    if (res.status === 400 || res.status === 401) {
+      await prisma.userProfile
+        .update({
+          where: { userId },
+          data: {
+            stravaNeedsReconnect: true,
+            stravaLastSyncError: `Strava access revoked or expired (${res.status}) — reconnect needed`,
+          },
+        })
+        .catch(() => {});
+    }
     throw new Error(`Strava token refresh failed: ${res.status}`);
   }
 
@@ -74,10 +89,31 @@ export async function getValidToken(userId: string): Promise<string> {
       stravaAccessToken: encryptToken(data.access_token),
       stravaRefreshToken: encryptToken(data.refresh_token),
       stravaTokenExpiresAt: new Date(data.expires_at * 1000),
+      stravaNeedsReconnect: false,
     },
   });
 
   return data.access_token;
+}
+
+/**
+ * Record how a sync attempt went. Success clears the error and the
+ * reconnect flag; failure stores a short human-readable reason. Every sync
+ * path (webhook, auto-sync, freshness gate, manual) reports through this so
+ * Settings can show one honest health line.
+ *
+ * Deliberately does NOT touch stravaLastSyncAt: that column doubles as the
+ * optimistic-lock claim in auto-sync and strava-fresh, which own it.
+ */
+export async function recordSyncOutcome(userId: string, error: string | null): Promise<void> {
+  await prisma.userProfile
+    .update({
+      where: { userId },
+      data: error
+        ? { stravaLastSyncError: error.slice(0, 300) }
+        : { stravaLastSyncError: null, stravaNeedsReconnect: false },
+    })
+    .catch(() => {});
 }
 
 /**
@@ -300,6 +336,7 @@ export async function storeStravaActivity(userId: string, stravaActivity: Record
       maxHeartRate: data.maxHeartRate,
       elevationGainM: data.elevationGainM,
       avgCadence: data.avgCadence,
+      avgWatts: data.avgWatts,
       calories: data.calories,
       perceivedEffort: data.perceivedEffort,
       startDate: data.startDate,
@@ -316,7 +353,9 @@ export async function storeStravaActivity(userId: string, stravaActivity: Record
 /**
  * Historical backfill: fetch the last 6 months of activities for a user.
  */
-export async function backfillActivities(userId: string): Promise<{ newCount: number; totalChecked: number }> {
+export async function backfillActivities(
+  userId: string
+): Promise<{ newCount: number; totalChecked: number; newActivities: Activity[] }> {
   const token = await getValidToken(userId);
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
   const timezone = profile?.timezone || "Europe/Berlin";
@@ -325,6 +364,9 @@ export async function backfillActivities(userId: string): Promise<{ newCount: nu
   let page = 1;
   let newCount = 0;
   let totalChecked = 0;
+  // Collected so callers can run zone/HR analysis on what actually arrived —
+  // backfilled runs used to get no analysis until opened by hand.
+  const newActivities: Activity[] = [];
 
   while (true) {
     const activities = await fetchStravaActivities(token, page, 200, sixMonthsAgo);
@@ -340,9 +382,10 @@ export async function backfillActivities(userId: string): Promise<{ newCount: nu
           where: { userId_stravaId: { userId, stravaId } },
           select: { id: true },
         });
-        await storeStravaActivity(userId, activity, timezone);
+        const stored = await storeStravaActivity(userId, activity, timezone);
         if (!existing) {
           newCount++;
+          if (stored) newActivities.push(stored);
         }
       } catch (err) {
         // Skip duplicates or errors, continue with next
@@ -354,7 +397,7 @@ export async function backfillActivities(userId: string): Promise<{ newCount: nu
     page++;
   }
 
-  return { newCount, totalChecked };
+  return { newCount, totalChecked, newActivities };
 }
 
 /**

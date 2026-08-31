@@ -198,11 +198,14 @@ export default function ChatUI({
   sessionId: initialSessionId,
   initialMessages,
   autoMessage,
+  draftMessage,
   mode = "coach",
 }: {
   sessionId: string | null;
   initialMessages: Message[];
   autoMessage?: string;
+  /** Pre-fills the composer WITHOUT sending — the user finishes the sentence. */
+  draftMessage?: string;
   mode?: "coach" | "kitchen";
 }) {
   const router = useRouter();
@@ -212,7 +215,7 @@ export default function ChatUI({
   const sessionBody = kitchen ? { type: "kitchen" } : {};
   const [sessionId, setSessionId] = useState<string | null>(initialSessionId);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(draftMessage || "");
   const [sending, setSending] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [streamingNotifications, setStreamingNotifications] = useState<ToolNotification[]>([]);

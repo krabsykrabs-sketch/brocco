@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * App-wide toast bus. The QuickCapture component (mounted globally in the
- * layout) owns the single toast surface; any component can push onto it via
- * emitToast — including an optional action button, used for undo on deletes.
+ * App-wide toast bus. ToastHost (mounted globally in the layout) owns the
+ * single toast surface; any component can push onto it via emitToast —
+ * including an optional action button, used for undo on deletes.
  */
 
 export interface AppToast {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { format } from "date-fns";
+import { isCompatibleType } from "@/lib/activity-types";
 
 export async function GET(
   _request: NextRequest,
@@ -22,12 +23,15 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Day-based: find planned workout on the same date
+  // Day-based: find a planned workout on the same date whose SPORT matches
+  // the activity — the same isCompatibleType rule every other surface uses.
+  // Without it a Tuesday bike ride "matched" the day's tempo run and rendered
+  // a nonsense planned-vs-actual comparison.
   const localDate = format(new Date(activity.startDateLocal), "yyyy-MM-dd");
   const dayStart = new Date(localDate + "T00:00:00.000Z");
   const dayEnd = new Date(localDate + "T23:59:59.999Z");
 
-  const plannedWorkout = await prisma.plannedWorkout.findFirst({
+  const dayWorkouts = await prisma.plannedWorkout.findMany({
     where: {
       plan: { userId: session.userId, status: "active" },
       date: { gte: dayStart, lte: dayEnd },
@@ -37,12 +41,15 @@ export async function GET(
       id: true,
       title: true,
       workoutType: true,
+      activityType: true,
       targetDistanceKm: true,
       targetPace: true,
       targetDurationMin: true,
       description: true,
     },
   });
+  const plannedWorkout =
+    dayWorkouts.find((w) => isCompatibleType(w.activityType, activity.activityType)) || null;
 
   const matchedWorkout = plannedWorkout
     ? {

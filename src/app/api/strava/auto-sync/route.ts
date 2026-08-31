@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
-import { syncRecentActivities } from "@/lib/strava";
+import { syncRecentActivities, recordSyncOutcome } from "@/lib/strava";
 import { todayInTimezone, dateInTimezone } from "@/lib/schedule";
 import { analyzeEligibleActivities } from "@/lib/activity-analysis";
 
@@ -51,9 +51,14 @@ export async function GET() {
     // Analysis failures are swallowed per-activity inside this call — a bad
     // streams fetch shouldn't turn a successful sync into an error response.
     await analyzeEligibleActivities(session.userId, newActivities);
+    await recordSyncOutcome(session.userId, null);
     return NextResponse.json({ ok: true, newCount, totalChecked });
   } catch (err) {
     console.error("Auto-sync error:", err);
+    await recordSyncOutcome(
+      session.userId,
+      `Daily sync failed: ${err instanceof Error ? err.message : "unknown error"}`
+    );
     // Release the claim so a retry (next app open) isn't blocked until tomorrow
     await prisma.userProfile
       .updateMany({

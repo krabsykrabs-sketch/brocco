@@ -55,6 +55,11 @@ model UserProfile {
   stravaAthleteId       String?  @map("strava_athlete_id")
   stravaTokenExpiresAt  DateTime? @map("strava_token_expires_at")
   stravaLastSyncAt      DateTime? @map("strava_last_sync_at")
+  // Sync health: last failure message (null = healthy) and whether the
+  // token is dead (revoked/expired refresh) so the UI can prompt reconnect
+  // instead of the user's runs just silently stopping.
+  stravaLastSyncError   String?   @map("strava_last_sync_error")
+  stravaNeedsReconnect  Boolean   @default(false) @map("strava_needs_reconnect")
   hrMaxBpm              Int?     @map("hr_max_bpm")
   // Secret for the read-only ICS calendar feed URL; null until the user
   // creates a subscribe link in Settings

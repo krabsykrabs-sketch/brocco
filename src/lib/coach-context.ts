@@ -135,6 +135,9 @@ export async function buildCoachContext(userId: string): Promise<string> {
   // --- Training load (last 8 weeks) ---
   const loadBlock = await buildTrainingLoad(userId, now);
 
+  // --- Guided workout history (progression material) ---
+  const guidedBlock = await buildGuidedWorkoutContext(userId, now);
+
   // --- Health notes ---
   let healthBlock = "ACTIVE HEALTH NOTES:\n";
   if (healthNotes.length === 0) {
@@ -156,7 +159,9 @@ export async function buildCoachContext(userId: string): Promise<string> {
   const features = resolveFeatures(profile.features);
   const blocks = [profileBlock];
   if (coachingNotesBlock) blocks.push(coachingNotesBlock);
-  blocks.push(planBlock, goalsBlock, activitiesBlock, loadBlock, healthBlock);
+  blocks.push(planBlock, goalsBlock, activitiesBlock, loadBlock);
+  if (guidedBlock) blocks.push(guidedBlock);
+  blocks.push(healthBlock);
   if (features.calendar) {
     blocks.push(await buildLifeContext(userId, profile.timezone, features));
   }
@@ -514,6 +519,55 @@ async function buildPlanContext(userId: string, timezone: string): Promise<strin
   block += "\n\nNext week:\n";
   block += nextWeek.length > 0 ? nextWeek.map(renderLine).join("\n") : "No workouts scheduled yet.";
   return block;
+}
+
+/**
+ * Guided-workout history — the raw material for progression coaching.
+ * Empty string when the player hasn't been used in the last 6 weeks, so the
+ * classic context is unchanged for everyone else.
+ */
+async function buildGuidedWorkoutContext(userId: string, now: Date): Promise<string> {
+  const sessions = await prisma.guidedWorkoutSession.findMany({
+    where: { userId, finishedAt: { gte: subDays(now, 42) } },
+    orderBy: { finishedAt: "desc" },
+    take: 30,
+    select: {
+      title: true,
+      finishedAt: true,
+      completed: true,
+      bailedAtExercise: true,
+      durationMin: true,
+      guidedWorkoutId: true,
+    },
+  });
+  if (sessions.length === 0) return "";
+
+  // Group by title (presets share no id), newest first per group
+  const byTitle = new Map<string, typeof sessions>();
+  for (const s of sessions) {
+    const list = byTitle.get(s.title) || [];
+    list.push(s);
+    byTitle.set(s.title, list);
+  }
+
+  const lines: string[] = [];
+  for (const [title, list] of byTitle) {
+    const recent = list
+      .slice(0, 4)
+      .map((s) => {
+        const d = format(new Date(s.finishedAt), "MMM d");
+        return s.completed ? `${d} ✓` : `${d} stopped after ${s.bailedAtExercise ?? 0}`;
+      })
+      .join("; ");
+    const completedCount = list.filter((s) => s.completed).length;
+    lines.push(`- "${title}" — ${completedCount}× in the last 6 weeks (${recent})`);
+  }
+
+  return (
+    `GUIDED WORKOUT SESSIONS (strength/mobility played in the app's workout timer, last 6 weeks):\n` +
+    lines.join("\n") +
+    `\nUse this for PROGRESSION: when the same session has been completed several times, proactively offer a harder version (longer holds, an extra round, a tougher variation) via create_workout — mention it naturally in the daily opener or when training comes up, at most once a week. Repeated bails at the same point mean the session is too hard or too long: offer an easier version instead. Completed sessions here are already in RECENT TRAINING as activities — never double-count them.`
+  );
 }
 
 async function buildTrainingLoad(userId: string, now: Date): Promise<string> {

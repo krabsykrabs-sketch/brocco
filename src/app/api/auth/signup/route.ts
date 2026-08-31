@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
 import { getSession } from "@/lib/session";
+import { rateLimit, clientIp } from "@/lib/rate-limit";
 
 // Shared access code gate. brocco.run isn't indexed or advertised anywhere,
 // so a simple code handed to friends is deliberate — this is a bouncer for
@@ -11,6 +12,13 @@ const ACCESS_CODE = process.env.SIGNUP_ACCESS_CODE || "brocco2026";
 
 export async function POST(request: NextRequest) {
   try {
+    // The only auth route that had no rate limit — and the one behind a
+    // guessable shared code.
+    const ip = clientIp(request);
+    if (!rateLimit(`signup:${ip}`, 5, 60 * 60 * 1000)) {
+      return NextResponse.json({ error: "Too many attempts. Try again later." }, { status: 429 });
+    }
+
     const { email, name, password, accessCode } = await request.json();
 
     if (!email || !name || !password || !accessCode) {

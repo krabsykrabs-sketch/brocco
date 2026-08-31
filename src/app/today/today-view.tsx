@@ -41,7 +41,7 @@ interface TodayData {
     weekStart: string; weekEnd: string;
   };
   hasActivePlan: boolean; planExpired: boolean; activePlanName: string | null;
-  stravaConnected: boolean; activityCount: number;
+  stravaConnected: boolean; stravaNeedsReconnect: boolean; activityCount: number;
 }
 
 function timeOf(e: EventOccurrence): string {
@@ -453,6 +453,16 @@ export default function TodayView() {
       <div className="mt-3 mb-3">
         <h1 className="text-xl font-extrabold text-ink">{formatHeaderDate(data.date)}</h1>
       </div>
+
+      {/* Strava connection broke (token revoked/expired) — without this
+          banner, runs just silently stop appearing */}
+      {data.stravaNeedsReconnect && (
+        <div className="mb-3 bg-clay-soft border-2 border-clay rounded-xl px-3.5 py-3 flex items-center gap-3">
+          <span className="text-xl flex-shrink-0">⚠️</span>
+          <p className="text-sm text-clay font-bold flex-1">Strava stopped syncing — access expired.</p>
+          <a href="/api/strava/auth" className="btn-brocco px-3 py-1.5 text-xs flex-shrink-0">Reconnect</a>
+        </div>
+      )}
 
       {/* Morning briefing */}
       <BriefingCard briefing={briefing} loading={briefingLoading} />

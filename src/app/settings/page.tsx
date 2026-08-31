@@ -16,6 +16,9 @@ interface ProfileData {
   email: string;
   stravaConnected: boolean;
   stravaAthleteId: string | null;
+  stravaLastSyncAt: string | null;
+  stravaLastSyncError: string | null;
+  stravaNeedsReconnect: boolean;
   intervalsConnected: boolean;
   intervalsAthleteId: string | null;
   timezone: string;
@@ -636,6 +639,25 @@ function SettingsContent() {
   }
 
 
+  async function handleStravaDisconnect() {
+    if (!confirm("Disconnect Strava? Your imported activities are kept — new ones just stop arriving.")) return;
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch("/api/strava/disconnect", { method: "POST" });
+      if (!res.ok) throw new Error();
+      setProfile((p) =>
+        p
+          ? { ...p, stravaConnected: false, stravaAthleteId: null, stravaLastSyncError: null, stravaNeedsReconnect: false }
+          : p
+      );
+    } catch {
+      setSyncResult("Couldn't disconnect — try again.");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   async function handlePasswordChange() {
     if (newPw !== confirmPw) {
       setPwResult({ ok: false, msg: "Passwords don't match" });
@@ -950,11 +972,36 @@ function SettingsContent() {
           {profile?.stravaConnected ? (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-brocco border border-ink" />
+                <div className={`w-2 h-2 rounded-full border border-ink ${profile.stravaNeedsReconnect ? "bg-clay" : "bg-brocco"}`} />
                 <span className="text-sm text-ink font-bold">
                   Connected (Athlete {profile.stravaAthleteId})
                 </span>
               </div>
+              {/* Sync health — was completely invisible before: a dead token
+                  just meant runs silently stopped appearing */}
+              {profile.stravaNeedsReconnect ? (
+                <div className="bg-clay-soft border-2 border-clay rounded-lg px-3 py-2">
+                  <p className="text-xs font-bold text-clay">
+                    Strava access expired or was revoked — activities have stopped syncing.
+                  </p>
+                  <a
+                    href="/api/strava/auth"
+                    className="inline-block mt-1.5 text-xs font-extrabold text-ink underline underline-offset-2"
+                  >
+                    Reconnect Strava
+                  </a>
+                </div>
+              ) : (
+                <p className="text-xs text-sage font-semibold">
+                  Last synced:{" "}
+                  {profile.stravaLastSyncAt
+                    ? new Date(profile.stravaLastSyncAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+                    : "never"}
+                  {profile.stravaLastSyncError ? (
+                    <span className="text-clay font-bold"> · last attempt failed: {profile.stravaLastSyncError}</span>
+                  ) : null}
+                </p>
+              )}
               <div className="flex gap-3">
                 <button
                   onClick={handleSync}
@@ -962,6 +1009,13 @@ function SettingsContent() {
                   className="btn-quiet px-4 py-2 text-sm disabled:opacity-50"
                 >
                   {syncing ? "Syncing..." : "Sync Now"}
+                </button>
+                <button
+                  onClick={handleStravaDisconnect}
+                  disabled={syncing}
+                  className="btn-quiet px-4 py-2 text-sm text-clay disabled:opacity-50"
+                >
+                  Disconnect
                 </button>
               </div>
               {syncResult && (

@@ -260,9 +260,9 @@ export default function HistoryPage() {
           <option value="">All types</option>
           <option value="Run">Run</option>
           <option value="Ride">Ride</option>
-          <option value="Hike">Hike</option>
-          <option value="Walk">Walk</option>
+          <option value="Hike">Hike & Walk</option>
           <option value="Swim">Swim</option>
+          <option value="RockClimbing">Climb</option>
           <option value="WeightTraining">Strength</option>
         </select>
       </div>

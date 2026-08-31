@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { syncRecentActivities } from "@/lib/strava";
+import { syncRecentActivities, recordSyncOutcome } from "@/lib/strava";
 import { analyzeEligibleActivities } from "@/lib/activity-analysis";
 
 // How stale the last sync may be before a chat interaction triggers a new
@@ -45,9 +45,11 @@ export async function ensureFreshStravaData(userId: string): Promise<{ newCount:
         lastSyncAt: profile.stravaLastSyncAt,
       });
       await analyzeEligibleActivities(userId, newActivities);
+      await recordSyncOutcome(userId, null);
       return { newCount };
     } catch (err) {
       console.error("[strava-fresh] sync failed:", err);
+      await recordSyncOutcome(userId, `Sync failed: ${err instanceof Error ? err.message : "unknown error"}`);
       // Release the claim so the next interaction can retry immediately
       await prisma.userProfile
         .updateMany({

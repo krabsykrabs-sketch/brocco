@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
+import { RUN_TYPES, CYCLE_TYPES, SWIM_TYPES, HIKE_TYPES, STRENGTH_TYPES, CLIMB_TYPES } from "@/lib/activity-types";
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,9 +15,21 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(50, Math.max(1, parseInt(searchParams.get("limit") || "20")));
     const type = searchParams.get("type") || undefined;
 
+    // Filter by sport GROUP, not the raw stored sport_type — "Run" must
+    // match TrailRun/VirtualRun/Treadmill too, "Ride" all the ride variants.
+    // Unknown values fall back to an exact match so old links keep working.
+    const typeGroup: Record<string, string[]> = {
+      Run: RUN_TYPES,
+      Ride: CYCLE_TYPES,
+      Swim: SWIM_TYPES,
+      Hike: HIKE_TYPES,
+      Walk: HIKE_TYPES,
+      WeightTraining: STRENGTH_TYPES,
+      RockClimbing: CLIMB_TYPES,
+    };
     const where = {
       userId: session.userId,
-      ...(type ? { activityType: type } : {}),
+      ...(type ? { activityType: typeGroup[type] ? { in: typeGroup[type] } : type } : {}),
     };
 
     const [activities, total] = await Promise.all([

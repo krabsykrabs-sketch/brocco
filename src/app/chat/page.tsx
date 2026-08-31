@@ -6,9 +6,13 @@ import ChatUI from "./chat-ui";
 
 function ChatPageContent() {
   const searchParams = useSearchParams();
+  // ?msg= auto-SENDS on arrival; ?draft= only pre-fills the composer, for
+  // handoffs where the user still has something to add ("adjust this
+  // workout: … here's what I want changed:").
   const msg = searchParams.get("msg") || undefined;
+  const draft = searchParams.get("draft") || undefined;
 
-  return <ChatUI sessionId={null} initialMessages={[]} autoMessage={msg} />;
+  return <ChatUI sessionId={null} initialMessages={[]} autoMessage={msg} draftMessage={draft} />;
 }
 
 export default function NewChatPage() {

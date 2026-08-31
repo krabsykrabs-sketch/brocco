@@ -14,6 +14,7 @@ import { format } from "date-fns";
 import { COACH_MODEL } from "@/lib/models";
 import { renderWeeklyGoalsLine } from "@/lib/weekly-goals";
 import { generateNumberChecked } from "@/lib/number-guard";
+import { rateLimit } from "@/lib/rate-limit";
 import { weekTrainingFigures } from "@/lib/week-training";
 
 const anthropic = new Anthropic();
@@ -35,6 +36,10 @@ export async function GET(request: NextRequest) {
   const today = todayInTimezone(profile.timezone);
   const todayDate = parseWall(today);
   const force = new URL(request.url).searchParams.get("refresh") === "1";
+  // A forced refresh is an Opus call the client can trigger at will — cap it.
+  if (force && !rateLimit(`briefing-refresh:${userId}`, 10, 60 * 60 * 1000)) {
+    return NextResponse.json({ error: "Too many refreshes — the briefing is fresh enough." }, { status: 429 });
+  }
 
   const [existing, latestActivity] = await Promise.all([
     prisma.dailyBriefing.findUnique({

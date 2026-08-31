@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
+import { rateLimit } from "@/lib/rate-limit";
+
+// A dictated chat message is seconds to a couple of minutes of audio; 25MB is
+// also Groq's own per-file limit. Anything bigger is not a voice note.
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 
 export async function POST(request: NextRequest) {
   const session = await getSession();
   if (!session.userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!rateLimit(`transcribe:${session.userId}`, 60, 60 * 60 * 1000)) {
+    return NextResponse.json({ error: "Too many transcriptions — take a breath." }, { status: 429 });
   }
 
   const apiKey = process.env.GROQ_API_KEY;
@@ -18,6 +27,9 @@ export async function POST(request: NextRequest) {
 
     if (!audioFile) {
       return NextResponse.json({ error: "No audio file provided" }, { status: 400 });
+    }
+    if (audioFile.size > MAX_AUDIO_BYTES) {
+      return NextResponse.json({ error: "Recording too large" }, { status: 413 });
     }
 
     // Forward to Groq Whisper API

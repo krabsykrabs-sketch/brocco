@@ -222,7 +222,7 @@ function WorkoutPreview({
             </button>
             <div className="flex gap-2">
               <Link
-                href={`/chat?msg=${encodeURIComponent(adjustMsg)}`}
+                href={`/chat?draft=${encodeURIComponent(adjustMsg)}`}
                 className="btn-quiet flex-1 py-2 text-xs text-center"
               >
                 🥦 Adjust with Brocco

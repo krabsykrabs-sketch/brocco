@@ -8,6 +8,7 @@ import { StravaAutoSync } from "./strava-auto-sync";
 import { ReminderWatcher } from "./reminder-watcher";
 import { FeaturesProvider } from "./features-provider";
 import { BootSplash } from "./boot-splash";
+import ToastHost from "./toast-host";
 
 const nunito = Nunito({
   variable: "--font-nunito",
@@ -65,6 +66,7 @@ export default function RootLayout({
               /api/capture are left in place should we want it back. */}
           <StravaAutoSync />
           <ReminderWatcher />
+          <ToastHost />
           <PWAInstallBanner />
         </FeaturesProvider>
         <script
