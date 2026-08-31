@@ -202,7 +202,10 @@ export async function POST(request: NextRequest) {
         const res = await anthropic.messages
           .stream({
             model: COACH_MODEL,
-            max_tokens: 250,
+            // Opus 5 thinks by default; thinking shares the cap. Low effort
+            // suits a short data-grounded check-in.
+            max_tokens: 4000,
+            output_config: { effort: "low" },
             system: systemPrompt,
             messages: [
               {

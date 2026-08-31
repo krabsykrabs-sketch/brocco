@@ -99,7 +99,10 @@ export async function GET(request: NextRequest) {
     const checked = await generateNumberChecked(dataBlock, [], "briefing", async (correction) => {
       const response = await anthropic.messages.create({
         model: COACH_MODEL,
-        max_tokens: 220,
+        // Opus 5 thinks by default and thinking shares this cap — 220 would
+        // truncate. Low effort suits a short daily blurb.
+        max_tokens: 4000,
+        output_config: { effort: "low" },
         system: systemPrompt,
         messages: [
           {
@@ -108,7 +111,10 @@ export async function GET(request: NextRequest) {
           },
         ],
       });
-      return response.content[0]?.type === "text" ? response.content[0].text.trim() : "";
+      // find(), not content[0] — with thinking enabled the first block is a
+      // thinking block and content[0] silently misses the text.
+      const block = response.content.find((b) => b.type === "text");
+      return block && block.type === "text" ? block.text.trim() : "";
     });
 
     content = checked || fallbackBriefing(agenda.events.length, agenda.todos.length);

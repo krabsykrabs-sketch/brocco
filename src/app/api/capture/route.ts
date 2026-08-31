@@ -77,7 +77,13 @@ export async function POST(request: NextRequest) {
   // --- Build prompt ---
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
   const context = await buildCoachContext(userId);
-  const systemPrompt = await buildSystemPrompt(userId, user?.name || "Runner", context, "capture");
+  const { staticPart, dynamicPart } = await buildSystemPrompt(userId, user?.name || "Runner", context, "capture");
+  // Same cache split as the chat route — captures share the user's cached
+  // static prefix across the day's interactions; the volatile context rides
+  // as a trailing system message.
+  const systemBlocks: Anthropic.TextBlockParam[] = [
+    { type: "text", text: staticPart, cache_control: { type: "ephemeral", ttl: "1h" } },
+  ];
 
   const screenBlock = buildScreenBlock(body.screen);
   const modelText = screenBlock ? `${text}\n\n${screenBlock}` : text;
@@ -130,6 +136,16 @@ export async function POST(request: NextRequest) {
       messages.push({ ...m });
     }
   }
+  // Cache marker on the shared prefix's end, volatile context after it —
+  // mirrors the chat route (see there for why). MessageParam's role type
+  // lags the API's mid-conversation system support, hence the cast.
+  const lastMsg = messages[messages.length - 1];
+  if (lastMsg && typeof lastMsg.content === "string") {
+    lastMsg.content = [
+      { type: "text", text: lastMsg.content, cache_control: { type: "ephemeral" } },
+    ];
+  }
+  messages.push({ role: "system", content: dynamicPart } as unknown as Anthropic.MessageParam);
 
   // --- Tool loop (non-streaming, small budget — captures must be snappy) ---
   const notifications: Array<{ type: string; message: string; data?: Record<string, unknown> }> = [];
@@ -143,8 +159,11 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < MAX_ITERATIONS; i++) {
       const response = await anthropic.messages.create({
         model: COACH_MODEL,
-        max_tokens: 2000,
-        system: systemPrompt,
+        // Thinking shares this cap on Opus 5; low effort keeps captures
+        // snappy — exactly the terse, act-immediately behavior capture wants.
+        max_tokens: 8000,
+        output_config: { effort: "low" },
+        system: systemBlocks,
         messages: currentMessages,
         tools,
       });

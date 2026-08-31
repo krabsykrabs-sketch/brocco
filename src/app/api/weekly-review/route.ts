@@ -154,7 +154,10 @@ export async function GET(request: NextRequest) {
     content = await generateNumberChecked(dataBlock, [], "weekly-review", async (correction) => {
       const response = await anthropic.messages.create({
         model: COACH_MODEL,
-        max_tokens: 400,
+        // Opus 5 thinks by default and thinking shares this cap — 400 would
+        // truncate. Low effort: this is templated prose, not coaching strategy.
+        max_tokens: 4000,
+        output_config: { effort: "low" },
         system: `You are Brocco, a broccoli running coach and life assistant, writing the weekly review shown on the Today screen. 4-6 short sentences, two parts: (1) the week that was — headline numbers, one genuine highlight, one honest observation (missed sessions, intensity discipline) without nagging; (2) next week — the key session, any calendar collisions with training worth flagging, and one concrete focus. Quote only figures that appear in the data — never calculate or estimate distances. Plain text, no markdown, no greeting, no questions. Direct, warm, specific. A single vegetable flourish is allowed if it earns its place.`,
         messages: [
           {
@@ -163,7 +166,10 @@ export async function GET(request: NextRequest) {
           },
         ],
       });
-      return response.content[0]?.type === "text" ? response.content[0].text.trim() : "";
+      // find(), not content[0] — with thinking enabled the first block is a
+      // thinking block and content[0] silently misses the text.
+      const block = response.content.find((b) => b.type === "text");
+      return block && block.type === "text" ? block.text.trim() : "";
     });
   } catch (err) {
     console.error("Weekly review generation error:", err);

@@ -64,12 +64,21 @@ export async function POST(request: NextRequest) {
   const userName = user?.name || "Runner";
 
   const context = await buildCoachContext(session.userId);
-  const systemPrompt = await buildSystemPrompt(
+  const { staticPart, dynamicPart } = await buildSystemPrompt(
     session.userId,
     userName,
     context,
     chatSession.type === "kitchen" ? "kitchen" : "chat"
   );
+  // Prompt caching: the breakpoint on staticPart caches tools + the static
+  // prompt (the bulk of every request) at ~10% input price on reads. 1h TTL
+  // so the entry survives a "chat, go run, come back" gap. The volatile
+  // block (clock, live context) rides as a trailing system MESSAGE instead
+  // (Opus 5 supports mid-conversation system role), so even a context change
+  // never invalidates the cached history prefix.
+  const systemBlocks: Anthropic.TextBlockParam[] = [
+    { type: "text", text: staticPart, cache_control: { type: "ephemeral", ttl: "1h" } },
+  ];
 
   const profileFlags = await prisma.userProfile.findUnique({
     where: { userId: session.userId },
@@ -100,7 +109,9 @@ export async function POST(request: NextRequest) {
   });
   const history = historyDesc.reverse();
 
-  // Build messages array for Anthropic
+  // Build messages array for Anthropic. The last entry is always the user
+  // message stored above; it gets the conversation cache marker, and the
+  // volatile context block trails it as a system message.
   const messages: Anthropic.MessageParam[] = history
     .filter((m) => m.role === "user" || m.role === "assistant")
     .map((m) => {
@@ -120,6 +131,21 @@ export async function POST(request: NextRequest) {
         content: text || "",
       };
     });
+
+  // Cache marker on the end of the SHARED prefix (the just-sent user
+  // message) — not after the volatile tail, which would pay the write
+  // premium on bytes never read back. Each turn extends the previous
+  // turn's cached prefix incrementally.
+  const lastMsg = messages[messages.length - 1];
+  if (lastMsg && typeof lastMsg.content === "string") {
+    lastMsg.content = [
+      { type: "text", text: lastMsg.content, cache_control: { type: "ephemeral" } },
+    ];
+  }
+  // Volatile context (clock + live data) AFTER the cached history. The SDK's
+  // MessageParam type lags the API here — mid-conversation system role is
+  // supported on Opus 5 (no beta), hence the cast.
+  messages.push({ role: "system", content: dynamicPart } as unknown as Anthropic.MessageParam);
 
   // Stream the response with tool use support
   const encoder = new TextEncoder();
@@ -154,7 +180,7 @@ export async function POST(request: NextRequest) {
         });
 
         const result = await runWithTools(
-          systemPrompt,
+          systemBlocks,
           messages,
           session.userId,
           sessionId,
@@ -271,7 +297,7 @@ export function buildAssistantContent(fullText: string, toolLog: string[]) {
 }
 
 async function runWithTools(
-  systemPrompt: string,
+  systemBlocks: Anthropic.TextBlockParam[],
   messages: Anthropic.MessageParam[],
   userId: string,
   sessionId: string,
@@ -288,14 +314,16 @@ async function runWithTools(
   let currentMessages = [...messages];
 
   // High max_tokens needed because generate_plan can output 70+ workouts
-  // as JSON in a single tool call (~12k+ tokens). Any session can trigger plan creation.
-  const maxTokens = 32000;
+  // as JSON in a single tool call (~12k+ tokens), and on Opus 5 thinking is
+  // on by default and counts against the same cap. Streaming, so a high
+  // ceiling costs nothing unless generated.
+  const maxTokens = 64000;
 
   for (let i = 0; i < maxIterations; i++) {
     const stream = anthropic.messages.stream({
       model,
       max_tokens: maxTokens,
-      system: systemPrompt,
+      system: systemBlocks,
       messages: currentMessages,
       tools,
     });
@@ -308,6 +336,13 @@ async function runWithTools(
     });
 
     const response = await stream.finalMessage();
+
+    // The only ground truth that caching works. If `read` stays 0 across
+    // consecutive messages, something upstream broke the prefix again.
+    console.log(
+      `[chat] cache: read=${response.usage.cache_read_input_tokens ?? 0} ` +
+        `wrote=${response.usage.cache_creation_input_tokens ?? 0} uncached=${response.usage.input_tokens}`
+    );
 
     // Detect truncation — if response was cut off, the tool call may be incomplete
     if (response.stop_reason === "max_tokens") {
@@ -331,6 +366,15 @@ async function runWithTools(
     }
 
     fullText += textInThisTurn;
+
+    // Opus 5's safety classifiers can decline a request (HTTP 200,
+    // stop_reason "refusal") — vanishingly unlikely for coaching talk, but
+    // without this the user would see a silently empty bubble.
+    if (response.stop_reason === "refusal") {
+      console.warn(`[chat] refusal (session=${sessionId})`);
+      if (!fullText.trim()) fullText = "I can't help with that one — let's get back to training. 🥦";
+      break;
+    }
 
     // If no tool use, we're done
     if (toolUseBlocks.length === 0) {
@@ -410,7 +454,10 @@ async function generateTitle(sessionId: string, userMessage: string, assistantRe
     const response = await anthropic.messages
       .stream({
         model: COACH_MODEL,
-        max_tokens: 30,
+        // Room for adaptive thinking (on by default, shares the cap) — at 30
+        // the title was truncation bait. Low effort keeps it near-instant.
+        max_tokens: 1000,
+        output_config: { effort: "low" },
         messages: [
           {
             role: "user",
@@ -420,10 +467,10 @@ async function generateTitle(sessionId: string, userMessage: string, assistantRe
       })
       .finalMessage();
 
-    const title =
-      response.content[0].type === "text"
-        ? response.content[0].text.trim().slice(0, 60)
-        : "Chat";
+    // find(), not content[0]: with thinking enabled the first block can be a
+    // thinking block, and on a refusal content can be empty.
+    const titleBlock = response.content.find((b) => b.type === "text");
+    const title = titleBlock && titleBlock.type === "text" ? titleBlock.text.trim().slice(0, 60) : "Chat";
 
     await prisma.chatSession.update({
       where: { id: sessionId },

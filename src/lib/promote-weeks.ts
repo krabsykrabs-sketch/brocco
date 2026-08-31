@@ -83,7 +83,9 @@ export async function promoteWeekDetails(userId: string): Promise<{ promoted: nu
       const response = await anthropic.messages
         .stream({
           model: COACH_MODEL,
-          max_tokens: 4096,
+          // Opus 5 thinks by default; a week of workout JSON plus thinking
+          // needs headroom (streaming, so the ceiling is free).
+          max_tokens: 16000,
           system: `You are Brocco, a running coach. Generate detailed workouts for one week of a training plan. Return ONLY a JSON array of workout objects. No other text.
 
 Plan: ${plan.name} (${plan.goal})
@@ -102,7 +104,10 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
         })
         .finalMessage();
 
-      const text = response.content[0].type === "text" ? response.content[0].text : "";
+      // find(), not content[0] — with thinking enabled the first block is a
+      // thinking block and content[0] silently misses the JSON.
+      const textBlock = response.content.find((b) => b.type === "text");
+      const text = textBlock && textBlock.type === "text" ? textBlock.text : "";
       // Extract JSON array from response
       const jsonMatch = text.match(/\[[\s\S]*\]/);
       if (!jsonMatch) throw new Error("No JSON array in generation response");

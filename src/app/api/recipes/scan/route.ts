@@ -50,7 +50,8 @@ export async function POST(request: NextRequest) {
   try {
     const response = await anthropic.messages.create({
       model: UTILITY_MODEL,
-      max_tokens: 3000,
+      // Sonnet 5 thinks by default; thinking shares the cap.
+      max_tokens: 8000,
       system: `You extract recipes from photos of cookbook pages. Return ONLY a JSON object:
 {
   "found": true,

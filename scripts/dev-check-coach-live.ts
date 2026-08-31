@@ -66,7 +66,8 @@ async function setup(tag: string) {
 /** Faithful replica of the chat route's tool loop. */
 async function runTurn(userId: string, messages: Anthropic.MessageParam[]) {
   const context = await buildCoachContext(userId);
-  const systemPrompt = await buildSystemPrompt(userId, "Jan", context, "chat");
+  const { staticPart, dynamicPart } = await buildSystemPrompt(userId, "Jan", context, "chat");
+  const systemPrompt = `${staticPart}\n\n${dynamicPart}`;
   const flags = await prisma.userProfile.findUnique({ where: { userId }, select: { features: true } });
   const tools = toolsForFeatures(resolveFeatures(flags?.features));
 

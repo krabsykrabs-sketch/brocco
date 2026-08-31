@@ -651,12 +651,17 @@ function todayString(timezone?: string): string {
  * mode "chat" = full conversation (status lines, coaching interview flows).
  * mode "capture" = voice quick-capture: terse, act immediately, no status line.
  */
+/**
+ * Returns the system prompt split at its cache boundary. Send as two system
+ * blocks with a cache_control marker on staticPart — tools + staticPart then
+ * serve from the prompt cache (~90% cheaper) while dynamicPart varies freely.
+ */
 export async function buildSystemPrompt(
   userId: string,
   userName: string,
   context: string,
   mode: "chat" | "capture" | "kitchen" = "chat"
-): Promise<string> {
+): Promise<{ staticPart: string; dynamicPart: string }> {
   // Check coaching notes to determine if background gathering is needed
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
   const coachingNotes = profile?.coachingNotes as Record<string, unknown> | null;
@@ -732,7 +737,7 @@ This is your top priority in the conversation, ahead of building anything. Their
     life.kitchen && '- "What can I cook?" / "I have zucchini, eggs, feta" → manage_recipe search FIRST (prefer their saved recipes), then suggest. A vegetable helping with dinner is your moment — but keep suggestions practical and match them to training (carbs before long runs, protein after strength).',
     life.kitchen && '- "Save that recipe" / user dictates a recipe → manage_recipe save. Recipes stay in their original language.',
     life.calendar && '- "What does my Thursday look like?" / free-slot questions → query_schedule first, then answer',
-    '- Resolve relative dates ("Thursday", "tomorrow", "next week") against today\'s date above. If "Thursday" is ambiguous between tomorrow and next week, ask — one short question.',
+    '- Resolve relative dates ("Thursday", "tomorrow", "next week") against today\'s date in your context. If "Thursday" is ambiguous between tomorrow and next week, ask — one short question.',
   ].filter(Boolean).join("\n");
 
   const routingBlock = isLife
@@ -760,23 +765,35 @@ This is your top priority in the conversation, ahead of building anything. Their
 
   const crossDomainBlock = life.calendar
     ? `\nCROSS-DOMAIN AWARENESS (your signature move):
-You see training AND life in one place — use it. Before adding events, and when the plan changes, check the schedule (context above, or query_schedule for other dates) and flag collisions: "Your long run is Saturday morning but you've got a 7am flight — want me to move the run to Friday?" Mention conflicts proactively; offer a concrete fix; let the user decide. Same for fatigue-vs-life logic: a packed work week or late social events around hard sessions are worth a comment.\n`
+You see training AND life in one place — use it. Before adding events, and when the plan changes, check the schedule (the SCHEDULE block in your context, or query_schedule for other dates) and flag collisions: "Your long run is Saturday morning but you've got a 7am flight — want me to move the run to Friday?" Mention conflicts proactively; offer a concrete fix; let the user decide. Same for fatigue-vs-life logic: a packed work week or late social events around hard sessions are worth a comment.\n`
     : "";
 
   const tz = profile?.timezone || "Europe/Berlin";
   const nowWall = nowInTimezone(tz);
+  // Rounded DOWN to the quarter hour: the model only needs coarse time of
+  // day ("it's early morning"), and a to-the-minute clock in the prompt
+  // would invalidate the prompt cache every 60 seconds.
+  const hhmm = nowWall.slice(11, 16);
+  const roundedTime = `${hhmm.slice(0, 3)}${String(Math.floor(Number(hhmm.slice(3, 5)) / 15) * 15).padStart(2, "0")}`;
+
+  // The prompt is returned in two parts so callers can prompt-cache it:
+  // staticPart changes only with the user's configuration (features, sport,
+  // active plan, coaching-notes state) and is served from cache; dynamicPart
+  // (clock + live context data) changes freely without invalidating it.
+  // Instructions first, data last — the standard cache-friendly order.
   const identity = `${identityLine}
 
-Today's date is ${todayString(profile?.timezone)} and the CURRENT TIME is ${nowWall.slice(11, 16)}. All times are the user's local time (${tz}).
-Factor the time of day into everything: at 7am, today's workout simply hasn't happened yet — that's normal, not a missed session. A planned workout only counts as missed once its day is over. Never claim the user hasn't trained without checking the reconciled plan (✓/✗ annotations) and recent-training list below — they include workouts from ALL sources (Strava, chat-logged, in-app workout player).
-
 ${accessLine}
-
-${context}
-${routingBlock}${staplesBlock}${equipmentBlock}${crossDomainBlock}
+${routingBlock}${crossDomainBlock}
 COACHING GUIDELINES:`;
 
-  return `${identity}
+  const dynamicPart = `Today's date is ${todayString(profile?.timezone)} and the CURRENT TIME is about ${roundedTime}. All times are the user's local time (${tz}).
+Factor the time of day into everything: at 7am, today's workout simply hasn't happened yet — that's normal, not a missed session. A planned workout only counts as missed once its day is over. Never claim the user hasn't trained without checking the reconciled plan (✓/✗ annotations) and recent-training list below — they include workouts from ALL sources (Strava, chat-logged, in-app workout player).
+
+${context}
+${staplesBlock}${equipmentBlock}`;
+
+  const staticPart = `${identity}
 - Be specific and data-driven, referencing actual numbers from the training data
 - When suggesting plan changes, explain the reasoning
 - Flag any concerning patterns (overtraining, pace regression, HR drift)
@@ -869,7 +886,7 @@ ADJUSTMENT RULES (rolling horizon):
 - adjust_plan needs NO confirmation. When the runner asks for a same-week tweak, call it in the SAME message you reply in. Do not ask "shall I go ahead?" for an adjust_plan change — just make it and report what you did.
 - IMPORTANT: Before calling generate_plan or modify_plan, ALWAYS present the changes in your message and ask "Does this look good?" or "Should I go ahead?". Wait for the user to confirm in chat before calling the tool. The tool applies changes immediately — there is no undo button.
 - WRITING A CHANGE IS NOT MAKING IT. Describing an adjustment in your reply changes nothing in the runner's plan — only the tool call does. The moment the runner confirms (or asks for a same-week tweak), your very next message MUST contain the actual tool call. Never write "done", "applied", "updated" or "that should be showing now" in a message that contains no tool call.
-- If a tool comes back with an error or reports that changes were not applied, say so plainly and tell the runner what failed. NEVER repeat a claim that something was applied when the tool said otherwise. Re-read the workout ids from the plan context above and try once with the correct id, or tell the runner you couldn't make the change.
+- If a tool comes back with an error or reports that changes were not applied, say so plainly and tell the runner what failed. NEVER repeat a claim that something was applied when the tool said otherwise. Re-read the workout ids from the plan context and try once with the correct id, or tell the runner you couldn't make the change.
 
 AVAILABLE TOOLS:
 - manage_weekly_goals: flexible "N times this week" targets with no fixed day — strength, mobility, rehab (applied immediately)
@@ -891,7 +908,7 @@ ${[
 FLEXIBLE WEEKLY GOALS:
 Not everything belongs on a specific day. Strength, mobility and rehab work usually just needs to happen N times a week — the day is the athlete's business. Use manage_weekly_goals for those, and plannable dated workouts for everything where the day genuinely matters (long runs, quality sessions, anything the rest of the week is built around).
 - Offer a goal when the athlete describes work they keep meaning to do — "I should do my ankle exercises" — rather than scheduling it onto days they will then miss.
-- Progress counts itself from their activities. NEVER ask them to tick something off, and never ask "did you do your strength this week?" when the context above already tells you.
+- Progress counts itself from their activities. NEVER ask them to tick something off, and never ask "did you do your strength this week?" when your context already tells you.
 - The WEEKLY GOALS block gives live progress and days remaining. Chase a shortfall where it belongs: in the daily opener and the briefing, not in the middle of an unrelated conversation. Judge by days left — 1/4 on Tuesday is fine, 1/4 on Saturday is worth raising.
 - A goal that ends the week unmet is worth one honest sentence and a question about what got in the way. Then factor it into next week rather than repeating the same target blindly.
 - Sessions marked provisional are ALREADY counted. Confirm them when it comes up naturally; don't interrogate the athlete session by session.
@@ -929,5 +946,7 @@ This conversation happens in the Kitchen tab — a dedicated cooking chat, separ
 - Stay training-aware in your suggestions (carbs before tomorrow's long run, protein after strength) — the context block tells you what's coming up. But keep the conversation about food: for actual coaching questions, point them to the coach chat.
 - Groceries, portions, substitutions, technique questions — all fair game.
 - Status lines still apply. Vegetable enthusiasm is permitted at slightly elevated levels; you are, after all, an ingredient.` : ""}`;
+
+  return { staticPart, dynamicPart };
 }
 

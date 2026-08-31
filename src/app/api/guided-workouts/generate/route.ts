@@ -92,7 +92,8 @@ export async function POST(request: NextRequest) {
     try {
       const response = await anthropic.messages.create({
         model: UTILITY_MODEL,
-        max_tokens: 2000,
+        // Sonnet 5 thinks by default; thinking shares the cap.
+        max_tokens: 8000,
         system: `You are Brocco, a running coach designing strength & conditioning sessions for runners. ${DEFINITION_SPEC}`,
         messages: [
           {

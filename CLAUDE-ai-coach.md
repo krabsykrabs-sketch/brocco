@@ -26,7 +26,7 @@
 - **Framework:** Next.js 15 with App Router, TypeScript, Tailwind CSS
 - **Database:** PostgreSQL (hosted on same Hetzner server via Coolify)
 - **ORM:** Prisma
-- **AI:** Anthropic API — Opus 4.6 (`claude-opus-4-6`) for all interactions. Single model, no routing logic.
+- **AI:** Anthropic API — model ids live in `src/lib/models.ts` (single source of truth): Opus 5 (`claude-opus-5`) for all coaching/tool-calling, Sonnet 5 (`claude-sonnet-5`) for narrow structured extraction (recipe scan, workout generation). On these models thinking is on by default and shares `max_tokens`; system prompts are split for prompt caching (see `buildSystemPrompt`).
 - **Strava:** OAuth2 + webhooks + REST API for activity data
 - **Voice Input:** Groq Whisper API (whisper-large-v3-turbo) — record in browser, transcribe server-side via Groq, free tier
 - **Charts:** Recharts
