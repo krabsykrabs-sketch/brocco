@@ -245,6 +245,9 @@ function BlockCard({
   weekList: PlanWeekData[]; summaries: WeekSummary[]; phases: Phase[];
   currentWeekIdx: number; currentWeekNum: number | undefined;
 }) {
+  // Which phase's description is unfolded. Brocco writes one for every phase
+  // it plans; this is the only place they're readable.
+  const [openPhaseId, setOpenPhaseId] = useState<string | null>(null);
   const peakKm = Math.max(...summaries.map((s) => s.targetKm), 0);
   if (weekList.length === 0) return null;
 
@@ -289,23 +292,112 @@ function BlockCard({
           const isCurrent = currentWeekNum !== undefined && currentWeekNum >= phase.startWeek && currentWeekNum <= phase.endWeek;
           const isDone = currentWeekNum !== undefined && currentWeekNum > phase.endWeek;
           const done = isDone ? len : isCurrent ? currentWeekNum! - phase.startWeek + 1 : 0;
+          const expandable = !!phase.description;
+          const open = openPhaseId === phase.id;
           return (
-            <div key={phase.id} className="flex items-center gap-2.5">
-              <span className={`text-xs font-bold w-24 flex-shrink-0 truncate ${isCurrent ? "text-ink" : "text-moss"}`}>{phase.name}</span>
-              <div className="h-2.5 flex-1 bg-ghost border-2 border-ink rounded-full overflow-hidden">
-                <div className={`h-full ${isCurrent ? "bg-brocco" : "bg-sprout"}`} style={{ width: `${(done / len) * 100}%` }} />
-              </div>
-              <span className="text-[10px] text-sage font-bold tabular-nums w-16 flex-shrink-0 text-right">
-                {isCurrent ? `${done} of ${len}` : `W${phase.startWeek}–${phase.endWeek}`}
-              </span>
+            <div key={phase.id}>
+              <button
+                type="button"
+                onClick={() => expandable && setOpenPhaseId(open ? null : phase.id)}
+                className={`flex items-center gap-2.5 w-full ${expandable ? "" : "cursor-default"}`}
+              >
+                <span className={`text-xs font-bold w-24 flex-shrink-0 flex items-center gap-1 ${isCurrent ? "text-ink" : "text-moss"}`}>
+                  <span className="truncate">{phase.name}</span>
+                  {expandable && <span className="text-sage text-[9px] flex-shrink-0">{open ? "▾" : "▸"}</span>}
+                </span>
+                <div className="h-2.5 flex-1 bg-ghost border-2 border-ink rounded-full overflow-hidden">
+                  <div className={`h-full ${isCurrent ? "bg-brocco" : "bg-sprout"}`} style={{ width: `${(done / len) * 100}%` }} />
+                </div>
+                <span className="text-[10px] text-sage font-bold tabular-nums w-16 flex-shrink-0 text-right">
+                  {isCurrent ? `${done} of ${len}` : `W${phase.startWeek}–${phase.endWeek}`}
+                </span>
+              </button>
+              {open && phase.description && (
+                <p className="text-xs text-moss font-semibold mt-1 mb-1 pl-1">{phase.description}</p>
+              )}
             </div>
           );
         })}
       </div>
 
-      <Link href="/calendar" className="btn-quiet flex items-center justify-center gap-2 w-full py-2 text-xs mt-3">
-        <span>📅</span><span>See the sessions</span>
-      </Link>
+      <div className="flex gap-2 mt-3">
+        <Link href="/calendar" className="btn-quiet flex items-center justify-center gap-2 flex-1 py-2 text-xs">
+          <span>📅</span><span>See the sessions</span>
+        </Link>
+        <Link
+          href={`/chat?msg=${encodeURIComponent("Explain my training plan to me — what's the thinking behind the phases and the weekly volumes, and how should I approach the block?")}`}
+          className="btn-quiet flex items-center justify-center gap-2 flex-1 py-2 text-xs"
+        >
+          <span>🥦</span><span>Explain this plan</span>
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Every week of the block with its actual numbers — the km that BlockCard's
+ * bars only show as relative heights (their exact values otherwise live in a
+ * hover tooltip no phone can reach). Rows deep-link into the calendar week.
+ */
+function WeekListCard({
+  weekList, summaries, currentWeekIdx,
+}: {
+  weekList: PlanWeekData[]; summaries: WeekSummary[]; currentWeekIdx: number;
+}) {
+  if (weekList.length === 0) return null;
+
+  return (
+    <section className="sticker px-4 py-3">
+      <p className="label-xs">Week by week</p>
+      <div className="mt-1">
+        {weekList.map((w, i) => {
+          const s = summaries[i];
+          const isCurrent = i === currentWeekIdx;
+          // From dates, not the index: in a finished block currentWeekIdx is
+          // -1 and every week is past, not upcoming.
+          const isPast = !isCurrent && weekDates(w.startDate)[6] < today();
+          const startsPhase = !!w.phaseName && (i === 0 || weekList[i - 1].phaseName !== w.phaseName);
+          return (
+            <div key={w.id}>
+              {startsPhase && <p className="label-xs text-sage! mt-2.5 mb-1">{w.phaseName}</p>}
+              <Link
+                href={`/calendar?view=week&date=${w.startDate.split("T")[0]}`}
+                className={`block rounded-lg px-2 py-1.5 -mx-2 ${isCurrent ? "bg-sprout border-2 border-ink" : "hover:bg-ghost"}`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className={`text-xs font-extrabold w-9 flex-shrink-0 tabular-nums ${isCurrent ? "text-ink" : "text-moss"}`}>
+                    W{w.weekNumber}
+                  </span>
+                  <span className="text-[10px] text-sage font-bold w-14 flex-shrink-0">{formatDay(w.startDate)}</span>
+                  <span className="text-[10px] text-sage font-semibold flex-1 truncate tracking-[0.2em] uppercase">
+                    {(w.sessionTypes || []).join(" ")}
+                  </span>
+                  <span className="text-xs font-bold tabular-nums flex-shrink-0">
+                    {isPast || isCurrent ? (
+                      <>
+                        <span className={isPast && targetHit(s) ? "text-leaf" : isPast ? "text-clay" : "text-ink"}>
+                          {s.actualKm.toFixed(0)}
+                        </span>
+                        {s.targetKm > 0 && <span className="text-sage"> / {s.targetKm.toFixed(0)} km</span>}
+                        {isPast && targetHit(s) && <span className="text-leaf"> ✓</span>}
+                      </>
+                    ) : (
+                      <span className="text-ink">
+                        {s.targetKm > 0 ? `${s.targetKm.toFixed(0)} km` : "—"}
+                        {s.targetSessions > 0 && <span className="text-sage font-semibold"> · {s.targetSessions}×</span>}
+                      </span>
+                    )}
+                  </span>
+                </span>
+                {w.notes && !isCurrent && (
+                  <span className="block text-[10px] text-moss font-semibold truncate mt-0.5 pl-11">{w.notes}</span>
+                )}
+              </Link>
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -478,6 +570,12 @@ function PlanPageContent() {
           phases={plan.phases}
           currentWeekIdx={currentWeekIdx}
           currentWeekNum={currentWeekNum}
+        />
+
+        <WeekListCard
+          weekList={weekList}
+          summaries={summaries}
+          currentWeekIdx={currentWeekIdx}
         />
       </div>
     </main>

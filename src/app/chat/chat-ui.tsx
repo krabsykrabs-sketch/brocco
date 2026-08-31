@@ -222,6 +222,10 @@ export default function ChatUI({
   const [transcribing, setTranscribing] = useState(false);
   const [micSupported, setMicSupported] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollBoxRef = useRef<HTMLDivElement>(null);
+  // Follow the live stream only while the user is at the bottom. Scrolling up
+  // to read detaches the auto-follow; scrolling back down re-attaches it.
+  const pinnedRef = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -319,13 +323,23 @@ export default function ChatUI({
     }
   }
 
+  // Instant, not smooth: a smooth animation is still mid-flight when the next
+  // streaming chunk lands, so the scroll handler reads an away-from-bottom
+  // position and would wrongly unpin the auto-follow.
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    messagesEndRef.current?.scrollIntoView();
   }, []);
 
   useEffect(() => {
-    scrollToBottom();
+    if (pinnedRef.current) scrollToBottom();
   }, [messages, streamingText, scrollToBottom]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollBoxRef.current;
+    if (!el) return;
+    // Small threshold so being a hair off the bottom still counts as pinned.
+    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }, []);
 
   // Load sessions for sidebar
   useEffect(() => {
@@ -496,7 +510,10 @@ export default function ChatUI({
     setStreamingText("");
     setStreamingNotifications([]);
 
-    // Add user message optimistically
+    // Add user message optimistically. Sending always re-pins: your own
+    // message (and the reply) should come into view even if you had
+    // scrolled up beforehand.
+    pinnedRef.current = true;
     const userMsg: Message = {
       id: `temp-${Date.now()}`,
       role: "user",
@@ -635,7 +652,7 @@ export default function ChatUI({
       />
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div ref={scrollBoxRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-4">
         {messages.length === 0 && !streamingText && (
           <div className="text-center py-16">
             {/* eslint-disable-next-line @next/next/no-img-element */}

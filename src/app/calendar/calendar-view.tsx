@@ -6,7 +6,7 @@ import Link from "next/link";
 import { PageHeader } from "../nav";
 import { categoryMeta, EVENT_CATEGORY_META, getWorkoutTypeColor } from "@/lib/categories";
 import { useScreenContext, useDataChanged } from "@/lib/capture-context";
-import { isCompatibleType } from "@/lib/activity-types";
+import { isCompatibleType, isRunning } from "@/lib/activity-types";
 
 // --- Types ---
 
@@ -959,9 +959,18 @@ export default function CalendarView() {
     const data = byDate.get(date) || { events: [], workouts: [], activities: [] };
     const isToday = date === today;
     const isEmpty = data.events.length === 0 && data.workouts.length === 0 && data.activities.length === 0;
+    // The whole row opens that day's day view — the date label alone is too
+    // small a tap target. Chips keep their own actions (detail sheet, links):
+    // any click that started inside a link or button is theirs, not the row's.
+    // Keyboard access to the same action is the DayLabel button.
+    const openDay = (e: React.MouseEvent) => {
+      if ((e.target as HTMLElement).closest("a, button")) return;
+      setAnchor(date);
+      setView("day");
+    };
     if (compact && isEmpty) {
       return (
-        <div className="flex items-center gap-3 py-1.5 opacity-60">
+        <div onClick={openDay} className="flex items-center gap-3 py-1.5 opacity-60 cursor-pointer">
           <DayLabel date={date} isToday={isToday} />
           <div className="flex-1 border-b-2 border-dotted border-shade" />
         </div>
@@ -969,7 +978,7 @@ export default function CalendarView() {
     }
     const { rows, extras } = reconcileDay(data.workouts, data.activities, today);
     return (
-      <div className="flex gap-3 py-1.5">
+      <div onClick={openDay} className="flex gap-3 py-1.5 cursor-pointer">
         <DayLabel date={date} isToday={isToday} />
         <div className="flex-1 min-w-0 space-y-1.5">
           {data.events.map((e) => <EventChip key={e.occurrenceKey} event={e} onTap={() => setDetail(e)} />)}
@@ -999,11 +1008,42 @@ export default function CalendarView() {
       );
     }
     if (view === "week") {
+      const days = Array.from({ length: 7 }, (_, i) => addDaysStr(start, i));
+      // Planned vs completed roll-up for the visible week. Running km only —
+      // the measure the plan counts volume in (rides and S&C are duration-
+      // based and would inflate a km total).
+      let plannedKm = 0, runKm = 0, plannedSessions = 0, doneSessions = 0;
+      for (const d of days) {
+        const data = byDate.get(d) || EMPTY_DAY;
+        for (const w of data.workouts) {
+          if (w.activityType === "run" && w.targetDistanceKm) plannedKm += w.targetDistanceKm;
+        }
+        for (const a of data.activities) {
+          if (isRunning(a.activityType) && a.distanceKm) runKm += a.distanceKm;
+        }
+        const { rows } = reconcileDay(data.workouts, data.activities, today);
+        const sessions = rows.filter((r) => r.workout.workoutType !== "rest");
+        plannedSessions += sessions.length;
+        doneSessions += sessions.filter((r) => r.state === "done").length;
+      }
       return (
-        <div className="divide-y-2 divide-shade/40">
-          {Array.from({ length: 7 }, (_, i) => addDaysStr(start, i)).map((d) => (
-            <DaySection key={d} date={d} compact />
-          ))}
+        <div>
+          {(plannedKm > 0 || runKm > 0) && (
+            <div className="flex items-center justify-between px-1 pb-1.5 text-xs font-bold tabular-nums">
+              <p className="text-moss">
+                🏃 {runKm.toFixed(1)}
+                {plannedKm > 0 ? <span className="text-sage"> / {plannedKm.toFixed(0)} km</span> : <span> km</span>}
+              </p>
+              {plannedSessions > 0 && (
+                <p className="text-sage">{doneSessions} of {plannedSessions} sessions</p>
+              )}
+            </div>
+          )}
+          <div className="divide-y-2 divide-shade/40">
+            {days.map((d) => (
+              <DaySection key={d} date={d} compact />
+            ))}
+          </div>
         </div>
       );
     }
