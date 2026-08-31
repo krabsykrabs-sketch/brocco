@@ -293,28 +293,42 @@ function BriefingCard({ briefing, loading }: { briefing: string | null; loading:
 
 function WeekCard({ data }: { data: TodayData }) {
   const ws = data.weekSummary;
-  if (!data.hasActivePlan || (ws.plannedKm === 0 && ws.runKm === 0)) return null;
-  const pct = ws.plannedKm > 0 ? Math.min((ws.runKm / ws.plannedKm) * 100, 150) : 0;
+  // A plan week with no km target but planned sessions (climbing and other
+  // non-distance plans) is tracked by sessions instead of km.
+  const sessionsBased = ws.plannedKm === 0 && ws.totalSessions > 0;
+  if (!data.hasActivePlan || (ws.plannedKm === 0 && ws.runKm === 0 && !sessionsBased)) return null;
+  const pct = sessionsBased
+    ? Math.min((ws.completedSessions / ws.totalSessions) * 100, 150)
+    : ws.plannedKm > 0
+    ? Math.min((ws.runKm / ws.plannedKm) * 100, 150)
+    : 0;
   return (
     <Link href="/plan" className="sticker-lg sticker-press block px-4 py-3">
       <div className="flex items-center justify-between mb-1.5">
         <p className="label-xs">
           This week{ws.weekNumber ? ` · W${ws.weekNumber}${ws.totalWeeks ? `/${ws.totalWeeks}` : ""}` : ""}{ws.phaseName ? ` · ${ws.phaseName}` : ""}
         </p>
-        {ws.totalSessions > 0 && (
+        {!sessionsBased && ws.totalSessions > 0 && (
           <p className="text-[10px] text-sage font-bold">{ws.completedSessions}/{ws.totalSessions} sessions</p>
         )}
       </div>
       <div className="flex items-baseline justify-between mb-1">
-        <p className="text-sm text-ink tabular-nums">
-          <span className="font-extrabold text-lg">{ws.runKm.toFixed(1)}</span>
-          {ws.plannedKm > 0 && <span className="text-sage font-bold"> / {ws.plannedKm.toFixed(0)} km</span>}
-        </p>
-        {ws.plannedKm > 0 && (
+        {sessionsBased ? (
+          <p className="text-sm text-ink tabular-nums">
+            <span className="font-extrabold text-lg">{ws.completedSessions}</span>
+            <span className="text-sage font-bold"> / {ws.totalSessions} sessions</span>
+          </p>
+        ) : (
+          <p className="text-sm text-ink tabular-nums">
+            <span className="font-extrabold text-lg">{ws.runKm.toFixed(1)}</span>
+            {ws.plannedKm > 0 && <span className="text-sage font-bold"> / {ws.plannedKm.toFixed(0)} km</span>}
+          </p>
+        )}
+        {(ws.plannedKm > 0 || sessionsBased) && (
           <span className={`text-xs font-extrabold tabular-nums ${pct >= 100 ? "text-leaf" : "text-sage"}`}>{Math.round(pct)}%</span>
         )}
       </div>
-      {ws.plannedKm > 0 && (
+      {(ws.plannedKm > 0 || sessionsBased) && (
         <div className="h-2.5 bg-ghost border-2 border-ink rounded-full overflow-hidden">
           <div className="h-full bg-brocco transition-all duration-500" style={{ width: `${Math.min(pct, 100)}%` }} />
         </div>

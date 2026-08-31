@@ -89,7 +89,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
         },
         activity_type: {
           type: "string",
-          enum: ["run", "cycle", "swim", "strength", "yoga", "hike", "other"],
+          enum: ["run", "cycle", "swim", "strength", "yoga", "hike", "climb", "other"],
         },
         distance_km: { type: "number" },
         duration_min: { type: "number" },
@@ -219,8 +219,8 @@ export const toolDefinitions: Anthropic.Tool[] = [
                   "Fields to change (update) or the new workout's fields (add). Use exactly these names.",
                 properties: {
                   title: { type: "string" },
-                  workout_type: { type: "string", description: "easy, long, tempo, interval, recovery, race_pace, cross_training, strength, rest, race" },
-                  activity_type: { type: "string", description: "run, cycle, swim, other — REQUIRED for non-running sessions" },
+                  workout_type: { type: "string", description: "easy, long, tempo, interval, recovery, race_pace, cross_training, strength, rest, race, climbing" },
+                  activity_type: { type: "string", description: "run, cycle, swim, climb, other — REQUIRED for non-running sessions" },
                   distance: { type: "number", description: "KILOMETRES" },
                   pace: { type: "string" },
                   duration: { type: "number", description: "MINUTES" },
@@ -263,6 +263,11 @@ export const toolDefinitions: Anthropic.Tool[] = [
           description: "ISO date",
         },
         goal_time: { type: "string" },
+        primary_sport: {
+          type: "string",
+          description:
+            "The athlete's MAIN sport, lowercase singular noun: 'climbing', 'cycling', 'triathlon'. Save it as soon as they make clear their main sport isn't running — it reshapes your persona and their plans. Omit / never set for runners (running is the default).",
+        },
         timezone: {
           type: "string",
           description: "IANA timezone",
@@ -324,7 +329,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
                 enum: ["detailed", "outline", "target"],
                 description: "Weeks 1-2: detailed, weeks 3-4: outline, week 5+: target",
               },
-              target_km: { type: "number", description: "Target running km for the week" },
+              target_km: { type: "number", description: "Target running km for the week. For non-distance sports (e.g. a climbing plan) set 0 — the app then tracks the week by sessions instead of km." },
               target_sessions: { type: "integer", description: "Number of sessions planned" },
               session_types: {
                 type: "array",
@@ -346,7 +351,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
               title: { type: "string", description: "e.g., 'Easy Run'" },
               workout_type: {
                 type: "string",
-                enum: ["easy", "long", "tempo", "interval", "race_pace", "recovery", "rest", "cross_training", "strength", "race"],
+                enum: ["easy", "long", "tempo", "interval", "race_pace", "recovery", "rest", "cross_training", "strength", "race", "climbing"],
               },
               detail_level: {
                 type: "string",
@@ -355,7 +360,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
               },
               activity_type: {
                 type: "string",
-                enum: ["run", "cycle", "swim", "hike", "strength", "rest", "other"],
+                enum: ["run", "cycle", "swim", "hike", "strength", "climb", "rest", "other"],
                 description: "The single sport for this workout (defaults to 'run'). Each workout is exactly one sport — split combined sessions into separate workouts.",
               },
               target_distance_km: { type: "number", description: "REQUIRED for every run (activity_type 'run'), including plain easy runs — km is how running volume is measured. Omit for cycling (use target_duration_min instead)." },
@@ -716,6 +721,7 @@ async function handleLogActivity(
     strength: "WeightTraining",
     yoga: "Yoga",
     hike: "Hike",
+    climb: "RockClimbing",
     other: "Workout",
   };
 
@@ -1889,6 +1895,13 @@ async function handleSaveProfile(
     updateData.timezone = input.timezone as string;
     savedFields.push("timezone");
   }
+  if (input.primary_sport !== undefined) {
+    const sport = String(input.primary_sport).trim().toLowerCase();
+    // "running" is the default persona — store null so runners stay on the
+    // unchanged classic prompt.
+    updateData.primarySport = sport && sport !== "running" ? sport : null;
+    savedFields.push("primary_sport");
+  }
   if (input.training_equipment !== undefined) {
     // Replaces rather than appends — the tool description says so, and the
     // normaliser drops blanks and case-insensitive duplicates either way.
@@ -1912,7 +1925,7 @@ async function handleSaveProfile(
       success: false,
       error:
         "Nothing was saved — none of the supplied keys are fields save_profile can write. " +
-        "Supported: name, years_running, weekly_km_baseline, goal_race, goal_race_date, goal_time, hr_max_bpm, coaching_notes_update. " +
+        "Supported: name, years_running, weekly_km_baseline, goal_race, goal_race_date, goal_time, primary_sport, hr_max_bpm, coaching_notes_update. " +
         "Anything else belongs in coaching_notes_update.",
     };
   }

@@ -102,6 +102,7 @@ const WORKOUT_TYPE_LABEL: Record<string, string> = {
   easy: "easy run", long: "long run", tempo: "tempo run", interval: "interval session",
   race_pace: "race-pace session", recovery: "recovery run", rest: "rest day",
   cross_training: "cross-training session", strength: "strength session", race: "race",
+  climbing: "climbing session",
 };
 
 function activityDetail(a: ActivityItem): string {
@@ -959,18 +960,32 @@ export default function CalendarView() {
     const data = byDate.get(date) || { events: [], workouts: [], activities: [] };
     const isToday = date === today;
     const isEmpty = data.events.length === 0 && data.workouts.length === 0 && data.activities.length === 0;
-    // The whole row opens that day's day view — the date label alone is too
-    // small a tap target. Chips keep their own actions (detail sheet, links):
-    // any click that started inside a link or button is theirs, not the row's.
-    // Keyboard access to the same action is the DayLabel button.
-    const openDay = (e: React.MouseEvent) => {
-      if ((e.target as HTMLElement).closest("a, button")) return;
+    // In the week view (compact) the ENTIRE row — chips included — opens that
+    // day's day view: a capture-phase handler claims the tap before the chips'
+    // own actions fire (those all remain one tap away inside the day view).
+    // Elsewhere chips stay interactive and only the row's dead space opens
+    // the day.
+    const openDay = () => {
       setAnchor(date);
       setView("day");
     };
+    const rowTap = compact
+      ? {
+          onClickCapture: (e: React.MouseEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openDay();
+          },
+        }
+      : {
+          onClick: (e: React.MouseEvent) => {
+            if ((e.target as HTMLElement).closest("a, button")) return;
+            openDay();
+          },
+        };
     if (compact && isEmpty) {
       return (
-        <div onClick={openDay} className="flex items-center gap-3 py-1.5 opacity-60 cursor-pointer">
+        <div {...rowTap} className="flex items-center gap-3 py-1.5 opacity-60 cursor-pointer">
           <DayLabel date={date} isToday={isToday} />
           <div className="flex-1 border-b-2 border-dotted border-shade" />
         </div>
@@ -978,7 +993,7 @@ export default function CalendarView() {
     }
     const { rows, extras } = reconcileDay(data.workouts, data.activities, today);
     return (
-      <div onClick={openDay} className="flex gap-3 py-1.5 cursor-pointer">
+      <div {...rowTap} className="flex gap-3 py-1.5 cursor-pointer">
         <DayLabel date={date} isToday={isToday} />
         <div className="flex-1 min-w-0 space-y-1.5">
           {data.events.map((e) => <EventChip key={e.occurrenceKey} event={e} onTap={() => setDetail(e)} />)}
@@ -1028,13 +1043,21 @@ export default function CalendarView() {
       }
       return (
         <div>
-          {(plannedKm > 0 || runKm > 0) && (
+          {(plannedKm > 0 || runKm > 0 || plannedSessions > 0) && (
             <div className="flex items-center justify-between px-1 pb-1.5 text-xs font-bold tabular-nums">
-              <p className="text-moss">
-                🏃 {runKm.toFixed(1)}
-                {plannedKm > 0 ? <span className="text-sage"> / {plannedKm.toFixed(0)} km</span> : <span> km</span>}
-              </p>
-              {plannedSessions > 0 && (
+              {plannedKm > 0 || runKm > 0 ? (
+                <p className="text-moss">
+                  🏃 {runKm.toFixed(1)}
+                  {plannedKm > 0 ? <span className="text-sage"> / {plannedKm.toFixed(0)} km</span> : <span> km</span>}
+                </p>
+              ) : (
+                // No running km this week (climbing and other sessions-based
+                // plans) — sessions are the headline instead.
+                <p className="text-moss">
+                  💪 {doneSessions}<span className="text-sage"> / {plannedSessions} sessions</span>
+                </p>
+              )}
+              {(plannedKm > 0 || runKm > 0) && plannedSessions > 0 && (
                 <p className="text-sage">{doneSessions} of {plannedSessions} sessions</p>
               )}
             </div>

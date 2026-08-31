@@ -8,6 +8,8 @@ export const CYCLE_TYPES = ["Ride", "VirtualRide", "EBikeRide", "MountainBikeRid
 export const SWIM_TYPES = ["Swim"];
 export const HIKE_TYPES = ["Hike", "Walk"];
 export const STRENGTH_TYPES = ["WeightTraining", "Workout"];
+// Strava's sport_type; manual chat logs normalize to it too (log_activity).
+export const CLIMB_TYPES = ["RockClimbing"];
 
 const TYPE_MAP: Record<string, string[]> = {
   run: RUN_TYPES,
@@ -15,6 +17,7 @@ const TYPE_MAP: Record<string, string[]> = {
   swim: SWIM_TYPES,
   hike: HIKE_TYPES,
   strength: STRENGTH_TYPES,
+  climb: CLIMB_TYPES,
   rest: [],
   other: [],
 };

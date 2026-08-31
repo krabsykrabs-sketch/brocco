@@ -93,7 +93,15 @@ function summariseWeek(week: PlanWeekData, workouts: Workout[], byDate: Record<s
 
 /** GPS and rounding make an exact hit vanishingly rare; within 5% is a hit. */
 function targetHit(s: WeekSummary): boolean {
-  return s.targetKm > 0 && s.actualKm >= s.targetKm * 0.95;
+  if (s.targetKm > 0) return s.actualKm >= s.targetKm * 0.95;
+  // Sessions-based week (climbing and other non-distance plans set target_km
+  // to 0): hit when every planned session happened.
+  return s.targetSessions > 0 && s.sessions >= s.targetSessions;
+}
+
+/** A week with no km target but planned sessions is tracked by sessions. */
+function isSessionsBased(s: WeekSummary): boolean {
+  return s.targetKm === 0 && s.targetSessions > 0;
 }
 
 // --- Cards ---
@@ -165,7 +173,14 @@ function ThisWeekCard({
   goals: ReturnType<typeof useWeeklyGoals>;
   tasks: WeeklyTask[]; onToggleTask: (id: string, status: string) => void;
 }) {
-  const pct = summary && summary.targetKm > 0 ? Math.min((summary.actualKm / summary.targetKm) * 100, 100) : 0;
+  const sessionsBased = !!summary && isSessionsBased(summary);
+  const pct = !summary
+    ? 0
+    : sessionsBased
+    ? Math.min((summary.sessions / summary.targetSessions) * 100, 100)
+    : summary.targetKm > 0
+    ? Math.min((summary.actualKm / summary.targetKm) * 100, 100)
+    : 0;
 
   return (
     <section className="sticker px-4 py-3">
@@ -176,15 +191,24 @@ function ThisWeekCard({
             <p className="text-xs text-sage font-bold">{formatWeekRange(week.startDate)}</p>
           </div>
           <div className="flex items-baseline justify-between gap-2 mt-0.5">
-            <p className="text-ink tabular-nums">
-              <span className="text-2xl font-extrabold">{summary.actualKm.toFixed(0)}</span>
-              {summary.targetKm > 0 && <span className="text-sage font-bold"> / {summary.targetKm.toFixed(0)} km</span>}
-            </p>
-            {summary.targetSessions > 0 && (
-              <p className="text-xs font-bold text-moss tabular-nums">{summary.sessions} of {summary.targetSessions} sessions</p>
+            {sessionsBased ? (
+              <p className="text-ink tabular-nums">
+                <span className="text-2xl font-extrabold">{summary.sessions}</span>
+                <span className="text-sage font-bold"> / {summary.targetSessions} sessions</span>
+              </p>
+            ) : (
+              <>
+                <p className="text-ink tabular-nums">
+                  <span className="text-2xl font-extrabold">{summary.actualKm.toFixed(0)}</span>
+                  {summary.targetKm > 0 && <span className="text-sage font-bold"> / {summary.targetKm.toFixed(0)} km</span>}
+                </p>
+                {summary.targetSessions > 0 && (
+                  <p className="text-xs font-bold text-moss tabular-nums">{summary.sessions} of {summary.targetSessions} sessions</p>
+                )}
+              </>
             )}
           </div>
-          {summary.targetKm > 0 && (
+          {(summary.targetKm > 0 || sessionsBased) && (
             <div className="h-2.5 bg-ghost border-2 border-ink rounded-full overflow-hidden mt-1.5">
               <div className="h-full bg-brocco transition-all duration-500" style={{ width: `${pct}%` }} />
             </div>
@@ -195,16 +219,28 @@ function ThisWeekCard({
         </>
       )}
 
-      {lastWeek && lastSummary && (lastSummary.actualKm > 0 || lastSummary.targetKm > 0) && (
+      {lastWeek && lastSummary && (lastSummary.actualKm > 0 || lastSummary.targetKm > 0 || lastSummary.targetSessions > 0) && (
         <div className="flex items-center justify-between gap-2 mt-2.5 pt-2.5 border-t-2 border-dashed border-shade">
           <p className="label-xs">Last week</p>
           <p className="text-xs font-bold tabular-nums">
-            <span className="text-ink">{lastSummary.actualKm.toFixed(0)}</span>
-            {lastSummary.targetKm > 0 && <span className="text-sage"> / {lastSummary.targetKm.toFixed(0)} km</span>}
-            {lastSummary.targetKm > 0 && (
-              targetHit(lastSummary)
-                ? <span className="text-leaf"> ✓ target hit</span>
-                : <span className="text-clay"> · {(lastSummary.targetKm - lastSummary.actualKm).toFixed(0)} km short</span>
+            {isSessionsBased(lastSummary) ? (
+              <>
+                <span className="text-ink">{lastSummary.sessions}</span>
+                <span className="text-sage"> / {lastSummary.targetSessions} sessions</span>
+                {targetHit(lastSummary)
+                  ? <span className="text-leaf"> ✓ target hit</span>
+                  : <span className="text-clay"> · {lastSummary.targetSessions - lastSummary.sessions} short</span>}
+              </>
+            ) : (
+              <>
+                <span className="text-ink">{lastSummary.actualKm.toFixed(0)}</span>
+                {lastSummary.targetKm > 0 && <span className="text-sage"> / {lastSummary.targetKm.toFixed(0)} km</span>}
+                {lastSummary.targetKm > 0 && (
+                  targetHit(lastSummary)
+                    ? <span className="text-leaf"> ✓ target hit</span>
+                    : <span className="text-clay"> · {(lastSummary.targetKm - lastSummary.actualKm).toFixed(0)} km short</span>
+                )}
+              </>
             )}
           </p>
         </div>
@@ -249,21 +285,31 @@ function BlockCard({
   // it plans; this is the only place they're readable.
   const [openPhaseId, setOpenPhaseId] = useState<string | null>(null);
   const peakKm = Math.max(...summaries.map((s) => s.targetKm), 0);
+  // No km anywhere in the block (climbing and other non-distance plans) →
+  // the bars show planned sessions instead. km-based blocks are unchanged.
+  const sessionsBars = peakKm === 0;
+  const peak = sessionsBars ? Math.max(...summaries.map((s) => s.targetSessions), 0) : peakKm;
   if (weekList.length === 0) return null;
 
   return (
     <section className="sticker px-4 py-3">
       <div className="flex items-baseline justify-between gap-2 mb-2">
         <p className="label-xs">The block</p>
-        {peakKm > 0 && <p className="text-xs text-sage font-bold tabular-nums">peak {peakKm.toFixed(0)} km</p>}
+        {peak > 0 && (
+          <p className="text-xs text-sage font-bold tabular-nums">
+            peak {peak.toFixed(0)} {sessionsBars ? "sessions/wk" : "km"}
+          </p>
+        )}
       </div>
 
-      {peakKm > 0 && (
+      {peak > 0 && (
         <div className="flex items-end gap-[2px] mb-3">
           {weekList.map((w, i) => {
             const s = summaries[i];
+            const target = sessionsBars ? s.targetSessions : s.targetKm;
+            const actual = sessionsBars ? s.sessions : s.actualKm;
             const startsPhase = i > 0 && phases.some((p) => p.startWeek === w.weekNumber);
-            const fill = s.targetKm > 0 ? Math.min(s.actualKm / s.targetKm, 1) * 100 : 0;
+            const fill = target > 0 ? Math.min(actual / target, 1) * 100 : 0;
             return (
               <div key={w.id} className="flex items-end gap-[2px] flex-1 min-w-0">
                 {startsPhase && <div className="w-px self-stretch bg-shade" />}
@@ -271,8 +317,8 @@ function BlockCard({
                   <div className="h-14 flex flex-col justify-end">
                     <div
                       className="w-full rounded-sm bg-shade relative overflow-hidden"
-                      style={{ height: `${Math.max((s.targetKm / peakKm) * 100, 4)}%` }}
-                      title={`Week ${w.weekNumber}: ${s.targetKm.toFixed(0)} km target`}
+                      style={{ height: `${Math.max((target / peak) * 100, 4)}%` }}
+                      title={`Week ${w.weekNumber}: ${target.toFixed(0)} ${sessionsBars ? "sessions" : "km"} target`}
                     >
                       {fill > 0 && <div className="absolute inset-x-0 bottom-0 bg-brocco" style={{ height: `${fill}%` }} />}
                     </div>
@@ -375,13 +421,25 @@ function WeekListCard({
                   </span>
                   <span className="text-xs font-bold tabular-nums flex-shrink-0">
                     {isPast || isCurrent ? (
-                      <>
-                        <span className={isPast && targetHit(s) ? "text-leaf" : isPast ? "text-clay" : "text-ink"}>
-                          {s.actualKm.toFixed(0)}
-                        </span>
-                        {s.targetKm > 0 && <span className="text-sage"> / {s.targetKm.toFixed(0)} km</span>}
-                        {isPast && targetHit(s) && <span className="text-leaf"> ✓</span>}
-                      </>
+                      isSessionsBased(s) ? (
+                        <>
+                          <span className={isPast && targetHit(s) ? "text-leaf" : isPast ? "text-clay" : "text-ink"}>
+                            {s.sessions}
+                          </span>
+                          <span className="text-sage"> / {s.targetSessions} sessions</span>
+                          {isPast && targetHit(s) && <span className="text-leaf"> ✓</span>}
+                        </>
+                      ) : (
+                        <>
+                          <span className={isPast && targetHit(s) ? "text-leaf" : isPast ? "text-clay" : "text-ink"}>
+                            {s.actualKm.toFixed(0)}
+                          </span>
+                          {s.targetKm > 0 && <span className="text-sage"> / {s.targetKm.toFixed(0)} km</span>}
+                          {isPast && targetHit(s) && <span className="text-leaf"> ✓</span>}
+                        </>
+                      )
+                    ) : isSessionsBased(s) ? (
+                      <span className="text-ink">{s.targetSessions} sessions</span>
                     ) : (
                       <span className="text-ink">
                         {s.targetKm > 0 ? `${s.targetKm.toFixed(0)} km` : "—"}

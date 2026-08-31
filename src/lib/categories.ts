@@ -27,6 +27,7 @@ export function getWorkoutTypeColor(type: string): string {
     case "long": return "#4a90d6";
     case "cross_training": return "#3aa89b";
     case "strength": return "#a86fd1";
+    case "climbing": return "#b0794f";
     case "rest": return "#99a17e";
     case "race": return "#e0b23c";
     default: return "#99a17e";

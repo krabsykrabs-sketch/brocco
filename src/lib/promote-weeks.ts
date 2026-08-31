@@ -134,8 +134,8 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
             weekNumber: week.weekNumber,
             date: new Date(w.date),
             title: w.title,
-            workoutType: (w.workout_type || "easy") as "easy" | "long" | "tempo" | "interval" | "race_pace" | "recovery" | "rest" | "cross_training" | "strength" | "race",
-            activityType: (w.activity_type || "run") as "run" | "cycle" | "swim" | "hike" | "strength" | "rest" | "other",
+            workoutType: (w.workout_type || "easy") as "easy" | "long" | "tempo" | "interval" | "race_pace" | "recovery" | "rest" | "cross_training" | "strength" | "race" | "climbing",
+            activityType: (w.activity_type || "run") as "run" | "cycle" | "swim" | "hike" | "strength" | "rest" | "other" | "climb",
             detailLevel: "detailed" as const,
             targetDistanceKm: w.target_distance_km ?? null,
             targetPace: w.target_pace || null,
@@ -186,6 +186,9 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
       const typeMap: Record<string, string> = {
         E: "easy", I: "interval", T: "tempo", L: "long", R: "rest",
         S: "strength", X: "cross_training", P: "race_pace", V: "recovery",
+        // Climbing plans (see the PRIMARY SPORT prompt block): B boulder,
+        // C routes/general climbing. R stays rest, S stays strength.
+        B: "climbing", C: "climbing",
       };
 
       for (let d = 0; d < 7; d++) {
@@ -193,6 +196,7 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
         const code = sessionTypes[d] || (d === 6 ? "R" : "E");
         const wt = typeMap[code] || "easy";
         const isRest = wt === "rest";
+        const isClimb = wt === "climbing";
 
         await prisma.plannedWorkout.create({
           data: {
@@ -200,11 +204,14 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
             phaseId: tw.phaseId,
             weekNumber: tw.weekNumber,
             date,
-            title: isRest ? "Rest" : `${wt.charAt(0).toUpperCase() + wt.slice(1)} Run`,
-            workoutType: wt as "easy" | "long" | "tempo" | "interval" | "race_pace" | "recovery" | "rest" | "cross_training" | "strength" | "race",
+            title: isRest ? "Rest" : isClimb ? (code === "B" ? "Bouldering" : "Climbing session") : `${wt.charAt(0).toUpperCase() + wt.slice(1)} Run`,
+            workoutType: wt as "easy" | "long" | "tempo" | "interval" | "race_pace" | "recovery" | "rest" | "cross_training" | "strength" | "race" | "climbing",
             detailLevel: "outline" as const,
-            targetDistanceKm: isRest ? null : Math.round(kmPerSession * 10) / 10,
+            // Sessions-based sports carry no km — Brocco fills duration and
+            // focus when the week is promoted to detailed.
+            targetDistanceKm: isRest || isClimb ? null : Math.round(kmPerSession * 10) / 10,
             status: "planned" as const,
+            ...(isClimb ? { activityType: "climb" as const } : {}),
           },
         });
       }
