@@ -349,6 +349,145 @@ export const PRESET_WORKOUTS: PresetWorkout[] = [
   },
 ];
 
+/**
+ * Climbing presets, shown instead of the runner set when the athlete's
+ * primary sport is climbing. Tabata and Full-Body carry over from the
+ * shared set; these cover what a climber actually rotates: fingers,
+ * antagonists, shoulders, and a climber-shaped core.
+ */
+export const CLIMBING_PRESET_WORKOUTS: PresetWorkout[] = [
+  {
+    key: "hangboard",
+    title: "Hangboard Repeaters",
+    focus: "fingers",
+    emoji: "🪝",
+    description: "4 sets of 6 × 7s/3s on a comfortable edge. Experienced climbers only — fingers first.",
+    definition: {
+      warmupSec: 600,
+      blocks: [
+        {
+          label: "Repeaters",
+          rounds: 4,
+          restBetweenRoundsSec: 180,
+          exercises: [
+            timed("Hang", 7, 3, "Open hand or half crimp — NEVER full crimp here"),
+            timed("Hang", 7, 3, "Shoulders engaged, elbows soft"),
+            timed("Hang", 7, 3, "Breathe"),
+            timed("Hang", 7, 3, "Drop a foot to assist if failing"),
+            timed("Hang", 7, 3, "Quality over completion"),
+            timed("Hang", 7, 0, "Last one — then shake out"),
+          ],
+        },
+      ],
+    },
+  },
+  {
+    key: "antagonist",
+    title: "Antagonist Push",
+    focus: "antagonists",
+    emoji: "🛡️",
+    description: "15 min of pushing — the insurance policy against climber's elbow and hunched shoulders.",
+    definition: {
+      warmupSec: 60,
+      cooldownSec: 60,
+      blocks: [
+        {
+          label: "Circuit",
+          rounds: 3,
+          restBetweenRoundsSec: 45,
+          exercises: [
+            timed("Push-ups", 40, 15, "Full range — knees down beats half reps"),
+            timed("Pike push-ups", 30, 15, "Hips high, head between arms"),
+            timed("Tricep dips (chair)", 30, 15, "Shoulders away from ears"),
+            timed("Reverse wrist curls", 30, 15, "Light and slow — forearm extensors"),
+            timed("Scapular push-ups", 30, 15, "Arms straight, just the shoulder blades"),
+          ],
+        },
+      ],
+    },
+  },
+  {
+    key: "shoulders",
+    title: "Shoulder Stability",
+    focus: "shoulders",
+    emoji: "🦾",
+    description: "12 min for the cuff and scapula — what keeps gaston moves honest.",
+    definition: {
+      warmupSec: 60,
+      cooldownSec: 60,
+      blocks: [
+        {
+          label: "Circuit",
+          rounds: 3,
+          restBetweenRoundsSec: 40,
+          exercises: [
+            timed("YTW raises", 45, 15, "Face down, thumbs up, squeeze the mid-back"),
+            timed("Wall slides", 40, 15, "Forearms on the wall, slide slow"),
+            timed("Side plank (left)", 30, 10, "Top arm reaching to the ceiling"),
+            timed("Side plank (right)", 30, 15, "Top arm reaching to the ceiling"),
+          ],
+        },
+      ],
+    },
+  },
+  {
+    key: "climbcore",
+    title: "Climber's Core",
+    focus: "core",
+    emoji: "🧗",
+    description: "15 min of tension — hollow body and hips that keep your feet on.",
+    definition: {
+      warmupSec: 60,
+      cooldownSec: 60,
+      blocks: [
+        {
+          label: "Circuit",
+          rounds: 3,
+          restBetweenRoundsSec: 45,
+          exercises: [
+            timed("Hollow body hold", 30, 15, "Lower back pressed down — the body-tension position"),
+            timed("Plank", 40, 15, "Straight line, glutes on"),
+            timed("Side plank (left)", 30, 10, "Hips high"),
+            timed("Side plank (right)", 30, 15, "Hips high"),
+            timed("Superman hold", 30, 15, "The other half of body tension"),
+          ],
+        },
+      ],
+    },
+  },
+];
+
+/** The preset list for an athlete: climbing gets its own rotation. */
+export function presetsForSport(primarySport: string | null | undefined): PresetWorkout[] {
+  if (primarySport && primarySport.includes("climb")) {
+    // Tabata + Full-Body are sport-agnostic keepers.
+    const shared = PRESET_WORKOUTS.filter((p) => p.key === "tabata" || p.key === "fullbody");
+    return [...CLIMBING_PRESET_WORKOUTS, ...shared];
+  }
+  return PRESET_WORKOUTS;
+}
+
+/**
+ * Compact, human-readable rendering of a definition — used to hand a
+ * workout's content to Brocco in chat ("adjust this for me").
+ */
+export function describeDefinition(def: WorkoutDefinition): string {
+  const lines: string[] = [];
+  if (def.warmupSec) lines.push(`Warm-up ${Math.round(def.warmupSec / 60)} min`);
+  def.blocks.forEach((b, i) => {
+    const head = `${b.label || `Block ${i + 1}`}: ${b.rounds} round${b.rounds !== 1 ? "s" : ""}${
+      b.restBetweenRoundsSec ? `, ${b.restBetweenRoundsSec}s between rounds` : ""
+    }`;
+    lines.push(head);
+    for (const e of b.exercises) {
+      const amount = e.mode === "time" ? `${e.workSec}s` : `${e.reps} reps`;
+      lines.push(`- ${e.name} (${amount}${e.restSec ? `, rest ${e.restSec}s` : ""})`);
+    }
+  });
+  if (def.cooldownSec) lines.push(`Cool-down ${Math.round(def.cooldownSec / 60)} min`);
+  return lines.join("\n");
+}
+
 /** Build a custom interval definition (the "roll your own" timer). */
 export function buildCustomInterval(workSec: number, restSec: number, rounds: number): WorkoutDefinition {
   return {

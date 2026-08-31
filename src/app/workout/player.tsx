@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { flattenSegments, type WorkoutDefinition, type Segment } from "@/lib/guided-workout";
 import { emitToast } from "@/lib/toast";
+import { emitDataChanged } from "@/lib/capture-context";
 
 /**
  * Full-screen workout player. Deadline-based timing (endTime vs Date.now())
@@ -61,7 +62,11 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
   const [quitPrompt, setQuitPrompt] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
   const [voiceOn, setVoiceOn] = useState(true);
-  const [logging, setLogging] = useState(false);
+  const [showPlan, setShowPlan] = useState(false);
+  // Auto-log state: sessions log themselves on finish; undo removes it all.
+  const [logState, setLogState] = useState<"logging" | "logged" | "failed" | "undone">("logging");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const loggedRef = useRef(false);
 
   const endTimeRef = useRef<number>(0);
   const pausedRemainingRef = useRef<number>(0);
@@ -160,12 +165,22 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
     };
   }, []);
 
+  // Gyms are loud and phones are muted — a buzz survives both.
+  const buzz = useCallback((pattern: number | number[]) => {
+    try {
+      navigator.vibrate?.(pattern);
+    } catch {
+      /* unsupported */
+    }
+  }, []);
+
   // --- Segment transitions ---
   const goTo = useCallback(
     (newIdx: number, announce = true) => {
       if (newIdx >= segments.length) {
         setFinished(true);
         beep(1320, 600);
+        buzz([120, 60, 120]);
         speak("Workout complete. Well done!");
         return;
       }
@@ -178,10 +193,11 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
       }
       if (announce) {
         beep(1320, 250);
+        buzz(60);
         announceSegment(s);
       }
     },
-    [segments, beep, speak, announceSegment]
+    [segments, beep, buzz, speak, announceSegment]
   );
 
   // Kick off the first segment's clock + announcement
@@ -222,33 +238,60 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
     }
   }
 
-  async function handleFinish(log: boolean) {
+  // Auto-log the finished session (activity + history row). The philosophy
+  // matches capture: it just happens, and Undo is right there.
+  useEffect(() => {
+    if (!finished || loggedRef.current) return;
+    loggedRef.current = true;
     const durationMin = Math.max(1, Math.round((Date.now() - startedAtRef.current) / 60000));
-    if (!log) {
-      onExit();
-      return;
+    fetch("/api/guided-workouts/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workoutId, title, durationMin, completed: true, startedAtMs: startedAtRef.current }),
+    })
+      .then(async (r) => {
+        if (!r.ok) throw new Error();
+        const d = await r.json();
+        setSessionId(d.sessionId || null);
+        setLogState("logged");
+        emitDataChanged(["activities"]);
+      })
+      .catch(() => setLogState("failed"));
+  }, [finished, workoutId, title]);
+
+  async function undoLog() {
+    if (!sessionId) return;
+    const res = await fetch(`/api/guided-workouts/sessions/${sessionId}`, { method: "DELETE" }).catch(() => null);
+    if (res?.ok) {
+      setLogState("undone");
+      emitDataChanged(["activities"]);
+    } else {
+      emitToast({ text: "Couldn't undo — check History later.", kind: "error" });
     }
-    setLogging(true);
-    try {
-      const res = workoutId
-        ? await fetch(`/api/guided-workouts/${workoutId}/complete`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ durationMin }),
-          })
-        : await fetch("/api/guided-workouts/log", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title, durationMin }),
-          });
-      if (!res.ok) throw new Error();
-      emitToast({ text: `Logged: ${title} (${durationMin} min) 💪`, kind: "success" });
-    } catch {
-      emitToast({ text: "Couldn't log the workout — it still counts in your heart.", kind: "error" });
-    } finally {
-      setLogging(false);
-      onExit();
+  }
+
+  // Quitting mid-workout records the bail for history (no activity is
+  // logged) — but only once something was actually done.
+  function handleQuit() {
+    const done = segments.slice(0, idx).filter((s) => s.kind === "work").length;
+    if (done > 0 && !loggedRef.current) {
+      loggedRef.current = true;
+      const durationMin = Math.max(1, Math.round((Date.now() - startedAtRef.current) / 60000));
+      fetch("/api/guided-workouts/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workoutId,
+          title,
+          durationMin,
+          completed: false,
+          bailedAtExercise: done,
+          startedAtMs: startedAtRef.current,
+        }),
+        keepalive: true,
+      }).catch(() => {});
     }
+    onExit();
   }
 
   // Overall progress by estimated time
@@ -265,23 +308,25 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
       <div className="fixed inset-0 z-[90] bg-cream flex flex-col items-center justify-center px-6 text-center">
         <p className="text-6xl mb-4">🥦</p>
         <h2 className="text-2xl font-extrabold text-ink mb-1">Workout complete!</h2>
-        <p className="text-sm text-moss font-semibold mb-8">
+        <p className="text-sm text-moss font-semibold mb-6">
           {title} · {totalMin} min · {workSegs} exercises
         </p>
-        <div className="w-full max-w-xs space-y-2">
-          <button
-            onClick={() => handleFinish(true)}
-            disabled={logging}
-            className="btn-brocco w-full py-3"
-          >
-            {logging ? "Logging…" : "Log to training ✓"}
-          </button>
-          <button
-            onClick={() => handleFinish(false)}
-            disabled={logging}
-            className="btn-quiet w-full py-3 text-sm"
-          >
-            Finish without logging
+        <div className="mb-8 min-h-[1.5rem]">
+          {logState === "logging" && <p className="text-xs text-sage font-bold">Logging to training…</p>}
+          {logState === "logged" && (
+            <p className="text-xs font-bold">
+              <span className="text-leaf">✓ Logged to training</span>
+              <button onClick={undoLog} className="text-sage underline ml-2">Undo</button>
+            </p>
+          )}
+          {logState === "failed" && (
+            <p className="text-xs text-clay font-bold">Couldn&apos;t log the workout — it still counts in your heart.</p>
+          )}
+          {logState === "undone" && <p className="text-xs text-sage font-bold">Not logged.</p>}
+        </div>
+        <div className="w-full max-w-xs">
+          <button onClick={onExit} className="btn-brocco w-full py-3">
+            Done
           </button>
         </div>
       </div>
@@ -298,6 +343,13 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
           <div className="flex-1 h-2.5 bg-ghost border-2 border-ink rounded-full overflow-hidden">
             <div className="h-full bg-brocco rounded-full transition-all" style={{ width: `${progressPct}%` }} />
           </div>
+          <button
+            onClick={() => setShowPlan(true)}
+            className="text-moss hover:text-ink text-lg leading-none px-1"
+            aria-label="Show session plan"
+          >
+            &#9776;
+          </button>
           <button
             onClick={() => { setQuitPrompt(true); if (!paused) togglePause(); }}
             className="text-moss hover:text-ink text-2xl leading-none px-1"
@@ -329,9 +381,19 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
             {seg.note && <p className="text-sm text-moss font-semibold mb-4 max-w-xs">{seg.note}</p>}
 
             {isTimed ? (
-              <p className="font-mono font-extrabold tabular-nums leading-none my-6 text-ink" style={{ fontSize: "clamp(4rem, 20vw, 7rem)" }}>
-                {fmt(remaining)}
-              </p>
+              <>
+                <p className="font-mono font-extrabold tabular-nums leading-none my-6 text-ink" style={{ fontSize: "clamp(4rem, 20vw, 7rem)" }}>
+                  {fmt(remaining)}
+                </p>
+                {seg.kind === "rest" && (
+                  <button
+                    onClick={() => { endTimeRef.current += 15000; setRemaining((r) => r + 15); }}
+                    className="btn-quiet px-4 py-1.5 text-xs mb-1"
+                  >
+                    +15s rest
+                  </button>
+                )}
+              </>
             ) : (
               <div className="my-6 flex flex-col items-center gap-5">
                 <p className="font-extrabold leading-none text-ink" style={{ fontSize: "clamp(4rem, 18vw, 6rem)" }}>
@@ -398,6 +460,47 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
         </div>
       </div>
 
+      {/* Session plan drawer — what's done, what's live, what's coming */}
+      {showPlan && (
+        <div className="absolute inset-0 z-10 bg-ink/40" onClick={() => setShowPlan(false)}>
+          <div
+            className="absolute inset-x-0 bottom-0 max-h-[70vh] overflow-y-auto bg-paper border-t-2 border-ink rounded-t-2xl px-4 pt-4 pb-6 safe-bottom"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="max-w-2xl mx-auto">
+              <div className="flex items-center justify-between mb-2">
+                <p className="label-xs">Session plan</p>
+                <button onClick={() => setShowPlan(false)} className="text-moss hover:text-ink text-xl leading-none" aria-label="Close">
+                  &times;
+                </button>
+              </div>
+              <div className="space-y-0.5">
+                {segments.map((s, i) => {
+                  if (s.kind === "prep" || s.kind === "rest") return null;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => { setShowPlan(false); goTo(i); }}
+                      className={`w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg ${
+                        i === idx ? "bg-sprout border-2 border-ink" : i < idx ? "opacity-40" : "hover:bg-ghost"
+                      }`}
+                    >
+                      <span className="text-xs font-bold text-ink flex-1 min-w-0 truncate">
+                        {i < idx ? "✓ " : ""}{s.label}
+                        {s.context ? <span className="text-sage font-semibold"> · {s.context}</span> : null}
+                      </span>
+                      <span className="text-[10px] text-sage font-bold tabular-nums flex-shrink-0">
+                        {s.seconds != null ? fmt(s.seconds) : `${s.reps} reps`}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Quit confirmation */}
       {quitPrompt && (
         <div className="absolute inset-0 z-10 bg-ink/40 flex items-center justify-center px-6">
@@ -411,7 +514,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
                 Keep going 💪
               </button>
               <button
-                onClick={onExit}
+                onClick={handleQuit}
                 className="btn-quiet w-full py-2.5 text-sm"
               >
                 Quit

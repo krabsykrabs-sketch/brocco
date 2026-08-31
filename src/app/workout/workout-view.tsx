@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { PageHeader } from "../nav";
 import { emitToast } from "@/lib/toast";
 import {
-  PRESET_WORKOUTS,
+  presetsForSport,
   buildCustomInterval,
   estimateDurationMin,
+  describeDefinition,
   type WorkoutDefinition,
 } from "@/lib/guided-workout";
 import WorkoutPlayer from "./player";
@@ -19,13 +20,227 @@ interface SavedWorkout {
   focus: string | null;
   durationMin: number;
   source: string;
+  plannedDate: string | null;
   timesCompleted: number;
+  pinned: boolean;
+  createdAt: string;
+}
+
+interface RecentSession {
+  id: string;
+  finishedAt: string;
+  completed: boolean;
+  bailedAtExercise: number | null;
+  durationMin: number;
 }
 
 interface ActiveWorkout {
   title: string;
   definition: WorkoutDefinition;
   workoutId: string | null;
+}
+
+/** Everything the preview sheet needs — saved workouts carry extras. */
+interface PreviewData {
+  workoutId: string | null;
+  title: string;
+  focus: string | null;
+  definition: WorkoutDefinition;
+  source?: string;
+  pinned?: boolean;
+  timesCompleted?: number;
+  recentSessions?: RecentSession[];
+}
+
+function fmtSec(sec: number): string {
+  return sec >= 60 && sec % 60 === 0 ? `${sec / 60} min` : `${sec}s`;
+}
+
+function fmtSessionDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+/**
+ * The "see it before you start it" sheet: full block/exercise breakdown,
+ * per-block round steppers (local only — the saved definition is untouched),
+ * recent history, and the start / adjust-with-Brocco / pin / delete actions.
+ */
+function WorkoutPreview({
+  data,
+  onStart,
+  onClose,
+  onPinToggle,
+  onDelete,
+}: {
+  data: PreviewData;
+  onStart: (def: WorkoutDefinition, title: string, workoutId: string | null) => void;
+  onClose: () => void;
+  onPinToggle: (id: string, pinned: boolean) => void;
+  onDelete: (id: string, title: string) => void;
+}) {
+  const [rounds, setRounds] = useState<number[]>(data.definition.blocks.map((b) => b.rounds));
+
+  // The definition actually played — the stepper tweaks live only here.
+  const effectiveDef = useMemo<WorkoutDefinition>(
+    () => ({
+      ...data.definition,
+      blocks: data.definition.blocks.map((b, i) => ({ ...b, rounds: rounds[i] ?? b.rounds })),
+    }),
+    [data.definition, rounds]
+  );
+  const scaled = data.definition.blocks.some((b, i) => (rounds[i] ?? b.rounds) !== b.rounds);
+
+  const adjustMsg =
+    `Adjust this workout for me: "${data.title}"${data.focus ? ` (focus: ${data.focus})` : ""}.\n\n` +
+    `${describeDefinition(data.definition)}\n\n` +
+    `Here's what I want changed: `;
+
+  return (
+    <div className="fixed inset-0 z-[70]">
+      <div className="absolute inset-0 bg-ink/40" onClick={onClose} />
+      <div className="absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto bg-paper border-t-2 border-ink rounded-t-2xl px-4 pt-4 pb-6 safe-bottom">
+        <div className="max-w-2xl mx-auto">
+          <div className="flex items-start justify-between gap-3 mb-1">
+            <div className="min-w-0">
+              <h2 className="text-lg font-extrabold text-ink">{data.title}</h2>
+              <p className="text-xs text-moss font-semibold">
+                ~{estimateDurationMin(effectiveDef)} min
+                {data.focus ? ` · ${data.focus}` : ""}
+                {data.timesCompleted ? ` · done ${data.timesCompleted}×` : ""}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {data.workoutId && (
+                <button
+                  onClick={() => onPinToggle(data.workoutId!, !data.pinned)}
+                  className={`text-lg ${data.pinned ? "" : "opacity-30"}`}
+                  title={data.pinned ? "Unpin" : "Pin to top"}
+                  aria-label={data.pinned ? "Unpin" : "Pin to top"}
+                >
+                  📌
+                </button>
+              )}
+              <button onClick={onClose} className="text-moss hover:text-ink text-xl leading-none" aria-label="Close">
+                &times;
+              </button>
+            </div>
+          </div>
+
+          {/* The session, laid out */}
+          <div className="space-y-2 mt-3">
+            {data.definition.warmupSec ? (
+              <p className="text-xs font-bold text-moss">🔥 Warm-up · {fmtSec(data.definition.warmupSec)}</p>
+            ) : null}
+
+            {data.definition.blocks.map((b, bi) => (
+              <div key={bi} className="sticker px-3 py-2.5">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <p className="text-xs font-extrabold text-ink">
+                    {b.label || `Block ${bi + 1}`}
+                    {b.restBetweenRoundsSec ? (
+                      <span className="text-sage font-bold"> · {fmtSec(b.restBetweenRoundsSec)} between rounds</span>
+                    ) : null}
+                  </p>
+                  {/* Short on time? Rounds are the honest lever. */}
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => setRounds((r) => r.map((n, i) => (i === bi ? Math.max(1, n - 1) : n)))}
+                      className="w-6 h-6 flex items-center justify-center bg-ghost border-2 border-ink rounded-md text-xs font-extrabold sticker-press"
+                      aria-label="Fewer rounds"
+                    >
+                      −
+                    </button>
+                    <span className="text-xs font-extrabold text-ink tabular-nums w-14 text-center">
+                      {rounds[bi] ?? b.rounds} round{(rounds[bi] ?? b.rounds) !== 1 ? "s" : ""}
+                    </span>
+                    <button
+                      onClick={() => setRounds((r) => r.map((n, i) => (i === bi ? Math.min(50, n + 1) : n)))}
+                      className="w-6 h-6 flex items-center justify-center bg-ghost border-2 border-ink rounded-md text-xs font-extrabold sticker-press"
+                      aria-label="More rounds"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  {b.exercises.map((e, ei) => (
+                    <div key={ei} className="flex items-baseline gap-2">
+                      <p className="text-xs font-bold text-ink flex-1 min-w-0">{e.name}</p>
+                      <p className="text-[10px] text-sage font-bold tabular-nums flex-shrink-0">
+                        {e.mode === "time" ? fmtSec(e.workSec!) : `${e.reps} reps`}
+                        {e.restSec ? ` · rest ${fmtSec(e.restSec)}` : ""}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                {b.exercises.some((e) => e.note) && (
+                  <div className="mt-1.5 pt-1.5 border-t border-dashed border-shade space-y-0.5">
+                    {b.exercises
+                      .filter((e) => e.note)
+                      .map((e, i) => (
+                        <p key={i} className="text-[10px] text-moss font-semibold">
+                          <span className="font-extrabold">{e.name}:</span> {e.note}
+                        </p>
+                      ))}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {data.definition.cooldownSec ? (
+              <p className="text-xs font-bold text-moss">🧊 Cool-down · {fmtSec(data.definition.cooldownSec)}</p>
+            ) : null}
+          </div>
+
+          {/* History */}
+          {data.recentSessions && data.recentSessions.length > 0 && (
+            <div className="mt-3">
+              <p className="label-xs mb-1">History</p>
+              <div className="space-y-0.5">
+                {data.recentSessions.map((s) => (
+                  <p key={s.id} className="text-xs font-semibold tabular-nums">
+                    <span className="text-moss">{fmtSessionDate(s.finishedAt)}</span>
+                    <span className="text-sage"> · {s.durationMin} min · </span>
+                    {s.completed ? (
+                      <span className="text-leaf">✓ completed</span>
+                    ) : (
+                      <span className="text-clay">stopped after {s.bailedAtExercise ?? 0} exercise{(s.bailedAtExercise ?? 0) !== 1 ? "s" : ""}</span>
+                    )}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="mt-4 space-y-2">
+            <button
+              onClick={() => onStart(effectiveDef, data.title, data.workoutId)}
+              className="btn-brocco w-full py-3"
+            >
+              Start{scaled ? " (adjusted)" : ""} ▶
+            </button>
+            <div className="flex gap-2">
+              <Link
+                href={`/chat?msg=${encodeURIComponent(adjustMsg)}`}
+                className="btn-quiet flex-1 py-2 text-xs text-center"
+              >
+                🥦 Adjust with Brocco
+              </Link>
+              {data.workoutId && (
+                <button
+                  onClick={() => onDelete(data.workoutId!, data.title)}
+                  className="btn-quiet px-4 py-2 text-xs text-clay"
+                >
+                  Delete
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function CustomIntervalForm({ onStart }: { onStart: (def: WorkoutDefinition, title: string) => void }) {
@@ -62,18 +277,66 @@ function CustomIntervalForm({ onStart }: { onStart: (def: WorkoutDefinition, tit
   );
 }
 
+/** A plan-generated session is "fresh" while its day is near; after that it's clutter. */
+function isFreshPlanWorkout(w: SavedWorkout, todayIso: string): boolean {
+  if (w.plannedDate) {
+    const weekAgo = new Date(new Date(`${todayIso}T00:00:00`).getTime() - 7 * 86400000)
+      .toISOString()
+      .slice(0, 10);
+    return w.plannedDate >= weekAgo;
+  }
+  // Planned workout deleted (week promotion) — fall back to creation age.
+  return Date.now() - new Date(w.createdAt).getTime() < 14 * 86400000;
+}
+
+function SavedWorkoutRow({
+  w,
+  onOpen,
+  onStart,
+}: {
+  w: SavedWorkout;
+  onOpen: () => void;
+  onStart: () => void;
+}) {
+  return (
+    <div className="group flex items-center gap-3 sticker px-4 py-3">
+      <button onClick={onOpen} className="flex-1 min-w-0 text-left">
+        <div className="flex items-center gap-2">
+          {w.pinned && <span className="text-xs flex-shrink-0">📌</span>}
+          <p className="text-sm font-bold text-ink truncate">{w.title}</p>
+          {w.source === "plan" && (
+            <span className="text-[9px] uppercase font-extrabold text-moss bg-ghost px-1.5 py-0.5 rounded flex-shrink-0">plan</span>
+          )}
+        </div>
+        <p className="text-xs text-moss font-semibold">
+          ~{w.durationMin} min{w.focus ? ` · ${w.focus}` : ""}{w.timesCompleted > 0 ? ` · done ${w.timesCompleted}×` : ""}
+        </p>
+      </button>
+      <button onClick={onStart} className="btn-brocco px-3 py-1.5 text-xs flex-shrink-0">
+        Start
+      </button>
+    </div>
+  );
+}
+
 function WorkoutViewInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [saved, setSaved] = useState<SavedWorkout[]>([]);
+  const [primarySport, setPrimarySport] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState<ActiveWorkout | null>(null);
+  const [preview, setPreview] = useState<PreviewData | null>(null);
+  const [showStalePlan, setShowStalePlan] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null); // status text while Brocco builds
 
   const fetchSaved = useCallback(() => {
     fetch("/api/guided-workouts")
       .then((r) => r.json())
-      .then((d) => setSaved(d.workouts || []))
+      .then((d) => {
+        setSaved(d.workouts || []);
+        setPrimarySport(d.primarySport || null);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -82,16 +345,44 @@ function WorkoutViewInner() {
     fetchSaved();
   }, [fetchSaved]);
 
-  const startSaved = useCallback(async (id: string) => {
+  const presets = useMemo(() => presetsForSport(primarySport), [primarySport]);
+
+  const loadSaved = useCallback(async (id: string): Promise<PreviewData | null> => {
     try {
       const res = await fetch(`/api/guided-workouts/${id}`);
       if (!res.ok) throw new Error();
       const { workout } = await res.json();
-      setActive({ title: workout.title, definition: workout.definition, workoutId: workout.id });
+      return {
+        workoutId: workout.id,
+        title: workout.title,
+        focus: workout.focus,
+        definition: workout.definition,
+        source: workout.source,
+        pinned: workout.pinned,
+        timesCompleted: workout.timesCompleted,
+        recentSessions: workout.recentSessions,
+      };
     } catch {
       emitToast({ text: "Couldn't load that workout.", kind: "error" });
+      return null;
     }
   }, []);
+
+  const startSaved = useCallback(
+    async (id: string) => {
+      const data = await loadSaved(id);
+      if (data) setActive({ title: data.title, definition: data.definition, workoutId: data.workoutId });
+    },
+    [loadSaved]
+  );
+
+  const openSaved = useCallback(
+    async (id: string) => {
+      const data = await loadSaved(id);
+      if (data) setPreview(data);
+    },
+    [loadSaved]
+  );
 
   // Deep links: ?start=<id> (from chat/toast) and ?planned=<id> (from Today/plan)
   useEffect(() => {
@@ -120,18 +411,31 @@ function WorkoutViewInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  async function deleteSaved(w: SavedWorkout) {
+  async function togglePin(id: string, pinned: boolean) {
+    const res = await fetch(`/api/guided-workouts/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned }),
+    });
+    if (res.ok) {
+      setPreview((p) => (p && p.workoutId === id ? { ...p, pinned } : p));
+      fetchSaved();
+    }
+  }
+
+  async function deleteSaved(id: string, title: string) {
     // Grab the full definition first so undo can restore it
-    const full = await fetch(`/api/guided-workouts/${w.id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-    const res = await fetch(`/api/guided-workouts/${w.id}`, { method: "DELETE" });
+    const full = await fetch(`/api/guided-workouts/${id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const res = await fetch(`/api/guided-workouts/${id}`, { method: "DELETE" });
     if (!res.ok) {
       emitToast({ text: "Couldn't delete — try again.", kind: "error" });
       return;
     }
+    setPreview(null);
     fetchSaved();
     if (full?.workout) {
       emitToast({
-        text: `Deleted: ${w.title}`,
+        text: `Deleted: ${title}`,
         kind: "info",
         action: {
           label: "Undo",
@@ -162,6 +466,14 @@ function WorkoutViewInner() {
     );
   }
 
+  // Local-calendar date, not toISOString() — west of UTC that slips a day.
+  const now = new Date();
+  const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const ownWorkouts = saved.filter((w) => w.source !== "plan");
+  const planWorkouts = saved.filter((w) => w.source === "plan");
+  const freshPlan = planWorkouts.filter((w) => isFreshPlanWorkout(w, todayIso));
+  const stalePlan = planWorkouts.filter((w) => !isFreshPlanWorkout(w, todayIso));
+
   return (
     <main className="min-h-screen max-w-2xl mx-auto px-4">
       <PageHeader title="Workouts" />
@@ -190,10 +502,12 @@ function WorkoutViewInner() {
         <section>
           <h2 className="label-xs mb-2">Quick start</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {PRESET_WORKOUTS.map((p) => (
+            {presets.map((p) => (
               <button
                 key={p.key}
-                onClick={() => setActive({ title: p.title, definition: p.definition, workoutId: null })}
+                onClick={() =>
+                  setPreview({ workoutId: null, title: p.title, focus: p.focus, definition: p.definition })
+                }
                 className="sticker sticker-press text-left px-4 py-3"
               >
                 <div className="flex items-center gap-2 mb-0.5">
@@ -215,44 +529,56 @@ function WorkoutViewInner() {
           <h2 className="label-xs mb-2">Your workouts</h2>
           {loading ? (
             <p className="text-sm text-moss font-semibold text-center py-4">Loading…</p>
-          ) : saved.length === 0 ? (
+          ) : ownWorkouts.length === 0 && planWorkouts.length === 0 ? (
             <p className="text-xs text-sage font-semibold text-center py-4">
               Nothing saved yet — ask Brocco for a workout and it lands here.
             </p>
           ) : (
             <div className="space-y-2">
-              {saved.map((w) => (
-                <div key={w.id} className="group flex items-center gap-3 sticker px-4 py-3">
-                  <button onClick={() => startSaved(w.id)} className="flex-1 min-w-0 text-left">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-ink truncate">{w.title}</p>
-                      {w.source === "plan" && (
-                        <span className="text-[9px] uppercase font-extrabold text-moss bg-ghost px-1.5 py-0.5 rounded flex-shrink-0">plan</span>
-                      )}
-                    </div>
-                    <p className="text-xs text-moss font-semibold">
-                      ~{w.durationMin} min{w.focus ? ` · ${w.focus}` : ""}{w.timesCompleted > 0 ? ` · done ${w.timesCompleted}×` : ""}
-                    </p>
-                  </button>
-                  <button
-                    onClick={() => startSaved(w.id)}
-                    className="btn-brocco px-3 py-1.5 text-xs flex-shrink-0"
-                  >
-                    Start
-                  </button>
-                  <button
-                    onClick={() => deleteSaved(w)}
-                    aria-label={`Delete ${w.title}`}
-                    className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-sage hover:text-clay transition-all px-1"
-                  >
-                    &times;
-                  </button>
-                </div>
+              {ownWorkouts.map((w) => (
+                <SavedWorkoutRow key={w.id} w={w} onOpen={() => openSaved(w.id)} onStart={() => startSaved(w.id)} />
               ))}
             </div>
           )}
         </section>
+
+        {/* Plan-generated sessions, current ones only — the rest is archive */}
+        {(freshPlan.length > 0 || stalePlan.length > 0) && (
+          <section>
+            <h2 className="label-xs mb-2">From your plan</h2>
+            <div className="space-y-2">
+              {freshPlan.map((w) => (
+                <SavedWorkoutRow key={w.id} w={w} onOpen={() => openSaved(w.id)} onStart={() => startSaved(w.id)} />
+              ))}
+              {showStalePlan &&
+                stalePlan.map((w) => (
+                  <SavedWorkoutRow key={w.id} w={w} onOpen={() => openSaved(w.id)} onStart={() => startSaved(w.id)} />
+                ))}
+            </div>
+            {stalePlan.length > 0 && (
+              <button
+                onClick={() => setShowStalePlan((v) => !v)}
+                className="text-xs text-sage font-bold mt-2 hover:text-ink"
+              >
+                {showStalePlan ? "Hide older plan sessions" : `Show ${stalePlan.length} older plan session${stalePlan.length !== 1 ? "s" : ""}`}
+              </button>
+            )}
+          </section>
+        )}
       </div>
+
+      {preview && (
+        <WorkoutPreview
+          data={preview}
+          onClose={() => setPreview(null)}
+          onStart={(def, title, workoutId) => {
+            setPreview(null);
+            setActive({ title, definition: def, workoutId });
+          }}
+          onPinToggle={togglePin}
+          onDelete={deleteSaved}
+        />
+      )}
     </main>
   );
 }

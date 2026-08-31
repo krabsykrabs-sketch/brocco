@@ -34,6 +34,7 @@ model User {
   pushSubscriptions PushSubscription[]
   journalEntries    JournalEntry[]
   guidedWorkouts    GuidedWorkout[]
+  guidedWorkoutSessions GuidedWorkoutSession[]
   recipes           Recipe[]
   weeklyGoals       WeeklyGoal[]
 
@@ -638,14 +639,41 @@ model GuidedWorkout {
   source           String    @default("brocco") // brocco | plan
   plannedWorkoutId String?   @map("planned_workout_id") @db.Uuid
   timesCompleted   Int       @default(0) @map("times_completed")
+  pinned           Boolean   @default(false)
   lastUsedAt       DateTime? @map("last_used_at")
   createdAt        DateTime  @default(now()) @map("created_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions GuidedWorkoutSession[]
 
   @@index([userId, createdAt])
   @@index([plannedWorkoutId])
   @@map("guided_workouts")
+}
+
+// One row per played session — completed or bailed. This is what makes
+// progression coaching possible; timesCompleted is just the running count.
+model GuidedWorkoutSession {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @map("user_id") @db.Uuid
+  // Null for presets and custom interval timers (no saved row behind them)
+  guidedWorkoutId  String?  @map("guided_workout_id") @db.Uuid
+  title            String
+  startedAt        DateTime @map("started_at")
+  finishedAt       DateTime @default(now()) @map("finished_at")
+  completed        Boolean  @default(true)
+  // How many WORK exercises were done before quitting (null when completed)
+  bailedAtExercise Int?     @map("bailed_at_exercise")
+  durationMin      Int      @map("duration_min")
+  // The logged training activity, so undo can remove both together
+  activityId       String?  @map("activity_id") @db.Uuid
+
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workout GuidedWorkout? @relation(fields: [guidedWorkoutId], references: [id], onDelete: SetNull)
+
+  @@index([userId, finishedAt])
+  @@index([guidedWorkoutId])
+  @@map("guided_workout_sessions")
 }
 
 // One row per device/browser the user enabled notifications on

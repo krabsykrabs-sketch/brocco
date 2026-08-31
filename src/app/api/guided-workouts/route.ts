@@ -8,13 +8,31 @@ export async function GET() {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const workouts = await prisma.guidedWorkout.findMany({
-    where: { userId: session.userId },
-    orderBy: [{ lastUsedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
-    take: 50,
-  });
+  const [workouts, profile] = await Promise.all([
+    prisma.guidedWorkout.findMany({
+      where: { userId: session.userId },
+      orderBy: [{ pinned: "desc" }, { lastUsedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
+      take: 50,
+    }),
+    prisma.userProfile.findUnique({
+      where: { userId: session.userId },
+      select: { primarySport: true },
+    }),
+  ]);
+
+  // plannedWorkoutId is a soft link — resolve the dates that still exist so
+  // the client can tuck away plan sessions whose day has long passed.
+  const plannedIds = workouts.map((w) => w.plannedWorkoutId).filter((id): id is string => !!id);
+  const planned = plannedIds.length
+    ? await prisma.plannedWorkout.findMany({
+        where: { id: { in: plannedIds } },
+        select: { id: true, date: true },
+      })
+    : [];
+  const plannedDate = new Map(planned.map((p) => [p.id, p.date.toISOString().slice(0, 10)]));
 
   return NextResponse.json({
+    primarySport: profile?.primarySport || null,
     workouts: workouts.map((w) => ({
       id: w.id,
       title: w.title,
@@ -22,7 +40,9 @@ export async function GET() {
       durationMin: w.durationMin,
       source: w.source,
       plannedWorkoutId: w.plannedWorkoutId,
+      plannedDate: (w.plannedWorkoutId && plannedDate.get(w.plannedWorkoutId)) || null,
       timesCompleted: w.timesCompleted,
+      pinned: w.pinned,
       lastUsedAt: w.lastUsedAt?.toISOString() || null,
       createdAt: w.createdAt.toISOString(),
     })),
