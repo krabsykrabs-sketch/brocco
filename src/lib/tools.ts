@@ -109,7 +109,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: "query_data",
     description:
-      "Retrieve specific historical training data not in the default context window.",
+      "Retrieve specific historical training data not in the default context window. query_type 'plan_outline' returns the ACTIVE plan's full structure — goal, race date, every phase, and every week's start date, detail level, target km, target sessions and session codes — use it before converting or restructuring an existing plan.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -121,6 +121,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
             "pace_trend",
             "heart_rate_trend",
             "workout_comparison",
+            "plan_outline",
           ],
         },
         filters: {
@@ -946,6 +947,46 @@ async function handleQueryData(
             pace: r.avgPacePerKm,
             avgHR: r.avgHeartRate,
             elevationM: r.elevationGainM ? Number(r.elevationGainM) : null,
+          })),
+        },
+      };
+    }
+    case "plan_outline": {
+      // The chat context only carries this week + next; a plan conversion or
+      // restructure needs the WHOLE arc — this returns it compactly.
+      const plan = await prisma.plan.findFirst({
+        where: { userId, status: "active" },
+        include: {
+          phases: { orderBy: { orderIndex: "asc" } },
+          weeks: { orderBy: { weekNumber: "asc" }, include: { phase: { select: { name: true } } } },
+        },
+      });
+      if (!plan) {
+        return { success: false, error: "No active plan." };
+      }
+      return {
+        success: true,
+        data: {
+          plan_name: plan.name,
+          goal: plan.goal,
+          race_date: plan.raceDate ? format(new Date(plan.raceDate), "yyyy-MM-dd") : null,
+          start_date: format(new Date(plan.startDate), "yyyy-MM-dd"),
+          end_date: format(new Date(plan.endDate), "yyyy-MM-dd"),
+          phases: plan.phases.map((p) => ({
+            name: p.name,
+            description: p.description,
+            start_week: p.startWeek,
+            end_week: p.endWeek,
+          })),
+          weeks: plan.weeks.map((w) => ({
+            week_number: w.weekNumber,
+            start_date: format(new Date(w.startDate), "yyyy-MM-dd"),
+            detail_level: w.detailLevel,
+            target_km: w.targetKm != null ? Number(w.targetKm) : null,
+            target_sessions: w.targetSessions,
+            session_types: w.sessionTypes,
+            phase: w.phase?.name || null,
+            notes: w.notes,
           })),
         },
       };

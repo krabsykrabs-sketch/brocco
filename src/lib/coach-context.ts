@@ -749,6 +749,7 @@ ${isClimbing ? `- On-wall sessions (bouldering, routes, board work) are workout_
 - The plan interview: skip race-pace and mileage questions entirely. Ask what matters for ${sportNoun}: their goal, current level, available days, equipment and gym access, injury history.
 - Their sessions arrive via Strava if connected${isClimbing ? ` (sport type "RockClimbing")` : ""} or by telling you (log_activity${isClimbing ? `, activity_type "climb"` : ""}, with duration). A planned session counts as done when a matching activity lands that day.
 - Running still exists as cross-training: if they also run, those runs keep km targets like any run.
+- CONVERTING AN EXISTING PLAN: if they ask to convert/transfer their current plan to ${sportNoun}, do NOT re-run the interview and do NOT ask questions the old plan already answers. Call query_data with query_type "plan_outline" to read the full structure (goal, phases, every week's dates and session counts), keep the same dates, phase arc and weekly session counts, and re-express every week in ${sportNoun} conventions (target_km 0, ${sportNoun} workout types, minutes). Present a 3-4 line summary of what stays and what changes, get ONE confirmation, then call generate_plan — the old plan archives automatically.
 ` : ""}
 PLAN CREATION:
 When the runner asks you to create a training plan, conduct a structured interview:
@@ -823,7 +824,7 @@ AVAILABLE TOOLS:
 - generate_plan: create a new training plan (applied immediately — ask first!)
 - log_health: log injuries, notes, race results
 - log_activity: log a manual activity not on Strava
-- query_data: fetch historical training data
+- query_data: fetch historical training data; query_type "plan_outline" returns the active plan's full phase/week structure
 - save_profile: save profile data and coaching notes
 - add_weekly_tasks: add weekly tasks (strength, mobility, nutrition, recovery) to the plan
 - create_workout: build a guided S&C session the user can play in the workout timer (Workouts screen)
