@@ -15,6 +15,7 @@
  */
 import { config } from "dotenv";
 import { writeFileSync, mkdirSync, existsSync, copyFileSync, readFileSync } from "fs";
+import sharp from "sharp";
 import { EXERCISE_ART, type ExerciseArt } from "../src/lib/exercise-art";
 
 config();
@@ -33,7 +34,7 @@ const READY_JSON = "src/lib/exercise-art-ready.json";
  */
 const STYLE = [
   "Simple instructional exercise diagram.",
-  "A single generic human figure drawn as minimal line art: thick uniform black outlines, solid white fill,",
+  "A single generic human figure drawn as minimal line art: BOLD THICK heavy black outlines, uniform line weight, solid white fill,",
   "a plain circle for the head with NO face, no hair, no clothing detail, no muscle definition.",
   "Flat 2D vector style, even line weight throughout.",
   "Plain solid white background. No text, no letters, no numbers, no arrows, no labels, no watermark, no shading, no gradient.",
@@ -112,6 +113,16 @@ async function generateOne(ex: ExerciseArt): Promise<string | null> {
   return null;
 }
 
+async function saveTrimmed(b64: string, file: string) {
+  await sharp(Buffer.from(b64, "base64"))
+    .flatten({ background: "#ffffff" })
+    .trim({ background: "#ffffff", threshold: 12 })
+    .resize(600, 600, { fit: "contain", background: "#ffffff" })
+    .extend({ top: 20, bottom: 20, left: 20, right: 20, background: "#ffffff" })
+    .png({ compressionLevel: 9 })
+    .toFile(file);
+}
+
 function contactSheet(slugs: string[], perSlug: Record<string, number>) {
   const rows = slugs
     .map((slug) => {
@@ -185,7 +196,7 @@ async function main() {
       const b64 = await generateOne(ex);
       if (!b64) continue;
       saved++;
-      writeFileSync(`${CAND_DIR}/${ex.slug}-${saved}.png`, Buffer.from(b64, "base64"));
+      await saveTrimmed(b64, `${CAND_DIR}/${ex.slug}-${saved}.png`);
     }
     perSlug[ex.slug] = saved;
     console.log(`  ${saved}/${a.n}  ${ex.label}`);
