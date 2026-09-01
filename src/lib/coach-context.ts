@@ -19,6 +19,7 @@ import type { StravaLap } from "@/lib/strava";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 import { resolveFeatures, anyLifeFeature, type Features } from "@/lib/features";
 import { recentConversationSummaries } from "@/lib/conversation-memory";
+import { resolveLang, LANGUAGE_FULL } from "@/lib/i18n";
 
 /**
  * Build the coaching context for the AI system prompt.
@@ -789,8 +790,14 @@ You see training AND life in one place — use it. Before adding events, and whe
   // active plan, coaching-notes state) and is served from cache; dynamicPart
   // (clock + live context data) changes freely without invalidating it.
   // Instructions first, data last — the standard cache-friendly order.
-  const identity = `${identityLine}
+  const lang = resolveLang(profile?.language);
+  const languageBlock =
+    lang === "en"
+      ? ""
+      : `\nLANGUAGE — write EVERYTHING you show the user in ${LANGUAGE_FULL[lang]}: chat replies, status lines, briefings, workout titles, exercise names and form cues, plan and phase names, notes you save. The app's buttons are in that language too, so English output would look broken. Keep tool ARGUMENTS that are identifiers or enums (workout_type, activity_type, the create_workout \`art\` key, ISO dates) exactly as specified in English — only human-readable text is translated. Use the natural sports vocabulary of the language rather than word-for-word translations, and address the user informally (du / tú).\n`;
 
+  const identity = `${identityLine}
+${languageBlock}
 ${accessLine}
 ${routingBlock}${crossDomainBlock}
 COACHING GUIDELINES:`;

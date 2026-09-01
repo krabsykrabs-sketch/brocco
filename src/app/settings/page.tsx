@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { InstallInstructions } from "@/app/pwa-banner";
 import { DesktopNavLinks } from "@/app/nav";
-import { FEATURES_CHANGED_EVENT } from "@/app/features-provider";
+import { FEATURES_CHANGED_EVENT, useT, useLang } from "@/app/features-provider";
+import { LANGUAGES, LANGUAGE_NAMES, detectLang, type Lang } from "@/lib/i18n";
 import { ALL_FEATURES, type Features } from "@/lib/features";
 import { EquipmentSection } from "./equipment-section";
 import { Suspense } from "react";
@@ -22,6 +23,7 @@ interface ProfileData {
   intervalsConnected: boolean;
   intervalsAthleteId: string | null;
   timezone: string;
+  language: string | null;
   goalRace: string | null;
   goalTime: string | null;
   goalRaceDate: string | null;
@@ -452,6 +454,9 @@ function SettingsContent() {
   // Profile edit
   const [editName, setEditName] = useState("");
   const [editTimezone, setEditTimezone] = useState("");
+  const [savingLang, setSavingLang] = useState(false);
+  const t = useT();
+  const lang = useLang();
   const [editGoalRace, setEditGoalRace] = useState("");
   const [editGoalTime, setEditGoalTime] = useState("");
   const [editGoalDate, setEditGoalDate] = useState("");
@@ -658,6 +663,30 @@ function SettingsContent() {
     }
   }
 
+  /**
+   * Saved on change rather than behind the profile Save button: the whole UI
+   * re-renders in the new language immediately, so a "did that apply?" moment
+   * would be strange. The provider re-reads via FEATURES_CHANGED_EVENT.
+   */
+  async function handleLanguageChange(next: Lang) {
+    setSavingLang(true);
+    setProfile((p) => (p ? { ...p, language: next } : p));
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ language: next }),
+      });
+      if (!res.ok) throw new Error();
+      try { localStorage.setItem("brocco_lang", next); } catch { /* full/blocked */ }
+      window.dispatchEvent(new Event(FEATURES_CHANGED_EVENT));
+    } catch {
+      /* keep the optimistic value; the next load re-reads the server */
+    } finally {
+      setSavingLang(false);
+    }
+  }
+
   async function handlePasswordChange() {
     if (newPw !== confirmPw) {
       setPwResult({ ok: false, msg: "Passwords don't match" });
@@ -807,8 +836,25 @@ function SettingsContent() {
             )}
           </div>
           <div>
-            <label className="label-xs block mb-1">Timezone</label>
+            <label className="label-xs block mb-1">{t("settings.timezone")}</label>
             <TimezonePicker value={editTimezone} onChange={setEditTimezone} />
+          </div>
+          <div>
+            <label className="label-xs block mb-1">{t("settings.language")}</label>
+            <select
+              value={profile?.language || lang}
+              onChange={(e) => handleLanguageChange(e.target.value as Lang)}
+              disabled={savingLang}
+              className="field"
+            >
+              {LANGUAGES.map((l) => (
+                <option key={l} value={l}>
+                  {LANGUAGE_NAMES[l]}
+                  {!profile?.language && l === detectLang() ? " ·" : ""}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-moss font-semibold mt-1">{t("settings.languageHint")}</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

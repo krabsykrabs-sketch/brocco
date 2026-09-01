@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { resolveFeatures } from "@/lib/features";
+import { isLang } from "@/lib/i18n";
 
 export async function GET() {
   try {
@@ -34,6 +35,7 @@ export async function GET() {
       weeklyKmBaseline: profile.weeklyKmBaseline ? Number(profile.weeklyKmBaseline) : null,
       hrMaxBpm: profile.hrMaxBpm,
       features: resolveFeatures(profile.features),
+      language: profile.language,
       icsFeedUrl: profile.icsToken ? `${process.env.BASE_URL}/api/calendar/ics?token=${profile.icsToken}` : null,
       stravaConnected: !!profile.stravaAccessToken,
       stravaAthleteId: profile.stravaAthleteId,
@@ -57,7 +59,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, timezone, goalRace, goalTime, goalRaceDate, hrMaxBpm, features } = body;
+    const { name, timezone, goalRace, goalTime, goalRaceDate, hrMaxBpm, features, language } = body;
 
     if (name !== undefined) {
       await prisma.user.update({
@@ -77,6 +79,9 @@ export async function PUT(request: NextRequest) {
       const n = Number(hrMaxBpm);
       profileUpdate.hrMaxBpm = hrMaxBpm && n > 0 && n < 250 ? Math.round(n) : null;
     }
+    // Unknown codes are ignored rather than stored, so a bad value can never
+    // leave the app in a language that has no dictionary.
+    if (language !== undefined) profileUpdate.language = isLang(language) ? language : null;
     if (features !== undefined) {
       // Normalize through resolveFeatures so only known keys with boolean
       // values are ever stored

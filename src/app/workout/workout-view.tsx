@@ -13,6 +13,8 @@ import {
   type WorkoutDefinition,
 } from "@/lib/guided-workout";
 import { artPathFor } from "@/lib/exercise-art";
+import { useT } from "@/app/features-provider";
+import type { DictKey } from "@/lib/dict";
 import WorkoutPlayer from "./player";
 
 interface SavedWorkout {
@@ -79,6 +81,7 @@ function WorkoutPreview({
   onPinToggle: (id: string, pinned: boolean) => void;
   onDelete: (id: string, title: string) => void;
 }) {
+  const t = useT();
   const [rounds, setRounds] = useState<number[]>(data.definition.blocks.map((b) => b.rounds));
 
   // The definition actually played — the stepper tweaks live only here.
@@ -92,9 +95,9 @@ function WorkoutPreview({
   const scaled = data.definition.blocks.some((b, i) => (rounds[i] ?? b.rounds) !== b.rounds);
 
   const adjustMsg =
-    `Adjust this workout for me: "${data.title}"${data.focus ? ` (focus: ${data.focus})` : ""}.\n\n` +
+    `${t("workout.adjustIntro")}: "${data.title}"${data.focus ? ` (focus: ${data.focus})` : ""}.\n\n` +
     `${describeDefinition(data.definition)}\n\n` +
-    `Here's what I want changed: `;
+    t("workout.adjustPrompt");
 
   return (
     <div className="fixed inset-0 z-[70]">
@@ -115,13 +118,13 @@ function WorkoutPreview({
                 <button
                   onClick={() => onPinToggle(data.workoutId!, !data.pinned)}
                   className={`text-lg ${data.pinned ? "" : "opacity-30"}`}
-                  title={data.pinned ? "Unpin" : "Pin to top"}
-                  aria-label={data.pinned ? "Unpin" : "Pin to top"}
+                  title={data.pinned ? t("workout.unpin") : t("workout.pinToTop")}
+                  aria-label={data.pinned ? t("workout.unpin") : t("workout.pinToTop")}
                 >
                   📌
                 </button>
               )}
-              <button onClick={onClose} className="text-moss hover:text-ink text-xl leading-none" aria-label="Close">
+              <button onClick={onClose} className="text-moss hover:text-ink text-xl leading-none" aria-label={t("common.close")}>
                 &times;
               </button>
             </div>
@@ -130,7 +133,7 @@ function WorkoutPreview({
           {/* The session, laid out */}
           <div className="space-y-2 mt-3">
             {data.definition.warmupSec ? (
-              <p className="text-xs font-bold text-moss">🔥 Warm-up · {fmtSec(data.definition.warmupSec)}</p>
+              <p className="text-xs font-bold text-moss">🔥 {t("workout.warmUp")} · {fmtSec(data.definition.warmupSec)}</p>
             ) : null}
 
             {data.definition.blocks.map((b, bi) => (
@@ -139,7 +142,7 @@ function WorkoutPreview({
                   <p className="text-xs font-extrabold text-ink">
                     {b.label || `Block ${bi + 1}`}
                     {b.restBetweenRoundsSec ? (
-                      <span className="text-sage font-bold"> · {fmtSec(b.restBetweenRoundsSec)} between rounds</span>
+                      <span className="text-sage font-bold"> · {fmtSec(b.restBetweenRoundsSec)} {t("workout.betweenRounds")}</span>
                     ) : null}
                   </p>
                   {/* Short on time? Rounds are the honest lever. */}
@@ -147,17 +150,17 @@ function WorkoutPreview({
                     <button
                       onClick={() => setRounds((r) => r.map((n, i) => (i === bi ? Math.max(1, n - 1) : n)))}
                       className="w-6 h-6 flex items-center justify-center bg-ghost border-2 border-ink rounded-md text-xs font-extrabold sticker-press"
-                      aria-label="Fewer rounds"
+                      aria-label={t("workout.fewerRounds")}
                     >
                       −
                     </button>
                     <span className="text-xs font-extrabold text-ink tabular-nums w-14 text-center">
-                      {rounds[bi] ?? b.rounds} round{(rounds[bi] ?? b.rounds) !== 1 ? "s" : ""}
+                      {rounds[bi] ?? b.rounds} {(rounds[bi] ?? b.rounds) === 1 ? t("workout.round") : t("workout.roundsPlural")}
                     </span>
                     <button
                       onClick={() => setRounds((r) => r.map((n, i) => (i === bi ? Math.min(50, n + 1) : n)))}
                       className="w-6 h-6 flex items-center justify-center bg-ghost border-2 border-ink rounded-md text-xs font-extrabold sticker-press"
-                      aria-label="More rounds"
+                      aria-label={t("workout.moreRounds")}
                     >
                       +
                     </button>
@@ -193,23 +196,23 @@ function WorkoutPreview({
             ))}
 
             {data.definition.cooldownSec ? (
-              <p className="text-xs font-bold text-moss">🧊 Cool-down · {fmtSec(data.definition.cooldownSec)}</p>
+              <p className="text-xs font-bold text-moss">🧊 {t("workout.coolDown")} · {fmtSec(data.definition.cooldownSec)}</p>
             ) : null}
           </div>
 
           {/* History */}
           {data.recentSessions && data.recentSessions.length > 0 && (
             <div className="mt-3">
-              <p className="label-xs mb-1">History</p>
+              <p className="label-xs mb-1">{t("workout.history")}</p>
               <div className="space-y-0.5">
                 {data.recentSessions.map((s) => (
                   <p key={s.id} className="text-xs font-semibold tabular-nums">
                     <span className="text-moss">{fmtSessionDate(s.finishedAt)}</span>
                     <span className="text-sage"> · {s.durationMin} min · </span>
                     {s.completed ? (
-                      <span className="text-leaf">✓ completed</span>
+                      <span className="text-leaf">{t("workout.completed")}</span>
                     ) : (
-                      <span className="text-clay">stopped after {s.bailedAtExercise ?? 0} exercise{(s.bailedAtExercise ?? 0) !== 1 ? "s" : ""}</span>
+                      <span className="text-clay">{t("workout.stoppedAfter")} {s.bailedAtExercise ?? 0} {(s.bailedAtExercise ?? 0) === 1 ? t("workout.exercise") : t("workout.exercisesPlural")}</span>
                     )}
                   </p>
                 ))}
@@ -223,21 +226,21 @@ function WorkoutPreview({
               onClick={() => onStart(effectiveDef, data.title, data.workoutId)}
               className="btn-brocco w-full py-3"
             >
-              Start{scaled ? " (adjusted)" : ""} ▶
+              {scaled ? t("workout.startAdjusted") : t("common.start")} ▶
             </button>
             <div className="flex gap-2">
               <Link
                 href={`/chat?draft=${encodeURIComponent(adjustMsg)}`}
                 className="btn-quiet flex-1 py-2 text-xs text-center"
               >
-                🥦 Adjust with Brocco
+                🥦 {t("workout.adjustWithBrocco")}
               </Link>
               {data.workoutId && (
                 <button
                   onClick={() => onDelete(data.workoutId!, data.title)}
                   className="btn-quiet px-4 py-2 text-xs text-clay"
                 >
-                  Delete
+                  {t("common.delete")}
                 </button>
               )}
             </div>
@@ -249,6 +252,7 @@ function WorkoutPreview({
 }
 
 function CustomIntervalForm({ onStart }: { onStart: (def: WorkoutDefinition, title: string) => void }) {
+  const t = useT();
   const [work, setWork] = useState(40);
   const [rest, setRest] = useState(20);
   const [rounds, setRounds] = useState(10);
@@ -257,18 +261,18 @@ function CustomIntervalForm({ onStart }: { onStart: (def: WorkoutDefinition, tit
 
   return (
     <div className="sticker p-4">
-      <p className="text-sm font-bold text-ink mb-3">⏱ Custom intervals</p>
+      <p className="text-sm font-bold text-ink mb-3">{t("workout.customIntervals")}</p>
       <div className="grid grid-cols-3 gap-2 mb-3">
         <div>
-          <label className="label-xs block mb-1 text-center">Work (s)</label>
+          <label className="label-xs block mb-1 text-center">{t("workout.work")}</label>
           <input type="number" min={5} max={600} value={work} onChange={(e) => setWork(Number(e.target.value))} className={numCls} />
         </div>
         <div>
-          <label className="label-xs block mb-1 text-center">Rest (s)</label>
+          <label className="label-xs block mb-1 text-center">{t("workout.restSec")}</label>
           <input type="number" min={0} max={600} value={rest} onChange={(e) => setRest(Number(e.target.value))} className={numCls} />
         </div>
         <div>
-          <label className="label-xs block mb-1 text-center">Rounds</label>
+          <label className="label-xs block mb-1 text-center">{t("workout.rounds")}</label>
           <input type="number" min={1} max={50} value={rounds} onChange={(e) => setRounds(Number(e.target.value))} className={numCls} />
         </div>
       </div>
@@ -276,7 +280,7 @@ function CustomIntervalForm({ onStart }: { onStart: (def: WorkoutDefinition, tit
         onClick={() => onStart(buildCustomInterval(work, rest, rounds), `Intervals ${work}/${rest} × ${rounds}`)}
         className="btn-quiet w-full py-2.5 text-sm"
       >
-        Start
+        {t("common.start")}
       </button>
     </div>
   );
@@ -303,6 +307,7 @@ function SavedWorkoutRow({
   onOpen: () => void;
   onStart: () => void;
 }) {
+  const t = useT();
   return (
     <div className="group flex items-center gap-3 sticker px-4 py-3">
       <button onClick={onOpen} className="flex-1 min-w-0 text-left">
@@ -318,13 +323,14 @@ function SavedWorkoutRow({
         </p>
       </button>
       <button onClick={onStart} className="btn-brocco px-3 py-1.5 text-xs flex-shrink-0">
-        Start
+        {t("common.start")}
       </button>
     </div>
   );
 }
 
 function WorkoutViewInner() {
+  const t = useT();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [saved, setSaved] = useState<SavedWorkout[]>([]);
@@ -368,7 +374,7 @@ function WorkoutViewInner() {
         recentSessions: workout.recentSessions,
       };
     } catch {
-      emitToast({ text: "Couldn't load that workout.", kind: "error" });
+      emitToast({ text: t("workout.couldntLoad"), kind: "error" });
       return null;
     }
   }, []);
@@ -398,7 +404,7 @@ function WorkoutViewInner() {
       startSaved(startId);
     } else if (plannedId) {
       router.replace("/workout");
-      setGenerating("Brocco is building your session…");
+      setGenerating(t("workout.building"));
       fetch("/api/guided-workouts/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -410,7 +416,7 @@ function WorkoutViewInner() {
           fetchSaved();
           return startSaved(workout.id);
         })
-        .catch(() => emitToast({ text: "Couldn't build the session — try a preset instead.", kind: "error" }))
+        .catch(() => emitToast({ text: t("workout.couldntBuild"), kind: "error" }))
         .finally(() => setGenerating(null));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -433,17 +439,17 @@ function WorkoutViewInner() {
     const full = await fetch(`/api/guided-workouts/${id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
     const res = await fetch(`/api/guided-workouts/${id}`, { method: "DELETE" });
     if (!res.ok) {
-      emitToast({ text: "Couldn't delete — try again.", kind: "error" });
+      emitToast({ text: t("workout.couldntDelete"), kind: "error" });
       return;
     }
     setPreview(null);
     fetchSaved();
     if (full?.workout) {
       emitToast({
-        text: `Deleted: ${title}`,
+        text: `${t("workout.deleted")}: ${title}`,
         kind: "info",
         action: {
-          label: "Undo",
+          label: t("common.undo"),
           run: async () => {
             await fetch("/api/guided-workouts", {
               method: "POST",
@@ -481,7 +487,7 @@ function WorkoutViewInner() {
 
   return (
     <main className="min-h-screen max-w-2xl mx-auto px-4">
-      <PageHeader title="Workouts" />
+      <PageHeader title={t("workout.title")} />
 
       {generating && (
         <div className="mt-4 bg-sprout border-2 border-ink rounded-xl px-4 py-3 flex items-center gap-3 shadow-[2px_2px_0_var(--color-shade)]">
@@ -498,14 +504,14 @@ function WorkoutViewInner() {
         >
           <span className="text-xl">💬</span>
           <div className="flex-1 text-left">
-            <p className="text-sm font-extrabold">Ask Brocco for a workout</p>
-            <p className="text-xs text-leaf font-bold">Tell it your time, focus, and equipment — get a playable session</p>
+            <p className="text-sm font-extrabold">{t("workout.askBrocco")}</p>
+            <p className="text-xs text-leaf font-bold">{t("workout.askBroccoSub")}</p>
           </div>
         </Link>
 
         {/* Presets */}
         <section>
-          <h2 className="label-xs mb-2">Quick start</h2>
+          <h2 className="label-xs mb-2">{t("workout.quickStart")}</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {presets.map((p) => (
               <button
@@ -531,12 +537,12 @@ function WorkoutViewInner() {
 
         {/* Saved workouts */}
         <section>
-          <h2 className="label-xs mb-2">Your workouts</h2>
+          <h2 className="label-xs mb-2">{t("workout.yourWorkouts")}</h2>
           {loading ? (
-            <p className="text-sm text-moss font-semibold text-center py-4">Loading…</p>
+            <p className="text-sm text-moss font-semibold text-center py-4">{t("common.loading")}</p>
           ) : ownWorkouts.length === 0 && planWorkouts.length === 0 ? (
             <p className="text-xs text-sage font-semibold text-center py-4">
-              Nothing saved yet — ask Brocco for a workout and it lands here.
+              {t("workout.nothingSaved")}
             </p>
           ) : (
             <div className="space-y-2">
@@ -550,7 +556,7 @@ function WorkoutViewInner() {
         {/* Plan-generated sessions, current ones only — the rest is archive */}
         {(freshPlan.length > 0 || stalePlan.length > 0) && (
           <section>
-            <h2 className="label-xs mb-2">From your plan</h2>
+            <h2 className="label-xs mb-2">{t("workout.fromPlan")}</h2>
             <div className="space-y-2">
               {freshPlan.map((w) => (
                 <SavedWorkoutRow key={w.id} w={w} onOpen={() => openSaved(w.id)} onStart={() => startSaved(w.id)} />
@@ -565,7 +571,7 @@ function WorkoutViewInner() {
                 onClick={() => setShowStalePlan((v) => !v)}
                 className="text-xs text-sage font-bold mt-2 hover:text-ink"
               >
-                {showStalePlan ? "Hide older plan sessions" : `Show ${stalePlan.length} older plan session${stalePlan.length !== 1 ? "s" : ""}`}
+                {showStalePlan ? t("workout.hideOlder") : `${t("workout.showOlder")} (${stalePlan.length})`}
               </button>
             )}
           </section>
@@ -590,7 +596,8 @@ function WorkoutViewInner() {
 
 export default function WorkoutView() {
   return (
-    <Suspense fallback={<main className="min-h-screen max-w-2xl mx-auto px-4"><PageHeader title="Workouts" /></main>}>
+    // Fallback renders before the provider resolves, so it stays untranslated.
+    <Suspense fallback={<main className="min-h-screen max-w-2xl mx-auto px-4"><PageHeader /></main>}>
       <WorkoutViewInner />
     </Suspense>
   );

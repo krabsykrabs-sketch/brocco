@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useFeatures } from "./features-provider";
+import { useFeatures, useT } from "./features-provider";
+import type { DictKey } from "@/lib/dict";
 import type { Features } from "@/lib/features";
 
 interface Tab {
   name: string;
+  key: DictKey;
   href: string;
   icon: (active: boolean) => React.ReactNode;
   match: (p: string) => boolean;
@@ -14,6 +16,7 @@ interface Tab {
 
 const TODAY: Tab = {
   name: "Today",
+  key: "nav.today" as DictKey,
   href: "/today",
   icon: (active) => (
     <svg className="w-5 h-5" fill={active ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24" strokeWidth={active ? 0 : 1.5}>
@@ -28,6 +31,7 @@ const TODAY: Tab = {
 
 const CALENDAR: Tab = {
   name: "Calendar",
+  key: "nav.calendar" as DictKey,
   href: "/calendar",
   icon: (active) => (
     <svg className="w-5 h-5" fill={active ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24" strokeWidth={active ? 0 : 1.5}>
@@ -42,6 +46,7 @@ const CALENDAR: Tab = {
 
 const CHAT: Tab = {
   name: "Chat",
+  key: "nav.chat" as DictKey,
   href: "/chat",
   icon: (active) => (
     <svg className="w-5 h-5" fill={active ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24" strokeWidth={active ? 0 : 1.5}>
@@ -56,6 +61,7 @@ const CHAT: Tab = {
 
 const PLAN: Tab = {
   name: "Plan",
+  key: "nav.plan" as DictKey,
   href: "/plan",
   icon: (active) => (
     <svg className="w-5 h-5" fill={active ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24" strokeWidth={active ? 0 : 1.5}>
@@ -71,6 +77,7 @@ const PLAN: Tab = {
 
 const HISTORY: Tab = {
   name: "History",
+  key: "nav.history" as DictKey,
   href: "/history",
   icon: (active) => (
     <svg className="w-5 h-5" fill={active ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24" strokeWidth={active ? 0 : 1.5}>
@@ -88,6 +95,7 @@ function makeMoreTab(features: Features, surfaced: Tab[]): Tab {
   const hasHistory = surfaced.some((t) => t.name === "History");
   return {
     name: "More",
+    key: "nav.more" as DictKey,
     href: "/more",
     icon: (active) => (
       <svg className="w-5 h-5" fill={active ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24" strokeWidth={active ? 0 : 1.5}>
@@ -128,6 +136,7 @@ const HIDDEN_ON = ["/login", "/signup", "/legal", "/forgot-password", "/reset-pa
 export function BottomTabBar() {
   const pathname = usePathname();
   const features = useFeatures();
+  const t = useT();
 
   if (HIDDEN_ON.some((p) => pathname.startsWith(p))) return null;
 
@@ -149,7 +158,7 @@ export function BottomTabBar() {
                 className={`flex flex-col items-center justify-center gap-0.5 w-full h-full transition-colors font-bold ${active ? "text-leaf" : "text-sage"}`}
               >
                 {tab.icon(active)}
-                <span className="text-[10px] leading-none">{tab.name}</span>
+                <span className="text-[10px] leading-none">{t(tab.key)}</span>
               </Link>
             );
           })}

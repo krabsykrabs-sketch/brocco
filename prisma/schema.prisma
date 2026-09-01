@@ -75,6 +75,9 @@ model UserProfile {
   /// Kit the athlete actually owns — "resistance bands", "16kg kettlebell".
   /// Brocco prescribes around it instead of assuming a full gym or nothing.
   trainingEquipment     Json?    @map("training_equipment") @db.JsonB
+  /// UI + Brocco output language ("en", "de", "es"). Null = not chosen yet,
+  /// so the client falls back to the browser language.
+  language              String?
   /// The athlete's main sport ("climbing", "cycling", …). Null = running —
   /// the default persona, so existing users are untouched.
   primarySport          String?  @map("primary_sport")

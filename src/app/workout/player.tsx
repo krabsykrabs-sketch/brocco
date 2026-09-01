@@ -5,6 +5,8 @@ import { flattenSegments, type WorkoutDefinition, type Segment } from "@/lib/gui
 import { emitToast } from "@/lib/toast";
 import { emitDataChanged } from "@/lib/capture-context";
 import { artPathFor } from "@/lib/exercise-art";
+import { useT, useLang } from "@/app/features-provider";
+import type { Lang } from "@/lib/i18n";
 
 /**
  * Full-screen workout player. Deadline-based timing (endTime vs Date.now())
@@ -15,6 +17,8 @@ import { artPathFor } from "@/lib/exercise-art";
  */
 
 const EST_SEC_PER_REP = 3;
+
+const SPEECH_LOCALE: Record<Lang, string> = { en: "en-GB", de: "de-DE", es: "es-ES" };
 
 interface PlayerProps {
   title: string;
@@ -53,6 +57,8 @@ const KIND_FILL: Record<Segment["kind"], string> = {
 };
 
 export default function WorkoutPlayer({ title, definition, workoutId, onExit }: PlayerProps) {
+  const t = useT();
+  const lang = useLang();
   const segments = useMemo(() => flattenSegments(definition), [definition]);
   const totalEstSec = useMemo(() => segments.reduce((s, seg) => s + segEstSec(seg), 0), [segments]);
 
@@ -82,6 +88,12 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
 
   const seg = segments[idx];
   const isTimed = seg?.seconds != null;
+  const segLabel =
+    seg?.kind === "prep" ? t("player.getReady")
+    : seg?.kind === "warmup" ? t("workout.warmUp")
+    : seg?.kind === "cooldown" ? t("workout.coolDown")
+    : seg?.kind === "rest" ? (seg.label === "Round rest" ? t("player.roundRest") : t("player.rest"))
+    : seg?.label ?? "";
   // A picture of the position beats a sentence you have to read mid-effort.
   const artSrc = seg?.kind === "work" ? artPathFor(seg.label, seg.art) : null;
 
@@ -119,26 +131,26 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.rate = 1.05;
-      u.lang = "en-GB";
+      u.lang = SPEECH_LOCALE[lang];
       speechSynthesis.speak(u);
     } catch {
       /* speech unavailable */
     }
-  }, []);
+  }, [lang]);
 
   const announceSegment = useCallback(
     (s: Segment) => {
       if (s.kind === "work") {
-        speak(s.reps != null ? `${s.label}, ${s.reps} reps` : `${s.label}, ${s.seconds} seconds`);
+        speak(s.reps != null ? `${s.label}, ${s.reps} ${t("common.reps")}` : `${s.label}, ${s.seconds}`);
       } else if (s.kind === "rest") {
-        speak(s.nextUp ? `Rest. Next up: ${s.nextUp}` : "Rest");
+        speak(s.nextUp ? `${t("player.rest")}. ${t("player.next")}: ${s.nextUp}` : t("player.rest"));
       } else if (s.kind === "warmup") {
-        speak("Warm up");
+        speak(t("workout.warmUp"));
       } else if (s.kind === "cooldown") {
-        speak("Cool down. Nice work");
+        speak(t("workout.coolDown"));
       }
     },
-    [speak]
+    [speak, t]
   );
 
   // --- Wake lock ---
@@ -184,7 +196,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
         setFinished(true);
         beep(1320, 600);
         buzz([120, 60, 120]);
-        speak("Workout complete. Well done!");
+        speak(t("player.complete"));
         return;
       }
       const s = segments[newIdx];
@@ -200,13 +212,13 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
         announceSegment(s);
       }
     },
-    [segments, beep, buzz, speak, announceSegment]
+    [segments, beep, buzz, speak, announceSegment, t]
   );
 
   // Kick off the first segment's clock + announcement
   useEffect(() => {
     endTimeRef.current = Date.now() + (segments[0]?.seconds ?? 0) * 1000;
-    speak(`Starting ${title}. Get ready`);
+    speak(`${title}. ${t("player.getReady")}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -310,26 +322,26 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
     return (
       <div className="fixed inset-0 z-[90] bg-cream flex flex-col items-center justify-center px-6 text-center">
         <p className="text-6xl mb-4">🥦</p>
-        <h2 className="text-2xl font-extrabold text-ink mb-1">Workout complete!</h2>
+        <h2 className="text-2xl font-extrabold text-ink mb-1">{t("player.complete")}</h2>
         <p className="text-sm text-moss font-semibold mb-6">
-          {title} · {totalMin} min · {workSegs} exercises
+          {title} · {totalMin} {t("common.min")} · {workSegs} {t("workout.exercisesPlural")}
         </p>
         <div className="mb-8 min-h-[1.5rem]">
-          {logState === "logging" && <p className="text-xs text-sage font-bold">Logging to training…</p>}
+          {logState === "logging" && <p className="text-xs text-sage font-bold">{t("player.logging")}</p>}
           {logState === "logged" && (
             <p className="text-xs font-bold">
-              <span className="text-leaf">✓ Logged to training</span>
-              <button onClick={undoLog} className="text-sage underline ml-2">Undo</button>
+              <span className="text-leaf">{t("player.logged")}</span>
+              <button onClick={undoLog} className="text-sage underline ml-2">{t("common.undo")}</button>
             </p>
           )}
           {logState === "failed" && (
-            <p className="text-xs text-clay font-bold">Couldn&apos;t log the workout — it still counts in your heart.</p>
+            <p className="text-xs text-clay font-bold">{t("player.logFailed")}</p>
           )}
-          {logState === "undone" && <p className="text-xs text-sage font-bold">Not logged.</p>}
+          {logState === "undone" && <p className="text-xs text-sage font-bold">{t("player.notLogged")}</p>}
         </div>
         <div className="w-full max-w-xs">
           <button onClick={onExit} className="btn-brocco w-full py-3">
-            Done
+            {t("common.done")}
           </button>
         </div>
       </div>
@@ -349,14 +361,14 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
           <button
             onClick={() => setShowPlan(true)}
             className="text-moss hover:text-ink text-lg leading-none px-1"
-            aria-label="Show session plan"
+            aria-label={t("player.showPlan")}
           >
             &#9776;
           </button>
           <button
             onClick={() => { setQuitPrompt(true); if (!paused) togglePause(); }}
             className="text-moss hover:text-ink text-2xl leading-none px-1"
-            aria-label="Exit workout"
+            aria-label={t("player.exitWorkout")}
           >
             &times;
           </button>
@@ -364,7 +376,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
         <div className="flex items-center justify-between mt-1.5">
           <p className="text-[11px] text-sage font-bold truncate">{title}</p>
           <p className="text-[11px] text-sage font-bold flex-shrink-0 tabular-nums">
-            {seg.kind === "work" ? `Exercise ${workDone + 1}/${workSegs}` : `${workDone}/${workSegs} done`}
+            {seg.kind === "work" ? `${t("player.exerciseOf")} ${workDone + 1}/${workSegs}` : `${workDone}/${workSegs}`}
           </p>
         </div>
       </div>
@@ -379,7 +391,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
           <div className="relative flex flex-col items-center">
             {seg.context && <p className="label-xs mb-2">{seg.context}</p>}
             <h1 className="text-3xl md:text-4xl font-extrabold text-ink mb-1">
-              {seg.label}
+              {segLabel}
             </h1>
             {artSrc && (
               /* eslint-disable-next-line @next/next/no-img-element */
@@ -397,20 +409,20 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
                     onClick={() => { endTimeRef.current += 15000; setRemaining((r) => r + 15); }}
                     className="btn-quiet px-4 py-1.5 text-xs mb-1"
                   >
-                    +15s rest
+                    {t("player.addRest")}
                   </button>
                 )}
               </>
             ) : (
               <div className="my-6 flex flex-col items-center gap-5">
                 <p className="font-extrabold leading-none text-ink" style={{ fontSize: "clamp(4rem, 18vw, 6rem)" }}>
-                  {seg.reps} <span className="text-3xl text-moss">reps</span>
+                  {seg.reps} <span className="text-3xl text-moss">{t("common.reps")}</span>
                 </p>
                 <button
                   onClick={() => goTo(idx + 1)}
                   className="btn-brocco px-10 py-4 text-lg"
                 >
-                  Done ✓
+                  {t("common.done")} ✓
                 </button>
               </div>
             )}
@@ -419,7 +431,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
 
         {seg.nextUp && seg.nextUp !== seg.label && (
           <p className="text-sm text-sage font-bold mt-4">
-            Next: <span className="text-ink">{seg.nextUp}</span>
+            {t("player.next")}: <span className="text-ink">{seg.nextUp}</span>
           </p>
         )}
       </div>
@@ -430,7 +442,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
           <button
             onClick={() => goTo(Math.max(0, idx - 1))}
             className="sticker-press w-12 h-12 flex items-center justify-center bg-card border-2 border-ink text-ink rounded-full shadow-[2px_2px_0_var(--color-shade)]"
-            aria-label="Previous"
+            aria-label={t("player.previous")}
           >
             ⏮
           </button>
@@ -438,7 +450,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
             <button
               onClick={togglePause}
               className="sticker-press w-16 h-16 flex items-center justify-center bg-brocco border-2 border-ink text-ink text-2xl rounded-full shadow-[3px_3px_0_var(--color-shade)]"
-              aria-label={paused ? "Resume" : "Pause"}
+              aria-label={paused ? t("player.resume") : t("player.pause")}
             >
               {paused ? "▶" : "⏸"}
             </button>
@@ -446,7 +458,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
           <button
             onClick={() => goTo(idx + 1)}
             className="sticker-press w-12 h-12 flex items-center justify-center bg-card border-2 border-ink text-ink rounded-full shadow-[2px_2px_0_var(--color-shade)]"
-            aria-label="Skip"
+            aria-label={t("player.skip")}
           >
             ⏭
           </button>
@@ -456,13 +468,13 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
             onClick={() => { const v = !soundOn; setSoundOn(v); localStorage.setItem("brocco_wo_sound", v ? "on" : "off"); }}
             className={`text-xs font-bold ${soundOn ? "text-ink" : "text-ghost-ink line-through"}`}
           >
-            🔔 Beeps
+            {t("player.beeps")}
           </button>
           <button
             onClick={() => { const v = !voiceOn; setVoiceOn(v); localStorage.setItem("brocco_wo_voice", v ? "on" : "off"); if (!v && typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); }}
             className={`text-xs font-bold ${voiceOn ? "text-ink" : "text-ghost-ink line-through"}`}
           >
-            🗣 Voice
+            {t("player.voice")}
           </button>
         </div>
       </div>
@@ -476,8 +488,8 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
           >
             <div className="max-w-2xl mx-auto">
               <div className="flex items-center justify-between mb-2">
-                <p className="label-xs">Session plan</p>
-                <button onClick={() => setShowPlan(false)} className="text-moss hover:text-ink text-xl leading-none" aria-label="Close">
+                <p className="label-xs">{t("player.sessionPlan")}</p>
+                <button onClick={() => setShowPlan(false)} className="text-moss hover:text-ink text-xl leading-none" aria-label={t("common.close")}>
                   &times;
                 </button>
               </div>
@@ -512,19 +524,19 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
       {quitPrompt && (
         <div className="absolute inset-0 z-10 bg-ink/40 flex items-center justify-center px-6">
           <div className="bg-paper border-2 border-ink rounded-2xl shadow-[4px_4px_0_var(--color-shade)] p-5 w-full max-w-xs text-center">
-            <p className="text-ink font-bold mb-4">Quit this workout?</p>
+            <p className="text-ink font-bold mb-4">{t("player.quitTitle")}</p>
             <div className="space-y-2">
               <button
                 onClick={() => { setQuitPrompt(false); if (paused) togglePause(); }}
                 className="btn-brocco w-full py-2.5 text-sm"
               >
-                Keep going 💪
+                {t("player.keepGoing")}
               </button>
               <button
                 onClick={handleQuit}
                 className="btn-quiet w-full py-2.5 text-sm"
               >
-                Quit
+                {t("player.quit")}
               </button>
             </div>
           </div>

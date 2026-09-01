@@ -1,5 +1,7 @@
 "use client";
 
+import { useT } from "@/app/features-provider";
+
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -317,10 +319,11 @@ function EventChip({ event, onTap }: { event: EventOccurrence; onTap: () => void
  * activity's real numbers in the right one — instead of a tiny badge.
  */
 function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matched: ActivityItem | null; state: WorkoutState }) {
+  const t = useT();
   return (
     <Link href={matched ? `/activity/${matched.activityId}` : `/calendar?view=day&date=${workout.date}`} className={`sticker sticker-press grid grid-cols-2 overflow-hidden ${state === "today" ? "shadow-[3px_3px_0_var(--color-brocco)]" : ""}`}>
       <div className="px-2.5 py-1.5 border-r-2 border-dashed border-shade min-w-0">
-        <p className="label-xs">Planned</p>
+        <p className="label-xs">{t("calendar.planned")}</p>
         <p className={`text-xs font-bold truncate flex items-center gap-1.5 ${state === "missed" ? "text-moss" : "text-ink"}`}>
           <span className="w-2 h-2 rounded-full border border-ink/60 flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
           {workout.title}
@@ -331,18 +334,18 @@ function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matche
       </div>
       {state === "done" ? (
         <div className="px-2.5 py-1.5 bg-sprout min-w-0">
-          <p className="label-xs text-leaf!">✓ Done</p>
+          <p className="label-xs text-leaf!">{t("calendar.doneLabel")}</p>
           <p className="text-xs font-extrabold text-ink truncate tabular-nums">{matched ? activityDetail(matched) || matched.name : "completed"}</p>
           {matched && <p className="text-[10px] text-leaf font-bold truncate">{matched.source === "strava" ? "strava" : "logged"}</p>}
         </div>
       ) : state === "missed" ? (
         <div className="px-2.5 py-1.5 bg-clay-soft min-w-0">
-          <p className="label-xs text-clay!">✗ Missed</p>
-          <p className="text-xs font-bold text-clay truncate">not run</p>
+          <p className="label-xs text-clay!">{t("calendar.missed")}</p>
+          <p className="text-xs font-bold text-clay truncate">{t("calendar.notRun")}</p>
         </div>
       ) : (
         <div className="px-2.5 py-1.5 bg-ghost min-w-0">
-          <p className="label-xs">Actual</p>
+          <p className="label-xs">{t("calendar.actual")}</p>
           <p className="text-xs font-bold text-ghost-ink truncate">{state === "today" ? "— today" : "—"}</p>
         </div>
       )}
@@ -352,14 +355,15 @@ function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matche
 
 /** A completed activity with no planned workout behind it (spontaneous run, extra ride, ad-hoc session). */
 function ActivityChip({ activity }: { activity: ActivityItem }) {
+  const t = useT();
   return (
     <Link href={`/activity/${activity.activityId}`} className="sticker sticker-press grid grid-cols-2 overflow-hidden">
       <div className="px-2.5 py-1.5 border-r-2 border-dashed border-shade bg-ghost min-w-0">
-        <p className="label-xs">Unplanned</p>
+        <p className="label-xs">{t("calendar.unplanned")}</p>
         <p className="text-xs font-bold text-ghost-ink truncate">— spontaneous</p>
       </div>
       <div className="px-2.5 py-1.5 bg-sprout min-w-0">
-        <p className="label-xs text-leaf!">✓ Done</p>
+        <p className="label-xs text-leaf!">{t("calendar.doneLabel")}</p>
         <p className="text-xs font-extrabold text-ink truncate">{activity.name}</p>
         <p className="text-[10px] text-leaf font-bold truncate tabular-nums">
           {[activityDetail(activity), activity.source === "strava" ? "strava" : "logged"].filter(Boolean).join(" · ")}
@@ -446,6 +450,7 @@ function WorkoutDetailCard({
   state: WorkoutState;
   detail: WorkoutDetail | null | undefined; // undefined = still loading, null = failed
 }) {
+  const t = useT();
   // The range endpoint already carries the description, so the "why" is on
   // screen before the detail request lands.
   const description = detail?.workout.description ?? workout.description;
@@ -519,7 +524,7 @@ function WorkoutDetailCard({
       {state === "done" ? (
         matched ? (
           <Link href={`/activity/${matched.activityId}`} className="block bg-sprout border-t-2 border-ink px-3 py-2 sticker-press">
-            <p className="label-xs text-leaf!">✓ Done</p>
+            <p className="label-xs text-leaf!">{t("calendar.doneLabel")}</p>
             <p className="text-sm font-extrabold text-ink tabular-nums">{activityDetail(matched) || matched.name}</p>
             <p className="text-[10px] text-leaf font-bold">
               {matched.source === "strava" ? "strava" : "logged"} · tap for the full activity
@@ -527,13 +532,13 @@ function WorkoutDetailCard({
           </Link>
         ) : (
           <div className="bg-sprout border-t-2 border-ink px-3 py-2">
-            <p className="label-xs text-leaf!">✓ Done</p>
+            <p className="label-xs text-leaf!">{t("calendar.doneLabel")}</p>
             <p className="text-sm font-extrabold text-ink">marked complete</p>
           </div>
         )
       ) : state === "missed" ? (
         <div className="bg-clay-soft border-t-2 border-ink px-3 py-2">
-          <p className="label-xs text-clay!">✗ Missed</p>
+          <p className="label-xs text-clay!">{t("calendar.missed")}</p>
           <p className="text-xs font-bold text-clay">Nothing matching was logged this day.</p>
         </div>
       ) : (
@@ -560,6 +565,7 @@ function DayView({
   details: Record<string, WorkoutDetail | null>;
   onEventTap: (e: EventOccurrence) => void;
 }) {
+  const t = useT();
   const { rows, extras } = reconcileDay(data.workouts, data.activities, today);
   return (
     <div className="space-y-3 pb-2">
@@ -869,6 +875,7 @@ export default function CalendarView() {
   const [details, setDetails] = useState<Record<string, WorkoutDetail | null>>({});
   const detailsRequested = useRef<Set<string>>(new Set());
   const today = todayStr();
+  const t = useT();
 
   // Visible range per view
   const [rangeStart, rangeEnd] = useMemo(() => rangeFor(view, anchor), [view, anchor]);
@@ -1001,7 +1008,7 @@ export default function CalendarView() {
             <WorkoutChip key={workout.workoutId} workout={workout} matched={matched} state={state} />
           ))}
           {extras.map((a) => <ActivityChip key={a.activityId} activity={a} />)}
-          {!compact && isEmpty && <p className="text-xs text-sage font-semibold py-2">Nothing scheduled.</p>}
+          {!compact && isEmpty && <p className="text-xs text-sage font-semibold py-2">{t("calendar.nothingScheduled")}</p>}
         </div>
       </div>
     );
@@ -1058,7 +1065,7 @@ export default function CalendarView() {
                 </p>
               )}
               {(plannedKm > 0 || runKm > 0) && plannedSessions > 0 && (
-                <p className="text-sage">{doneSessions} of {plannedSessions} sessions</p>
+                <p className="text-sage">{doneSessions} / {plannedSessions} {t("common.sessions")}</p>
               )}
             </div>
           )}
@@ -1092,7 +1099,7 @@ export default function CalendarView() {
 
   return (
     <main className="min-h-screen max-w-2xl mx-auto px-4 pb-28 md:pb-12 flex flex-col">
-      <PageHeader title="Calendar" />
+      <PageHeader title={t("calendar.title")} />
 
       {/* View switcher + nav */}
       <div className="flex items-center justify-between mt-2 mb-1">
@@ -1109,12 +1116,12 @@ export default function CalendarView() {
         </div>
         <div className="flex items-center gap-1">
           {anchor !== today && (
-            <button onClick={() => setAnchor(today)} className="px-2 py-1 text-xs text-leaf font-bold hover:opacity-70">Today</button>
+            <button onClick={() => setAnchor(today)} className="px-2 py-1 text-xs text-leaf font-bold hover:opacity-70">{t("calendar.today")}</button>
           )}
-          <button onClick={() => navigate(-1)} aria-label="Previous" className="p-1.5 text-moss hover:text-ink">
+          <button onClick={() => navigate(-1)} aria-label={t("calendar.previous")} className="p-1.5 text-moss hover:text-ink">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
           </button>
-          <button onClick={() => navigate(1)} aria-label="Next" className="p-1.5 text-moss hover:text-ink">
+          <button onClick={() => navigate(1)} aria-label={t("calendar.next")} className="p-1.5 text-moss hover:text-ink">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
           </button>
         </div>

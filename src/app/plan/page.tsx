@@ -1,5 +1,7 @@
 "use client";
 
+import { useT } from "@/app/features-provider";
+
 import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -173,6 +175,7 @@ function ThisWeekCard({
   goals: ReturnType<typeof useWeeklyGoals>;
   tasks: WeeklyTask[]; onToggleTask: (id: string, status: string) => void;
 }) {
+  const t = useT();
   const sessionsBased = !!summary && isSessionsBased(summary);
   const pct = !summary
     ? 0
@@ -187,7 +190,7 @@ function ThisWeekCard({
       {week && summary && (
         <>
           <div className="flex items-baseline justify-between gap-2">
-            <p className="label-xs">This week</p>
+            <p className="label-xs">{t("plan.thisWeek")}</p>
             <p className="text-xs text-sage font-bold">{formatWeekRange(week.startDate)}</p>
           </div>
           <div className="flex items-baseline justify-between gap-2 mt-0.5">
@@ -221,14 +224,14 @@ function ThisWeekCard({
 
       {lastWeek && lastSummary && (lastSummary.actualKm > 0 || lastSummary.targetKm > 0 || lastSummary.targetSessions > 0) && (
         <div className="flex items-center justify-between gap-2 mt-2.5 pt-2.5 border-t-2 border-dashed border-shade">
-          <p className="label-xs">Last week</p>
+          <p className="label-xs">{t("plan.lastWeek")}</p>
           <p className="text-xs font-bold tabular-nums">
             {isSessionsBased(lastSummary) ? (
               <>
                 <span className="text-ink">{lastSummary.sessions}</span>
                 <span className="text-sage"> / {lastSummary.targetSessions} sessions</span>
                 {targetHit(lastSummary)
-                  ? <span className="text-leaf"> ✓ target hit</span>
+                  ? <span className="text-leaf"> ✓ {t("plan.targetHit")}</span>
                   : <span className="text-clay"> · {lastSummary.targetSessions - lastSummary.sessions} short</span>}
               </>
             ) : (
@@ -237,7 +240,7 @@ function ThisWeekCard({
                 {lastSummary.targetKm > 0 && <span className="text-sage"> / {lastSummary.targetKm.toFixed(0)} km</span>}
                 {lastSummary.targetKm > 0 && (
                   targetHit(lastSummary)
-                    ? <span className="text-leaf"> ✓ target hit</span>
+                    ? <span className="text-leaf"> ✓ {t("plan.targetHit")}</span>
                     : <span className="text-clay"> · {(lastSummary.targetKm - lastSummary.actualKm).toFixed(0)} km short</span>
                 )}
               </>
@@ -281,6 +284,7 @@ function BlockCard({
   weekList: PlanWeekData[]; summaries: WeekSummary[]; phases: Phase[];
   currentWeekIdx: number; currentWeekNum: number | undefined;
 }) {
+  const t = useT();
   // Which phase's description is unfolded. Brocco writes one for every phase
   // it plans; this is the only place they're readable.
   const [openPhaseId, setOpenPhaseId] = useState<string | null>(null);
@@ -294,10 +298,10 @@ function BlockCard({
   return (
     <section className="sticker px-4 py-3">
       <div className="flex items-baseline justify-between gap-2 mb-2">
-        <p className="label-xs">The block</p>
+        <p className="label-xs">{t("plan.theBlock")}</p>
         {peak > 0 && (
           <p className="text-xs text-sage font-bold tabular-nums">
-            peak {peak.toFixed(0)} {sessionsBars ? "sessions/wk" : "km"}
+            peak {peak.toFixed(0)} {sessionsBars ? t("common.sessions") : "km"}
           </p>
         )}
       </div>
@@ -368,13 +372,13 @@ function BlockCard({
 
       <div className="flex gap-2 mt-3">
         <Link href="/calendar" className="btn-quiet flex items-center justify-center gap-2 flex-1 py-2 text-xs">
-          <span>📅</span><span>See the sessions</span>
+          <span>📅</span><span>{t("plan.seeSessions")}</span>
         </Link>
         <Link
           href={`/chat?msg=${encodeURIComponent("Explain my training plan to me — what's the thinking behind the phases and the weekly volumes, and how should I approach the block?")}`}
           className="btn-quiet flex items-center justify-center gap-2 flex-1 py-2 text-xs"
         >
-          <span>🥦</span><span>Explain this plan</span>
+          <span>🥦</span><span>{t("plan.explainPlan")}</span>
         </Link>
       </div>
     </section>
@@ -391,11 +395,12 @@ function WeekListCard({
 }: {
   weekList: PlanWeekData[]; summaries: WeekSummary[]; currentWeekIdx: number;
 }) {
+  const t = useT();
   if (weekList.length === 0) return null;
 
   return (
     <section className="sticker px-4 py-3">
-      <p className="label-xs">Week by week</p>
+      <p className="label-xs">{t("plan.weekByWeek")}</p>
       <div className="mt-1">
         {weekList.map((w, i) => {
           const s = summaries[i];
@@ -466,13 +471,14 @@ function WeekListCard({
 
 export default function PlanPage() {
   return (
-    <Suspense fallback={<main className="min-h-screen max-w-2xl mx-auto px-4"><PageHeader title="Plan" /><div className="text-moss text-center py-12 font-semibold">Loading...</div></main>}>
+    <Suspense fallback={<main className="min-h-screen max-w-2xl mx-auto px-4"><PageHeader /></main>}>
       <PlanPageContent />
     </Suspense>
   );
 }
 
 function PlanPageContent() {
+  const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -514,13 +520,13 @@ function PlanPageContent() {
   );
 
   if (loading) {
-    return <main className="min-h-screen max-w-2xl mx-auto px-4"><PageHeader title="Plan" /><div className="text-moss text-center py-12 font-semibold">Loading...</div></main>;
+    return <main className="min-h-screen max-w-2xl mx-auto px-4"><PageHeader title={t("plan.title")} /><div className="text-moss text-center py-12 font-semibold">Loading...</div></main>;
   }
 
   if (!plan) {
     return (
       <main className="min-h-screen max-w-2xl mx-auto px-4">
-        <PageHeader title="Plan" />
+        <PageHeader title={t("plan.title")} />
         <div className="text-center py-16">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/brocco-runner.png" alt="" className="h-32 mx-auto mb-4" />

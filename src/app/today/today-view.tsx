@@ -1,5 +1,7 @@
 "use client";
 
+import { useT } from "@/app/features-provider";
+
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { PageHeader } from "../nav";
@@ -210,6 +212,7 @@ function TaskRow({ task, onToggle }: { task: TodoItem; onToggle: (t: TodoItem) =
 // --- Weekly review card (collapsed to a teaser row until tapped) ---
 
 function WeeklyReviewCard() {
+  const t = useT();
   const [review, setReview] = useState<{ text: string; weekStart: string } | null>(null);
   const [dismissed, setDismissed] = useState(true); // assume dismissed until checked
   const [open, setOpen] = useState(false);
@@ -233,7 +236,7 @@ function WeeklyReviewCard() {
       <div className="sticker bg-sprout px-3.5 py-2.5">
         <div className="flex items-center justify-between gap-2">
           <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
-            <p className="label-xs text-leaf!">📋 Your week in review</p>
+            <p className="label-xs text-leaf!">{t("today.weekReview")}</p>
             <span className={`text-leaf text-xs transition-transform ${open ? "rotate-90" : ""}`}>›</span>
           </button>
           <button
@@ -242,7 +245,7 @@ function WeeklyReviewCard() {
               setDismissed(true);
             }}
             className="text-moss hover:text-ink leading-none"
-            aria-label="Dismiss weekly review"
+            aria-label={t("today.dismissReview")}
           >
             &times;
           </button>
@@ -292,6 +295,7 @@ function BriefingCard({ briefing, loading }: { briefing: string | null; loading:
 // --- Week summary ---
 
 function WeekCard({ data }: { data: TodayData }) {
+  const t = useT();
   const ws = data.weekSummary;
   // A plan week with no km target but planned sessions (climbing and other
   // non-distance plans) is tracked by sessions instead of km.
@@ -306,17 +310,17 @@ function WeekCard({ data }: { data: TodayData }) {
     <Link href="/plan" className="sticker-lg sticker-press block px-4 py-3">
       <div className="flex items-center justify-between mb-1.5">
         <p className="label-xs">
-          This week{ws.weekNumber ? ` · W${ws.weekNumber}${ws.totalWeeks ? `/${ws.totalWeeks}` : ""}` : ""}{ws.phaseName ? ` · ${ws.phaseName}` : ""}
+          {t("today.thisWeek")}{ws.weekNumber ? ` · W${ws.weekNumber}${ws.totalWeeks ? `/${ws.totalWeeks}` : ""}` : ""}{ws.phaseName ? ` · ${ws.phaseName}` : ""}
         </p>
         {!sessionsBased && ws.totalSessions > 0 && (
-          <p className="text-[10px] text-sage font-bold">{ws.completedSessions}/{ws.totalSessions} sessions</p>
+          <p className="text-[10px] text-sage font-bold">{ws.completedSessions}/{ws.totalSessions} {t("common.sessions")}</p>
         )}
       </div>
       <div className="flex items-baseline justify-between mb-1">
         {sessionsBased ? (
           <p className="text-sm text-ink tabular-nums">
             <span className="font-extrabold text-lg">{ws.completedSessions}</span>
-            <span className="text-sage font-bold"> / {ws.totalSessions} sessions</span>
+            <span className="text-sage font-bold"> / {ws.totalSessions} {t("common.sessions")}</span>
           </p>
         ) : (
           <p className="text-sm text-ink tabular-nums">
@@ -341,6 +345,7 @@ function WeekCard({ data }: { data: TodayData }) {
 
 export default function TodayView() {
   const features = useFeatures();
+  const t = useT();
   const goals = useWeeklyGoals();
   const [data, setData] = useState<TodayData | null>(null);
   const [briefing, setBriefing] = useState<string | null>(null);
@@ -403,7 +408,7 @@ export default function TodayView() {
   if (loading || !data) {
     return (
       <main className="min-h-screen max-w-2xl mx-auto px-4">
-        <PageHeader title="Today" />
+        <PageHeader title={t("today.title")} />
         <div className="text-moss text-center py-12 font-semibold">{loading ? "Loading..." : "Failed to load."}</div>
       </main>
     );
@@ -447,7 +452,7 @@ export default function TodayView() {
 
   return (
     <main className="min-h-screen max-w-2xl mx-auto px-4 pb-28 md:pb-12">
-      <PageHeader title="Today" />
+      <PageHeader title={t("today.title")} />
 
       {/* Date + greeting */}
       <div className="mt-3 mb-3">
@@ -459,8 +464,8 @@ export default function TodayView() {
       {data.stravaNeedsReconnect && (
         <div className="mb-3 bg-clay-soft border-2 border-clay rounded-xl px-3.5 py-3 flex items-center gap-3">
           <span className="text-xl flex-shrink-0">⚠️</span>
-          <p className="text-sm text-clay font-bold flex-1">Strava stopped syncing — access expired.</p>
-          <a href="/api/strava/auth" className="btn-brocco px-3 py-1.5 text-xs flex-shrink-0">Reconnect</a>
+          <p className="text-sm text-clay font-bold flex-1">{t("today.stravaBroken")}</p>
+          <a href="/api/strava/auth" className="btn-brocco px-3 py-1.5 text-xs flex-shrink-0">{t("today.reconnect")}</a>
         </div>
       )}
 
@@ -474,8 +479,8 @@ export default function TodayView() {
       {data.planExpired && (
         <div className="mb-3 sticker px-3.5 py-3 flex items-center gap-3">
           <span className="text-xl flex-shrink-0">🏁</span>
-          <p className="text-sm text-ink font-bold flex-1">{data.activePlanName || "Your plan"} is done!</p>
-          <Link href={`/chat?msg=${encodeURIComponent("I'd like to build a new training plan")}`} className="btn-brocco px-3 py-1.5 text-xs flex-shrink-0">Build a plan</Link>
+          <p className="text-sm text-ink font-bold flex-1">{data.activePlanName || "Your plan"} {t("today.planDone")}</p>
+          <Link href={`/chat?msg=${encodeURIComponent("I'd like to build a new training plan")}`} className="btn-brocco px-3 py-1.5 text-xs flex-shrink-0">{t("today.buildPlan")}</Link>
         </div>
       )}
 
@@ -534,7 +539,7 @@ export default function TodayView() {
             <p className="text-moss text-xs mt-1 font-semibold">
               {anyLifeFeature(features)
                 ? "Nothing scheduled. Ask Brocco if you want to add something."
-                : "Rest up, or chat with Brocco about the week."}
+                : t("today.restUp")}
             </p>
           </div>
         )}
