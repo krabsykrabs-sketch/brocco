@@ -9,8 +9,9 @@ import { ensureFreshStravaData } from "@/lib/strava-fresh";
 import { groundStatusMarker } from "@/app/api/chat/route";
 import { COACH_MODEL } from "@/lib/models";
 import { renderWeeklyGoalsLine } from "@/lib/weekly-goals";
-import { generateNumberChecked } from "@/lib/number-guard";
+import { generateNumberChecked, extractKm } from "@/lib/number-guard";
 import { weekTrainingFigures } from "@/lib/week-training";
+import { summarizeStaleSessions, recentConversationSummaries } from "@/lib/conversation-memory";
 
 const anthropic = new Anthropic();
 
@@ -84,6 +85,34 @@ export async function POST(request: NextRequest) {
   if (claim.count === 0) {
     return NextResponse.json({ skipped: true });
   }
+
+  // First open of a new day is the natural moment to condense yesterday's
+  // conversation into memory. Fire-and-forget — never blocks the opener.
+  summarizeStaleSessions(userId).catch(() => {});
+
+  // The conversation this opener will be appended to. Without it the opener
+  // was generated blind and happily re-asked questions the athlete had
+  // answered an hour earlier ("why did you miss Tuesday?" — knee, we talked
+  // about it, at length).
+  const sessionMessages = await prisma.chatMessage.findMany({
+    where: { sessionId, role: { in: ["user", "assistant"] } },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+    select: { role: true, displayText: true },
+  });
+  const history: Anthropic.MessageParam[] = [];
+  for (const m of sessionMessages.reverse()) {
+    const text = (m.displayText || "").trim();
+    if (!text) continue;
+    if (history.length === 0 && m.role === "assistant") continue; // API wants user-first
+    const last = history[history.length - 1];
+    if (last && last.role === m.role) {
+      last.content = `${last.content}\n${text}`;
+    } else {
+      history.push({ role: m.role as "user" | "assistant", content: text });
+    }
+  }
+  const hasConversation = history.some((m) => m.role === "user");
   // Week figures come from one shared, tested place. The pad this query needs
   // for timezone offsets was previously never trimmed back off, so last
   // Sunday's run counted into this week — see lib/week-training.ts.
@@ -163,7 +192,10 @@ export async function POST(request: NextRequest) {
     const dist = latestArrival.distanceKm ? `${Number(latestArrival.distanceKm).toFixed(1)}km` : "";
     const dur = latestArrival.durationMin ? `${Math.round(Number(latestArrival.durationMin))}min` : "";
     const pace = latestArrival.avgPacePerKm || "";
-    triggerHint = `\nTRIGGER: A new activity just came in since you last spoke — ${latestArrival.activityType} "${latestArrival.name}" ${[dist, dur, pace].filter(Boolean).join(" ")}. React to it specifically; do NOT repeat the general week summary you already gave earlier today.`;
+    const arrival = `${latestArrival.activityType} "${latestArrival.name}" ${[dist, dur, pace].filter(Boolean).join(" ")}`;
+    triggerHint = hasConversation
+      ? `\nTRIGGER: A new activity just synced mid-conversation — ${arrival}. You are CONTINUING the conversation above, not starting one: react to the new activity in 1-2 sentences, connect it to what you were discussing when relevant, and DO NOT give a week summary or re-raise topics already covered above.`
+      : `\nTRIGGER: A new activity just came in since you last spoke — ${arrival}. React to it specifically; do NOT repeat the general week summary you already gave earlier today.`;
   } else if (trigger === "new_day") {
     const todayPlanned = weekPlanned.find((w) => wallDateString(w.date) === todayStr && w.workoutType !== "rest");
     if (todayPlanned) {
@@ -185,8 +217,17 @@ export async function POST(request: NextRequest) {
   const timeNow = nowInTimezone(tz).slice(11, 16);
   const goalsLine = await renderWeeklyGoalsLine(userId, tz);
 
-  const source = `${analysisContext}${triggerHint}${goalsLine}`;
-  const systemPrompt = `You are Brocco, a broccoli running coach. Write a brief data-driven training check-in for ${userName}. 2-4 sentences max. Pattern: quick summary of the week so far + highlight something specific (good or concerning) + what's coming up + open question. Be direct and specific. NUMBERS: quote only figures that appear in the data below, exactly as written. Never calculate, sum or estimate a distance — if a number you want is not in the data, leave it out and say it qualitatively instead. Running kilometres and bike kilometres are separate; never add them together. Don't say "Hello" or generic greetings. Today is ${format(parseWall(todayStr), "EEEE, MMMM d, yyyy")} and the current LOCAL TIME is ${timeNow} — never treat today's still-pending workout as missed or overdue. End with a status line: [STATUS:question]your question[/STATUS] or [STATUS:info]key insight[/STATUS].`;
+  // Cross-day memory: inside `source` so the number guard treats any figure
+  // mentioned in the notes as legitimate to quote.
+  const convoNotes = await recentConversationSummaries(userId);
+  const convoLine = convoNotes ? `\nNotes from recent conversations (you already know this — never re-ask it):\n${convoNotes}` : "";
+
+  const source = `${analysisContext}${triggerHint}${goalsLine}${convoLine}`;
+  const styleLine =
+    hasConversation && trigger === "new_activity"
+      ? `You are re-opening an ongoing conversation (shown above). Continue it naturally in 1-2 sentences — no week summary, no re-asking anything already answered above.`
+      : `Write a brief data-driven training check-in for ${userName}. 2-4 sentences max. Pattern: quick summary of the week so far + highlight something specific (good or concerning) + what's coming up + open question.${hasConversation ? " The conversation above already happened today — do not re-raise topics it settled." : ""}`;
+  const systemPrompt = `You are Brocco, a broccoli running coach. ${styleLine} Be direct and specific. NUMBERS: quote only figures that appear in the data below, exactly as written. Never calculate, sum or estimate a distance — if a number you want is not in the data, leave it out and say it qualitatively instead. Running kilometres and bike kilometres are separate; never add them together. Don't say "Hello" or generic greetings. Today is ${format(parseWall(todayStr), "EEEE, MMMM d, yyyy")} and the current LOCAL TIME is ${timeNow} — never treat today's still-pending workout as missed or overdue. End with a status line: [STATUS:question]your question[/STATUS] or [STATUS:info]key insight[/STATUS].`;
 
   try {
     // Distances are checked against the data block before this reaches the
@@ -194,9 +235,13 @@ export async function POST(request: NextRequest) {
     // supplied, and prose was the one thing nothing verified.
     const checked = await generateNumberChecked(
       source,
-      // A coach may legitimately state the shortfall, which is a subtraction of
-      // two supplied figures rather than an invention.
-      [Math.max(0, plannedKm - weekRunKm)],
+      // A coach may legitimately state the shortfall (a subtraction of two
+      // supplied figures), or echo a distance the athlete themselves said in
+      // today's conversation — neither is an invention.
+      [
+        Math.max(0, plannedKm - weekRunKm),
+        ...extractKm(history.map((m) => (typeof m.content === "string" ? m.content : "")).join("\n")),
+      ],
       "opener",
       async (correction) => {
         const res = await anthropic.messages
@@ -207,10 +252,13 @@ export async function POST(request: NextRequest) {
             max_tokens: 4000,
             output_config: { effort: "low" },
             system: systemPrompt,
+            // Today's conversation precedes the generation request, so the
+            // opener knows what has already been discussed.
             messages: [
+              ...history,
               {
                 role: "user",
-                content: `${source}\n\nGenerate the opening analysis.${correction ? `\n\n${correction}` : ""}`,
+                content: `${source}\n\n${hasConversation && trigger === "new_activity" ? "Continue the conversation, reacting to the new activity." : "Generate the opening analysis."}${correction ? `\n\n${correction}` : ""}`,
               },
             ],
           })

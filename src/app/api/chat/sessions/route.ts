@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { todayInTimezone, dateInTimezone } from "@/lib/schedule";
+import { summarizeStaleSessions } from "@/lib/conversation-memory";
 
 export async function GET(request: NextRequest) {
   try {
@@ -47,6 +48,10 @@ export async function POST(request: NextRequest) {
     if (!session.userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // A new session starting is the moment finished conversations become
+    // memory. Fire-and-forget — never blocks session creation.
+    summarizeStaleSessions(session.userId).catch(() => {});
 
     // Check if caller wants a fresh session (e.g. for auto-messages like "build my plan")
     let forceNew = false;

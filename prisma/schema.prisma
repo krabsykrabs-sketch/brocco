@@ -313,6 +313,10 @@ model ChatSession {
   userId    String          @map("user_id") @db.Uuid
   title     String          @default("New conversation")
   type      ChatSessionType @default(general)
+  /// Once the session's day is over, a few extracted lines (decisions,
+  /// reasons, follow-ups) — Brocco's cross-day conversation memory.
+  /// Empty string = summarized, nothing worth keeping (won't retry).
+  summary   String?
   createdAt DateTime        @default(now()) @map("created_at")
   updatedAt DateTime        @updatedAt @map("updated_at")
 

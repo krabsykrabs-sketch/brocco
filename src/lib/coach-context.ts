@@ -18,6 +18,7 @@ import { getPaceCurve, formatTimeSec, formatPaceSec } from "@/lib/run-trends";
 import type { StravaLap } from "@/lib/strava";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 import { resolveFeatures, anyLifeFeature, type Features } from "@/lib/features";
+import { recentConversationSummaries } from "@/lib/conversation-memory";
 
 /**
  * Build the coaching context for the AI system prompt.
@@ -138,6 +139,12 @@ export async function buildCoachContext(userId: string): Promise<string> {
   // --- Guided workout history (progression material) ---
   const guidedBlock = await buildGuidedWorkoutContext(userId, now);
 
+  // --- Cross-day conversation memory ---
+  const convoSummaries = await recentConversationSummaries(userId);
+  const convoBlock = convoSummaries
+    ? `RECENT CONVERSATIONS (notes from the last few days' chats — treat as things you already know; NEVER re-ask what's answered here):\n${convoSummaries}`
+    : "";
+
   // --- Health notes ---
   let healthBlock = "ACTIVE HEALTH NOTES:\n";
   if (healthNotes.length === 0) {
@@ -161,6 +168,7 @@ export async function buildCoachContext(userId: string): Promise<string> {
   if (coachingNotesBlock) blocks.push(coachingNotesBlock);
   blocks.push(planBlock, goalsBlock, activitiesBlock, loadBlock);
   if (guidedBlock) blocks.push(guidedBlock);
+  if (convoBlock) blocks.push(convoBlock);
   blocks.push(healthBlock);
   if (features.calendar) {
     blocks.push(await buildLifeContext(userId, profile.timezone, features));
@@ -800,6 +808,7 @@ ${staplesBlock}${equipmentBlock}`;
 - Be direct and concise. Don't repeat data the user can already see on the dashboard.
 - If the user has no activities yet, welcome them and ask about their training background.
 - Keep responses focused and actionable. Don't write essays.
+- SAVE WHAT YOU LEARN: when a conversation yields a durable fact or decision — why a session was missed, an injury update, a preference, something you agreed to revisit ("we'll test the knee Thursday") — store it with save_profile coaching_notes_update in the SAME turn, so future-you doesn't re-ask. Don't save small talk or things the training data already shows.
 - Always end your messages with a clear question or prompt to keep the conversation going. Never leave the runner without something to respond to.
 ${!hasCoachingNotes ? (primarySport ? `
 GETTING TO KNOW A NEW ATHLETE:
