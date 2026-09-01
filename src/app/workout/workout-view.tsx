@@ -166,9 +166,9 @@ function WorkoutPreview({
                 <div className="space-y-1">
                   {b.exercises.map((e, ei) => (
                     <div key={ei} className="flex items-center gap-2">
-                      {artPathFor(e.name) && (
+                      {artPathFor(e.name, e.art) && (
                         /* eslint-disable-next-line @next/next/no-img-element */
-                        <img src={artPathFor(e.name)!} alt="" className="w-8 h-8 object-contain flex-shrink-0" />
+                        <img src={artPathFor(e.name, e.art)!} alt="" className="w-8 h-8 object-contain flex-shrink-0" />
                       )}
                       <p className="text-xs font-bold text-ink flex-1 min-w-0">{e.name}</p>
                       <p className="text-[10px] text-sage font-bold tabular-nums flex-shrink-0">

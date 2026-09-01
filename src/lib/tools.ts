@@ -531,6 +531,11 @@ export const toolDefinitions: Anthropic.Tool[] = [
                       type: "object",
                       properties: {
                         name: { type: "string" },
+                        art: {
+                          type: "string",
+                          description:
+                            "Diagram key for this exercise — the ILLUSTRATED EXERCISES name in lowercase with hyphens (\"Side plank\" -> \"side-plank\", \"Calf raises (bent knee)\" -> \"calf-raises-bent-knee\"). ALWAYS set it when an illustrated exercise fits, especially when you write the name in another language: the picture is chosen by this key, not by the name. Omit only for an exercise with no diagram.",
+                        },
                         mode: { type: "string", enum: ["time", "reps"] },
                         workSec: { type: "integer" },
                         reps: { type: "integer" },

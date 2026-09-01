@@ -23,10 +23,14 @@ export interface ExerciseArt {
  * Left/right are the same picture; anything else in parentheses is a real
  * variant ("calf raises (bent knee)") and stays part of the slug.
  */
+const SIDE_WORDS = /\b(?:left|right|links|rechts|izquierda|derecha|izquierdo|derecho)\b/g;
+
 export function exerciseSlug(name: string): string {
   return name
     .toLowerCase()
-    .replace(/\((?:left|right)\)/g, "")
+    .replace(/[àáâä]/g, "a").replace(/[èéêë]/g, "e").replace(/[ìíîï]/g, "i")
+    .replace(/[òóôö]/g, "o").replace(/[ùúûü]/g, "u").replace(/ñ/g, "n").replace(/ß/g, "ss")
+    .replace(SIDE_WORDS, " ")
     .replace(/[—–-]/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
@@ -94,6 +98,9 @@ export const EXERCISE_ART: ExerciseArt[] = [
   { slug: "hamstring-stretch", label: "Hamstring stretch", prompt: "holding a seated hamstring stretch, side view: seated on the floor with one leg extended straight forward, torso hinged forward reaching both hands toward that foot" },
   { slug: "calf-stretch-wall", label: "Calf stretch (wall)", prompt: "holding a standing calf stretch against a wall, side view: both hands on the wall, one leg extended straight back with the heel pressed flat on the floor, the front knee bent" },
   { slug: "thoracic-rotation", label: "Thoracic rotation", prompt: "performing an open book thoracic rotation lying on one side on the floor, viewed from above: knees bent and stacked in front, the bottom arm resting on the floor, the top arm rotating open across the body toward the floor behind" },
+  { slug: "face-pulls", label: "Face pulls", prompt: "standing performing a band face pull, front view: both arms pulling a stretched elastic band back toward the face at head height, elbows high and wide out to the sides, shoulder blades squeezed" },
+  { slug: "scapular-pulls", label: "Scapular pulls", prompt: "hanging from a horizontal bar performing a scapular pull, front view: arms completely straight throughout, the whole body pulled up only slightly by the shoulder blades drawing down and together, legs hanging straight" },
+  { slug: "negative-pull-ups", label: "Negative pull-ups", prompt: "lowering slowly from the top of a pull up on a horizontal bar, front view: chin near the bar with elbows bent, the body descending under control, legs hanging straight below" },
   { slug: "ninety-ninety-hip-stretch", label: "90/90 hip stretch", prompt: "seated on the floor in the 90/90 hip stretch seen from directly above looking down: the front leg is bent so the thigh points forward and the shin crosses the body at a sharp right angle, the rear leg is bent so that thigh points out to the side with the shin trailing behind, both knees form clear right angles, the legs are NOT crossed" },
 ];
 
@@ -102,8 +109,82 @@ const BY_SLUG = new Map(EXERCISE_ART.map((e) => [e.slug, e]));
 /** Canonical exercise names, for steering Brocco's create_workout tool. */
 export const ILLUSTRATED_LABELS = EXERCISE_ART.map((e) => e.label);
 
+/**
+ * Names that don't normalise onto a slug by themselves — shorthands and the
+ * German/Spanish terms Brocco uses when coaching in those languages.
+ * Not exhaustive by design: create_workout also emits an explicit `art` key,
+ * and the token-overlap fallback below catches most of the rest.
+ */
+const ALIASES: Record<string, string> = {
+  "hollow-hold": "hollow-body-hold",
+  "hollow-body": "hollow-body-hold",
+  "hohlkreuz-halten": "hollow-body-hold",
+  "unterarmstutz": "plank",
+  "seitstutz": "side-plank",
+  "liegestutze": "push-ups",
+  "liegestutz": "push-ups",
+  "kniebeugen": "squats",
+  "kniebeuge": "squats",
+  "ausfallschritte": "forward-lunges",
+  "ausfallschritt": "forward-lunges",
+  "ruckwartige-ausfallschritte": "reverse-lunges",
+  "wadenheben": "calf-raises-straight-knee",
+  "klimmzuge": "pull-ups",
+  "klimmzug": "pull-ups",
+  "negativ-klimmzug": "negative-pull-ups",
+  "negativ-klimmzuge": "negative-pull-ups",
+  "negative-pull-up": "negative-pull-ups",
+  "huftheben": "glute-bridge",
+  "beckenheben": "glute-bridge",
+  "unterarm-plank": "plank",
+  "bergsteiger": "mountain-climbers",
+  "hampelmann": "jump-squats",
+  "wandsitz": "wall-sit",
+  "sentadillas": "squats",
+  "zancadas": "forward-lunges",
+  "plancha": "plank",
+  "plancha-lateral": "side-plank",
+  "flexiones": "push-ups",
+  "dominadas": "pull-ups",
+  "puente-de-gluteos": "glute-bridge",
+  "elevacion-de-talones": "calf-raises-straight-knee",
+  "band-face-pull": "face-pulls",
+  "face-pull": "face-pulls",
+  "scapular-pull": "scapular-pulls",
+  "skapula-pulls": "scapular-pulls",
+};
+
+/**
+ * Every query token has to be covered by the candidate, so "Hollow Hold"
+ * finds "hollow body hold" while "Scapular Pulls" does NOT collapse onto
+ * "scapular push-ups" — a different exercise that happens to share a word.
+ */
+function fuzzyEntry(slug: string): ExerciseArt | null {
+  const q = slug.split("-").filter((t) => t.length > 2);
+  if (q.length === 0) return null;
+  let best: ExerciseArt | null = null;
+  let bestScore = 0;
+  for (const e of EXERCISE_ART) {
+    const tokens = new Set(e.slug.split("-").filter((t) => t.length > 2));
+    if (!q.every((t) => tokens.has(t))) continue;
+    const score = q.length / Math.max(q.length, tokens.size);
+    if (score > bestScore) { best = e; bestScore = score; }
+  }
+  return bestScore >= 0.5 ? best : null;
+}
+
+/** Is this a slug we have a diagram for? (validates create_workout's `art`) */
+export function isArtSlug(slug: string): boolean {
+  return BY_SLUG.has(slug);
+}
+
 export function artEntryFor(name: string): ExerciseArt | null {
-  return BY_SLUG.get(exerciseSlug(name)) ?? null;
+  const slug = exerciseSlug(name);
+  const direct = BY_SLUG.get(slug);
+  if (direct) return direct;
+  const aliased = ALIASES[slug];
+  if (aliased) return BY_SLUG.get(aliased) ?? null;
+  return fuzzyEntry(slug);
 }
 
 // Slugs whose art has actually been curated into public/exercise-art/.
@@ -115,7 +196,7 @@ import READY from "./exercise-art-ready.json";
 const READY_SLUGS = new Set(READY as string[]);
 
 /** Public path of this exercise's diagram, or null if we don't have one. */
-export function artPathFor(name: string): string | null {
-  const slug = exerciseSlug(name);
-  return READY_SLUGS.has(slug) ? `/exercise-art/${slug}.png` : null;
+export function artPathFor(name: string, artKey?: string | null): string | null {
+  const entry = (artKey ? BY_SLUG.get(artKey) : undefined) ?? artEntryFor(name);
+  return entry && READY_SLUGS.has(entry.slug) ? `/exercise-art/${entry.slug}.png` : null;
 }

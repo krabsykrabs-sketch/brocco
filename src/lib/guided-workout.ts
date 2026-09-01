@@ -8,6 +8,8 @@
  * directly; it plays the flattened Segment[] from flattenSegments().
  */
 
+import { isArtSlug } from "@/lib/exercise-art";
+
 export interface WorkoutExercise {
   name: string;
   mode: "time" | "reps";
@@ -15,6 +17,12 @@ export interface WorkoutExercise {
   reps?: number; // mode=reps
   restSec?: number; // rest AFTER this exercise (default 0)
   note?: string; // form cue, e.g. "keep hips level"
+  /**
+   * Diagram to show, as an exercise-art slug. Set by Brocco so the picture
+   * survives the exercise being NAMED in any language; falls back to
+   * matching on `name` when absent (older saved workouts).
+   */
+  art?: string;
 }
 
 export interface WorkoutBlock {
@@ -102,12 +110,16 @@ export function validateWorkoutDefinition(
         return { ok: false, error: `${where}.restSec must be 0-${LIMITS.restSecMax}` };
       }
       const note = e.note != null ? String(e.note).slice(0, LIMITS.noteMax) : undefined;
+      // Unknown art slugs are dropped rather than rejected — a wrong key
+      // should cost the picture, never the whole workout.
+      const art = typeof e.art === "string" && isArtSlug(e.art) ? e.art : undefined;
       exercises.push({
         name,
         mode,
         ...(mode === "time" ? { workSec: Math.round(workSec!) } : { reps: reps! }),
         ...(restSec != null ? { restSec: Math.round(restSec) } : {}),
         ...(note ? { note } : {}),
+        ...(art ? { art } : {}),
       });
     }
     blocks.push({
@@ -159,6 +171,8 @@ export interface Segment {
   context?: string;
   /** Next work segment's name, for the "Next: …" preview */
   nextUp?: string;
+  /** exercise-art slug, when the definition specified one */
+  art?: string;
 }
 
 const PREP_SEC = 10;
@@ -182,6 +196,7 @@ export function flattenSegments(def: WorkoutDefinition): Segment[] {
           label: e.name,
           ...(e.mode === "time" ? { seconds: e.workSec } : { reps: e.reps }),
           ...(e.note ? { note: e.note } : {}),
+          ...(e.art ? { art: e.art } : {}),
           ...(context ? { context } : {}),
         });
         const isLastExercise = ei === b.exercises.length - 1;

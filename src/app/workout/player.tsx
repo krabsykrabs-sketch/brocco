@@ -83,7 +83,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
   const seg = segments[idx];
   const isTimed = seg?.seconds != null;
   // A picture of the position beats a sentence you have to read mid-effort.
-  const artSrc = seg?.kind === "work" ? artPathFor(seg.label) : null;
+  const artSrc = seg?.kind === "work" ? artPathFor(seg.label, seg.art) : null;
 
   // Restore audio prefs
   useEffect(() => {
