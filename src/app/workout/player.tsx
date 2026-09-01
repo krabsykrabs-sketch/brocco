@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { flattenSegments, type WorkoutDefinition, type Segment } from "@/lib/guided-workout";
 import { emitToast } from "@/lib/toast";
 import { emitDataChanged } from "@/lib/capture-context";
+import { artPathFor } from "@/lib/exercise-art";
 
 /**
  * Full-screen workout player. Deadline-based timing (endTime vs Date.now())
@@ -81,6 +82,8 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
 
   const seg = segments[idx];
   const isTimed = seg?.seconds != null;
+  // A picture of the position beats a sentence you have to read mid-effort.
+  const artSrc = seg?.kind === "work" ? artPathFor(seg.label) : null;
 
   // Restore audio prefs
   useEffect(() => {
@@ -378,6 +381,10 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
             <h1 className="text-3xl md:text-4xl font-extrabold text-ink mb-1">
               {seg.label}
             </h1>
+            {artSrc && (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={artSrc} alt="" className="w-28 h-28 md:w-36 md:h-36 object-contain mt-1" />
+            )}
             {seg.note && <p className="text-sm text-moss font-semibold mb-4 max-w-xs">{seg.note}</p>}
 
             {isTimed ? (

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { ILLUSTRATED_LABELS } from "@/lib/exercise-art";
 import { startOfWeek, endOfWeek, subWeeks, format, subDays } from "date-fns";
 import type Anthropic from "@anthropic-ai/sdk";
 import {
@@ -501,7 +502,9 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: "create_workout",
     description:
-      'Create a guided S&C (strength & conditioning) session the user can play in the workout timer (big countdown, voice cues). Use when the user asks for a workout to DO now or to save for later ("make me a 20-minute core workout", "something for my hips, no equipment"). Design for runners: bodyweight by default, 10-30 min, left/right sides as separate entries, short form cues in notes. Prefer mode "time" (30-45s work) for flow; "reps" only where counting matters. Respect active injuries from the health context. After creating, tell the user it\'s ready in the Workouts screen.',
+      'Create a guided S&C (strength & conditioning) session the user can play in the workout timer (big countdown, voice cues). Use when the user asks for a workout to DO now or to save for later ("make me a 20-minute core workout", "something for my hips, no equipment"). Design for runners: bodyweight by default, 10-30 min, left/right sides as separate entries, short form cues in notes. Prefer mode "time" (30-45s work) for flow; "reps" only where counting matters. Respect active injuries from the health context. ILLUSTRATED EXERCISES: these have a diagram the athlete sees mid-workout, so prefer them verbatim whenever one fits what you want — ' +
+      ILLUSTRATED_LABELS.join(', ') +
+      '. Left/right variants keep the name and append " (left)"/" (right)". Use a different exercise only when none of these expresses the movement. After creating, tell the user it\'s ready in the Workouts screen.',
     input_schema: {
       type: "object" as const,
       properties: {

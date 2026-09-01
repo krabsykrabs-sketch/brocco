@@ -43,3 +43,6 @@ yarn-error.log*
 next-env.d.ts
 
 *Zone.Identifier
+
+# Generated exercise-art candidates (curated ones live in public/exercise-art)
+.art-candidates/
