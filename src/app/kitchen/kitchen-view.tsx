@@ -1,5 +1,7 @@
 "use client";
 
+import { useT } from "@/app/features-provider";
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { PageHeader } from "../nav";
@@ -343,6 +345,7 @@ function StaplesSection() {
 }
 
 export default function KitchenView() {
+  const t = useT();
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -440,7 +443,7 @@ export default function KitchenView() {
 
   return (
     <main className="min-h-screen max-w-2xl mx-auto px-4">
-      <PageHeader title="Kitchen" />
+      <PageHeader title={t("nav.kitchen")} />
 
       <div className="mt-4 space-y-4 pb-8">
         {/* Actions */}

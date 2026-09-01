@@ -1,5 +1,7 @@
 "use client";
 
+import { useT } from "@/app/features-provider";
+
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { DesktopNavLinks } from "@/app/nav";
@@ -147,6 +149,7 @@ function SessionSidebar({
   basePath: string;
   title: string;
 }) {
+  const t = useT();
   const router = useRouter();
 
   return (
@@ -172,7 +175,7 @@ function SessionSidebar({
             onClick={() => { router.push(basePath); onClose(); }}
             className="btn-brocco w-full text-left px-3 py-2 text-sm"
           >
-            + New conversation
+            {t("chat.newConversation")}
           </button>
         </div>
         <div className="overflow-y-auto h-[calc(100%-110px)]">
@@ -210,6 +213,7 @@ export default function ChatUI({
 }) {
   const router = useRouter();
   const kitchen = mode === "kitchen";
+  const t = useT();
   const basePath = kitchen ? "/kitchen/chat" : "/chat";
   const sessionsUrl = `/api/chat/sessions${kitchen ? "?type=kitchen" : ""}`;
   const sessionBody = kitchen ? { type: "kitchen" } : {};
@@ -630,7 +634,7 @@ export default function ChatUI({
           <button
             onClick={() => setSidebarOpen(true)}
             className="text-moss hover:text-ink text-lg"
-            title="Conversations"
+            title={t("chat.conversations")}
           >
             &#9776;
           </button>
@@ -651,7 +655,7 @@ export default function ChatUI({
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         basePath={basePath}
-        title={kitchen ? "Kitchen chats" : "Conversations"}
+        title={kitchen ? t("chat.kitchenChats") : t("chat.conversations")}
       />
 
       {/* Messages */}
@@ -662,7 +666,7 @@ export default function ChatUI({
             <img src="/icons/icon-192.png" alt="" className="w-16 h-16 mx-auto mb-4 rounded-full border-2 border-ink" />
             {kitchen ? (
               <>
-                <p className="text-sm font-bold text-ink">What are we cooking?</p>
+                <p className="text-sm font-bold text-ink">{t("chat.cooking")}</p>
                 <p className="text-xs text-moss font-semibold mt-1 max-w-xs mx-auto">
                   Tell me what&apos;s in your fridge and I&apos;ll suggest something — your saved recipes and pantry staples included.
                 </p>
@@ -722,7 +726,7 @@ export default function ChatUI({
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={recording ? (liveSpeech.supported ? "Listening…" : "Listening… (words appear when you stop)") : kitchen ? "What's in your fridge?" : "Ask Brocco..."}
+            placeholder={recording ? (liveSpeech.supported ? t("chat.listening") : t("chat.listeningNoLive")) : kitchen ? t("chat.kitchenPlaceholder") : t("chat.placeholder")}
             rows={1}
             readOnly={recording}
             className={`field flex-1 resize-none ${recording ? "border-clay!" : ""}`}
@@ -740,7 +744,7 @@ export default function ChatUI({
                   ? "bg-[#faeed8] border-2 border-sun rounded-xl text-ink"
                   : "btn-brocco"
               } disabled:opacity-40 disabled:cursor-not-allowed`}
-              title={recording ? "Stop recording" : transcribing ? "Transcribing..." : "Voice input"}
+              title={recording ? t("chat.stopRecording") : transcribing ? t("chat.transcribing") : t("chat.voiceInput")}
             >
               {transcribing ? (
                 <span className="inline-block w-5 h-5 border-2 border-ink/20 border-t-ink rounded-full animate-spin" />

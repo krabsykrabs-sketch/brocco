@@ -4,6 +4,8 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { resolveFeatures } from "@/lib/features";
 import { PageHeader } from "../nav";
+import { translator } from "@/lib/dict";
+import { resolveLang } from "@/lib/i18n";
 
 export default async function MorePage() {
   const session = await getSession();
@@ -11,21 +13,23 @@ export default async function MorePage() {
 
   const profile = await prisma.userProfile.findUnique({
     where: { userId: session.userId },
-    select: { features: true },
+    select: { features: true, language: true },
   });
   const features = resolveFeatures(profile?.features);
+  // Server component — no hook here; translate from the stored language.
+  const t = translator(resolveLang(profile?.language));
 
   const items = [
-    { name: "Training Plan", href: "/plan", emoji: "📅", desc: "Phases, weekly targets, race countdown" },
-    { name: "History", href: "/history", emoji: "🏃", desc: "All past activities" },
-    { name: "Workouts", href: "/workout", emoji: "💪", desc: "Guided S&C sessions and interval timers" },
-    ...(features.kitchen ? [{ name: "Kitchen", href: "/kitchen", emoji: "🍳", desc: "Recipe library, photo scans, cooking ideas" }] : []),
-    { name: "Settings", href: "/settings", emoji: "⚙️", desc: "Profile, features, Strava, notifications" },
+    { name: t("more.trainingPlan"), href: "/plan", emoji: "📅", desc: t("more.planDesc") },
+    { name: t("nav.history"), href: "/history", emoji: "🏃", desc: t("more.historyDesc") },
+    { name: t("nav.workouts"), href: "/workout", emoji: "💪", desc: t("more.workoutsDesc") },
+    ...(features.kitchen ? [{ name: t("nav.kitchen"), href: "/kitchen", emoji: "🍳", desc: t("more.kitchenDesc") }] : []),
+    { name: t("nav.settings"), href: "/settings", emoji: "⚙️", desc: t("more.settingsDesc") },
   ];
 
   return (
     <main className="min-h-screen max-w-2xl mx-auto px-4">
-      <PageHeader title="More" />
+      <PageHeader title={t("nav.more")} />
       <div className="mt-4 space-y-2 pb-8">
         {items.map((item) => (
           <Link

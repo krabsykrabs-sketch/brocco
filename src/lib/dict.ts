@@ -226,6 +226,13 @@ export const EN = {
   "settings.calendarFeed": "Calendar feed",
   "settings.equipment": "Equipment",
 
+  "more.planDesc": "Phases, weekly targets, race countdown",
+  "more.historyDesc": "All past activities",
+  "more.workoutsDesc": "Guided S&C sessions and interval timers",
+  "more.kitchenDesc": "Recipe library, photo scans, cooking ideas",
+  "more.settingsDesc": "Profile, features, Strava, notifications",
+  "more.trainingPlan": "Training Plan",
+
   // Auth
   "auth.login": "Log in",
   "auth.signup": "Sign up",
@@ -446,6 +453,12 @@ const DE: Partial<Record<DictKey, string>> = {
   "settings.calendarFeed": "Kalender-Feed",
   "settings.equipment": "Ausrüstung",
 
+  "more.planDesc": "Phasen, Wochenziele, Countdown zum Wettkampf",
+  "more.historyDesc": "Alle vergangenen Aktivitäten",
+  "more.workoutsDesc": "Angeleitete Kraft-Einheiten und Intervall-Timer",
+  "more.kitchenDesc": "Rezeptsammlung, Foto-Scans, Kochideen",
+  "more.settingsDesc": "Profil, Funktionen, Strava, Benachrichtigungen",
+  "more.trainingPlan": "Trainingsplan",
   "auth.login": "Anmelden",
   "auth.signup": "Registrieren",
   "auth.password": "Passwort",
@@ -663,6 +676,12 @@ const ES: Partial<Record<DictKey, string>> = {
   "settings.calendarFeed": "Feed de calendario",
   "settings.equipment": "Equipo",
 
+  "more.planDesc": "Fases, objetivos semanales, cuenta atrás de la carrera",
+  "more.historyDesc": "Todas las actividades pasadas",
+  "more.workoutsDesc": "Sesiones guiadas de fuerza y temporizadores",
+  "more.kitchenDesc": "Recetario, escaneo de fotos, ideas de cocina",
+  "more.settingsDesc": "Perfil, funciones, Strava, notificaciones",
+  "more.trainingPlan": "Plan de entrenamiento",
   "auth.login": "Iniciar sesión",
   "auth.signup": "Registrarse",
   "auth.password": "Contraseña",
