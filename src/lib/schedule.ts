@@ -57,7 +57,7 @@ export function wallDateString(d: Date): string {
  * Calendar date ("yyyy-MM-dd") of a real UTC instant, as seen in the given
  * IANA timezone. Use this (not wallDateString) for actual timestamps like
  * stravaLastSyncAt — wallDateString is only for the naive local-time
- * convention used by events/todos.
+ * convention used by events.
  */
 export function dateInTimezone(instant: Date, tz: string): string {
   try {
@@ -318,62 +318,6 @@ export async function getPlannedWorkouts(
   }));
 }
 
-// --- Tasks ---
-
-export interface TodoItem {
-  todoId: string;
-  title: string;
-  notes: string | null;
-  dueDate: string | null; // yyyy-MM-dd
-  dueTime: string | null; // HH:mm
-  priority: string | null;
-  recurrence: string;
-  done: boolean;
-  listId: string | null;
-  listName: string | null;
-  parentId: string | null;
-  overdue: boolean;
-}
-
-/** Open tasks due within the range, plus (optionally) everything overdue. */
-export async function getDueTodos(
-  userId: string,
-  rangeStart: string,
-  rangeEnd: string,
-  opts: { includeOverdue?: boolean; today?: string } = {}
-): Promise<TodoItem[]> {
-  const today = opts.today ?? rangeStart;
-  const todos = await prisma.todo.findMany({
-    where: {
-      userId,
-      done: false,
-      dueDate: opts.includeOverdue
-        ? { lte: parseWall(rangeEnd) }
-        : { gte: parseWall(rangeStart), lte: parseWall(rangeEnd) },
-    },
-    include: { list: { select: { id: true, name: true } } },
-    orderBy: [{ dueDate: "asc" }, { position: "asc" }],
-  });
-
-  return todos.map((t) => {
-    const due = t.dueDate ? wallDateString(t.dueDate) : null;
-    return {
-      todoId: t.id,
-      title: t.title,
-      notes: t.notes,
-      dueDate: due,
-      dueTime: t.dueTime,
-      priority: t.priority,
-      recurrence: t.recurrence,
-      done: t.done,
-      listId: t.list?.id ?? null,
-      listName: t.list?.name ?? null,
-      parentId: t.parentId,
-      overdue: !!due && due < today,
-    };
-  });
-}
-
 // --- Unified agenda ---
 
 export interface Agenda {
@@ -381,25 +325,20 @@ export interface Agenda {
   rangeEnd: string;
   events: EventOccurrence[];
   workouts: WorkoutItem[];
-  todos: TodoItem[];
 }
 
-/** Everything happening in a date range: events, planned workouts, due tasks. */
+/** Everything happening in a date range: events and planned workouts. */
 export async function getAgenda(
   userId: string,
   rangeStart: string,
   rangeEnd: string,
-  opts: { includeOverdueTodos?: boolean; today?: string; includeRestWorkouts?: boolean } = {}
+  opts: { includeRestWorkouts?: boolean } = {}
 ): Promise<Agenda> {
-  const [events, workouts, todos] = await Promise.all([
+  const [events, workouts] = await Promise.all([
     getEventOccurrences(userId, rangeStart, rangeEnd),
     getPlannedWorkouts(userId, rangeStart, rangeEnd, { includeRest: opts.includeRestWorkouts }),
-    getDueTodos(userId, rangeStart, rangeEnd, {
-      includeOverdue: opts.includeOverdueTodos,
-      today: opts.today,
-    }),
   ]);
-  return { rangeStart, rangeEnd, events, workouts, todos };
+  return { rangeStart, rangeEnd, events, workouts };
 }
 
 /**
@@ -430,13 +369,6 @@ export function renderAgendaText(agenda: Agenda): string {
     ].filter(Boolean).join(", ");
     push(w.date, `[workout:${w.workoutType}] ${w.title}${parts ? ` — ${parts}` : ""} [${w.status}] (workout_id: ${w.workoutId})`);
   }
-  for (const t of agenda.todos) {
-    if (!t.dueDate) continue;
-    const date = t.overdue ? agenda.rangeStart : t.dueDate;
-    const flags = [t.priority, t.overdue ? `OVERDUE since ${t.dueDate}` : null].filter(Boolean).join(", ");
-    push(date, `[task] ${t.title}${t.dueTime ? ` at ${t.dueTime}` : ""}${flags ? ` (${flags})` : ""} (task_id: ${t.todoId})`);
-  }
-
   if (days.size === 0) return "Nothing scheduled in this range.";
 
   const sortedDates = Array.from(days.keys()).sort();

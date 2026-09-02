@@ -6,7 +6,7 @@ import { emitToast } from "@/lib/toast";
 import { emitDataChanged } from "@/lib/capture-context";
 import { artPathFor } from "@/lib/exercise-art";
 import { useT, useLang } from "@/app/features-provider";
-import type { Lang } from "@/lib/i18n";
+import { localeFor } from "@/lib/i18n";
 
 /**
  * Full-screen workout player. Deadline-based timing (endTime vs Date.now())
@@ -17,8 +17,6 @@ import type { Lang } from "@/lib/i18n";
  */
 
 const EST_SEC_PER_REP = 3;
-
-const SPEECH_LOCALE: Record<Lang, string> = { en: "en-GB", de: "de-DE", es: "es-ES" };
 
 interface PlayerProps {
   title: string;
@@ -131,7 +129,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.rate = 1.05;
-      u.lang = SPEECH_LOCALE[lang];
+      u.lang = localeFor(lang);
       speechSynthesis.speak(u);
     } catch {
       /* speech unavailable */

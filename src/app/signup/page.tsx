@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import { useT } from "@/app/features-provider";
 
 function SignupForm() {
+  const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [name, setName] = useState("");
@@ -36,7 +38,7 @@ function SignupForm() {
       router.push("/");
       router.refresh();
     } catch {
-      setError("Something went wrong");
+      setError(t("common.somethingWrong"));
     } finally {
       setLoading(false);
     }
@@ -46,7 +48,7 @@ function SignupForm() {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label htmlFor="access-code" className="block text-sm font-bold text-ink mb-1">
-          Access Code
+          {t("auth.accessCode")}
         </label>
         <input
           id="access-code"
@@ -61,7 +63,7 @@ function SignupForm() {
 
       <div>
         <label htmlFor="name" className="block text-sm font-bold text-ink mb-1">
-          Name
+          {t("settings.name")}
         </label>
         <input
           id="name"
@@ -76,7 +78,7 @@ function SignupForm() {
 
       <div>
         <label htmlFor="email" className="block text-sm font-bold text-ink mb-1">
-          Email
+          {t("settings.email")}
         </label>
         <input
           id="email"
@@ -91,7 +93,7 @@ function SignupForm() {
 
       <div>
         <label htmlFor="password" className="block text-sm font-bold text-ink mb-1">
-          Password
+          {t("auth.password")}
         </label>
         <input
           id="password"
@@ -114,13 +116,14 @@ function SignupForm() {
         disabled={loading}
         className="btn-brocco w-full py-2 px-4"
       >
-        {loading ? "Creating account..." : "Sign up"}
+        {loading ? "Creating account..." : t("auth.signup")}
       </button>
     </form>
   );
 }
 
 export default function SignupPage() {
+  const t = useT();
   return (
     <main className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm sticker-lg p-6">
@@ -131,14 +134,14 @@ export default function SignupPage() {
           <p className="text-moss text-sm mt-1">You need an invite code to sign up.</p>
         </div>
 
-        <Suspense fallback={<div className="text-moss text-center">Loading...</div>}>
+        <Suspense fallback={<div className="text-moss text-center">{t("common.loading")}</div>}>
           <SignupForm />
         </Suspense>
 
         <p className="text-center text-moss text-sm mt-6">
           Already have an account?{" "}
           <a href="/login" className="text-leaf font-bold underline">
-            Log in
+            {t("auth.login")}
           </a>
         </p>
       </div>

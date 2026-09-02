@@ -488,13 +488,12 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: "query_schedule",
     description:
-      "Read the unified schedule — calendar events, planned workouts from the training plan, and due tasks — for a date range. Use to answer 'what does my Thursday look like', to find free slots, and ALWAYS before scheduling something new, so you can flag conflicts (e.g. a long run colliding with an early flight).",
+      "Read the unified schedule — calendar events and planned workouts from the training plan — for a date range. Use to answer 'what does my Thursday look like', to find free slots, and ALWAYS before scheduling something new, so you can flag conflicts (e.g. a long run colliding with an early flight).",
     input_schema: {
       type: "object" as const,
       properties: {
         date_from: { type: "string", description: "'yyyy-MM-dd'" },
         date_to: { type: "string", description: "'yyyy-MM-dd' (inclusive)" },
-        include_overdue_tasks: { type: "boolean", description: "Also list overdue open tasks. Default true." },
       },
       required: ["date_from", "date_to"],
     },
@@ -1510,7 +1509,6 @@ import type { EventCategory, RecurrenceFreq } from "@prisma/client";
 
 const EVENT_CATEGORIES = ["work", "family", "training", "social", "health", "birthday", "other"];
 const RECURRENCE_FREQS = ["none", "daily", "weekly", "monthly", "yearly"];
-const TODO_PRIORITIES = ["low", "medium", "high"];
 
 /**
  * Strict wall-time parse for model-supplied dates. The model occasionally
@@ -1684,11 +1682,7 @@ async function handleQuerySchedule(
   const profile = await prisma.userProfile.findUnique({ where: { userId }, select: { timezone: true } });
   const today = todayInTimezone(profile?.timezone || "Europe/Berlin");
 
-  const agenda = await getAgenda(userId, from, to, {
-    includeOverdueTodos: input.include_overdue_tasks !== false,
-    today,
-    includeRestWorkouts: false,
-  });
+  const agenda = await getAgenda(userId, from, to, { includeRestWorkouts: false });
 
   return {
     success: true,

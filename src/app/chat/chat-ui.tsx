@@ -1,6 +1,7 @@
 "use client";
 
-import { useT } from "@/app/features-provider";
+import { useT, useLang } from "@/app/features-provider";
+import { fmtDate, type Lang } from "@/lib/i18n";
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -28,11 +29,8 @@ interface SessionItem {
   messageCount: number;
 }
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-  });
+function formatTime(iso: string, lang: Lang): string {
+  return fmtDate(iso, lang, { day: "numeric", month: "short" });
 }
 
 function ToolNotificationBadge({ notification }: { notification: ToolNotification }) {
@@ -150,6 +148,7 @@ function SessionSidebar({
   title: string;
 }) {
   const t = useT();
+  const lang = useLang();
   const router = useRouter();
 
   return (
@@ -166,7 +165,7 @@ function SessionSidebar({
       >
         <div className="p-4 border-b-2 border-shade flex items-center justify-between">
           <h2 className="font-extrabold text-sm text-ink">{title}</h2>
-          <button onClick={onClose} className="text-moss hover:text-ink text-lg">
+          <button onClick={onClose} className="text-moss hover:text-ink text-lg" aria-label={t("common.close")}>
             &times;
           </button>
         </div>
@@ -188,7 +187,7 @@ function SessionSidebar({
               }`}
             >
               <p className="text-sm font-bold text-ink truncate">{s.title}</p>
-              <p className="text-xs text-sage mt-0.5">{formatTime(s.updatedAt)}</p>
+              <p className="text-xs text-sage mt-0.5">{formatTime(s.updatedAt, lang)}</p>
             </button>
           ))}
         </div>
@@ -758,6 +757,7 @@ export default function ChatUI({
           <button
             onClick={handleSend}
             disabled={sending || !input.trim()}
+            aria-label={t("chat.send")}
             className="btn-brocco px-4 py-2.5 disabled:cursor-not-allowed flex-shrink-0"
           >
             {sending ? (

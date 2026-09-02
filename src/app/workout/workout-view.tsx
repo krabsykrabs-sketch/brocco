@@ -13,7 +13,8 @@ import {
   type WorkoutDefinition,
 } from "@/lib/guided-workout";
 import { artPathFor } from "@/lib/exercise-art";
-import { useT } from "@/app/features-provider";
+import { useT, useLang } from "@/app/features-provider";
+import { fmtDate, type Lang } from "@/lib/i18n";
 import type { DictKey } from "@/lib/dict";
 import WorkoutPlayer from "./player";
 
@@ -59,8 +60,8 @@ function fmtSec(sec: number): string {
   return sec >= 60 && sec % 60 === 0 ? `${sec / 60} min` : `${sec}s`;
 }
 
-function fmtSessionDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+function fmtSessionDate(iso: string, lang: Lang): string {
+  return fmtDate(iso, lang, { day: "numeric", month: "short" });
 }
 
 /**
@@ -82,6 +83,7 @@ function WorkoutPreview({
   onDelete: (id: string, title: string) => void;
 }) {
   const t = useT();
+  const lang = useLang();
   const [rounds, setRounds] = useState<number[]>(data.definition.blocks.map((b) => b.rounds));
 
   // The definition actually played — the stepper tweaks live only here.
@@ -207,7 +209,7 @@ function WorkoutPreview({
               <div className="space-y-0.5">
                 {data.recentSessions.map((s) => (
                   <p key={s.id} className="text-xs font-semibold tabular-nums">
-                    <span className="text-moss">{fmtSessionDate(s.finishedAt)}</span>
+                    <span className="text-moss">{fmtSessionDate(s.finishedAt, lang)}</span>
                     <span className="text-sage"> · {s.durationMin} min · </span>
                     {s.completed ? (
                       <span className="text-leaf">{t("workout.completed")}</span>

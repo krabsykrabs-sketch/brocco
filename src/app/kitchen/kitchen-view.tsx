@@ -1,6 +1,7 @@
 "use client";
 
-import { useT } from "@/app/features-provider";
+import { useT, useLang } from "@/app/features-provider";
+import { plural } from "@/lib/i18n";
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
@@ -54,6 +55,7 @@ function RecipeSheet({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -149,7 +151,7 @@ function RecipeSheet({
             {isNewScan ? "📸 Scanned — check it over" : editing ? "Edit recipe" : ""}
           </h2>
           {!isNewScan && (
-            <button onClick={onClose} className="text-moss hover:text-ink text-xl leading-none">&times;</button>
+            <button onClick={onClose} className="text-moss hover:text-ink text-xl leading-none" aria-label={t("common.close")}>&times;</button>
           )}
         </div>
 
@@ -346,6 +348,7 @@ function StaplesSection() {
 
 export default function KitchenView() {
   const t = useT();
+  const lang = useLang();
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -541,7 +544,7 @@ export default function KitchenView() {
                 disabled={scanning}
                 className="btn-brocco flex-1 py-2 text-sm"
               >
-                {scanning ? "Reading pages…" : `Scan recipe (${pages.length} page${pages.length === 1 ? "" : "s"})`}
+                {scanning ? "Reading pages…" : `Scan recipe (${pages.length} ${plural(lang, pages.length, t("unit.page"), t("unit.pages"))})`}
               </button>
             </div>
           </div>

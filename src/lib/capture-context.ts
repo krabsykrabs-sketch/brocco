@@ -4,8 +4,9 @@ import { useEffect } from "react";
 
 /**
  * Lightweight client-side store for "what screen is the user looking at".
- * Pages register their context; the quick-capture mic reads it at capture time
- * and sends it along to /api/capture so Brocco can resolve "move that to 5".
+ * Pages register their context so a voice/chat entry point can send it along
+ * with the user's words and let Brocco resolve "move that to 5". Also hosts
+ * the app-wide `brocco:data-changed` event bus (emitDataChanged/useDataChanged).
  */
 
 export interface ScreenContext {

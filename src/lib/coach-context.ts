@@ -186,7 +186,7 @@ async function buildLifeContext(userId: string, timezone: string, features: Feat
   const weekOut = wallDateString(addDaysWall(parseWall(today), 7));
 
   const [agenda, birthdays] = await Promise.all([
-    getAgenda(userId, today, weekOut, { today }),
+    getAgenda(userId, today, weekOut),
     features.calendar ? getUpcomingBirthdays(userId, today, 14) : Promise.resolve([]),
   ]);
 
@@ -195,7 +195,6 @@ async function buildLifeContext(userId: string, timezone: string, features: Feat
     ...agenda,
     workouts: [],
     events: features.calendar ? agenda.events : [],
-    todos: [],
   });
 
   let block = `SCHEDULE (today ${today} through ${weekOut}, times are the user's local time):\n`;

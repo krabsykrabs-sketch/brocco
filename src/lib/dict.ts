@@ -168,6 +168,7 @@ export const EN = {
 
   // Chat
   "chat.placeholder": "Ask Brocco...",
+  "chat.send": "Send",
   "chat.kitchenPlaceholder": "What's in your fridge?",
   "chat.listening": "Listening…",
   "chat.listeningNoLive": "Listening… (words appear when you stop)",
@@ -250,6 +251,12 @@ export const EN = {
   "confirm.markedDone": "Logged",
   "confirm.markedSkipped": "Marked as skipped",
   "confirm.yesterday": "Yesterday",
+
+  // Units (plural forms; pick with plural() from i18n)
+  "unit.page": "page",
+  "unit.pages": "pages",
+  "unit.week": "week",
+  "unit.weeks": "weeks",
 
   // Auth
   "auth.login": "Log in",
@@ -415,6 +422,7 @@ const DE: Partial<Record<DictKey, string>> = {
   "player.exerciseOf": "Übung",
 
   "chat.placeholder": "Frag Brocco...",
+  "chat.send": "Senden",
   "chat.kitchenPlaceholder": "Was ist im Kühlschrank?",
   "chat.listening": "Hört zu…",
   "chat.listeningNoLive": "Hört zu… (Wörter erscheinen beim Stoppen)",
@@ -494,6 +502,10 @@ const DE: Partial<Record<DictKey, string>> = {
   "confirm.markedDone": "Eingetragen",
   "confirm.markedSkipped": "Als ausgelassen markiert",
   "confirm.yesterday": "Gestern",
+  "unit.page": "Seite",
+  "unit.pages": "Seiten",
+  "unit.week": "Woche",
+  "unit.weeks": "Wochen",
   "auth.login": "Anmelden",
   "auth.signup": "Registrieren",
   "auth.password": "Passwort",
@@ -655,6 +667,7 @@ const ES: Partial<Record<DictKey, string>> = {
   "player.exerciseOf": "Ejercicio",
 
   "chat.placeholder": "Pregunta a Brocco...",
+  "chat.send": "Enviar",
   "chat.kitchenPlaceholder": "¿Qué tienes en la nevera?",
   "chat.listening": "Escuchando…",
   "chat.listeningNoLive": "Escuchando… (las palabras aparecen al parar)",
@@ -734,6 +747,10 @@ const ES: Partial<Record<DictKey, string>> = {
   "confirm.markedDone": "Registrada",
   "confirm.markedSkipped": "Marcada como saltada",
   "confirm.yesterday": "Ayer",
+  "unit.page": "página",
+  "unit.pages": "páginas",
+  "unit.week": "semana",
+  "unit.weeks": "semanas",
   "auth.login": "Iniciar sesión",
   "auth.signup": "Registrarse",
   "auth.password": "Contraseña",

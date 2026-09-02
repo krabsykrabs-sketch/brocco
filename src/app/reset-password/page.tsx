@@ -2,8 +2,10 @@
 
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useT } from "@/app/features-provider";
 
 function ResetPasswordForm() {
+  const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token") || "";
@@ -40,7 +42,7 @@ function ResetPasswordForm() {
       setDone(true);
       setTimeout(() => router.push("/login"), 2500);
     } catch {
-      setError("Something went wrong");
+      setError(t("common.somethingWrong"));
     } finally {
       setLoading(false);
     }
@@ -104,13 +106,14 @@ function ResetPasswordForm() {
         disabled={loading}
         className="btn-brocco w-full py-2 px-4"
       >
-        {loading ? "Saving..." : "Set new password"}
+        {loading ? t("common.saving") : "Set new password"}
       </button>
     </form>
   );
 }
 
 export default function ResetPasswordPage() {
+  const t = useT();
   return (
     <main className="min-h-screen flex items-center justify-center px-4">
       <div className="w-full max-w-sm sticker-lg p-6">
@@ -119,7 +122,7 @@ export default function ResetPasswordPage() {
           <img src="/brand/brocco-runner.png" alt="Brocco, running" className="h-32 mx-auto mb-4" />
           <h1 className="text-2xl font-extrabold text-ink">Choose a new password</h1>
         </div>
-        <Suspense fallback={<div className="text-moss text-center">Loading…</div>}>
+        <Suspense fallback={<div className="text-moss text-center">{t("common.loading")}</div>}>
           <ResetPasswordForm />
         </Suspense>
       </div>

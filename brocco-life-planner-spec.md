@@ -1,5 +1,7 @@
 # Brocco Life Planner — Expansion Spec
 
+> **Status (September 2026):** this spec was implemented in June 2026 and partly retired in July 2026. Still live: the Today home screen with the morning briefing, the calendar (day/week/month, recurring events, birthdays), the `manage_event` and `query_schedule` tools, cross-domain conflict awareness, and the feature toggles. **Retired:** Tasks, Notes, the floating-mic quick capture (`QuickCapture` and `POST /api/capture` are gone — voice lives in the Chat tab), and the `manage_task` / `manage_note` tools; their DB tables remain but nothing uses them. Push reminders, listed as out of scope below, shipped later. The navigation is now Today · Calendar · Chat · Plan · More. Treat the rest of this document as the original brief, and `CLAUDE-ai-coach.md` as the description of what exists.
+
 **For: Claude Code (Fable 5) implementation session**
 **Read `CLAUDE-ai-coach.md` and `ai-running-coach-concept.md` first — they describe the existing app.**
 

@@ -99,7 +99,7 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
       }
       const s = data.initialSync;
       setMessage(
-        `Connected${data.athleteName ? ` as ${data.athleteName}` : ""}.` +
+        `${t("settings.connected")}${data.athleteName ? ` as ${data.athleteName}` : ""}.` +
           (s?.synced ? ` ${describeSync(s)}` : "")
       );
       setConnected(true);
@@ -150,7 +150,7 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
           <>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-brocco border border-ink" />
-              <span className="text-sm text-ink font-bold">Connected (intervals.icu athlete {connectedId})</span>
+              <span className="text-sm text-ink font-bold">{t("settings.connected")} (intervals.icu athlete {connectedId})</span>
             </div>
             <p className="text-xs text-moss">
               Upcoming workouts (next 2 weeks) sync automatically whenever your plan changes. Your watch picks them up
@@ -162,14 +162,14 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
                 disabled={busy}
                 className="btn-quiet px-4 py-2 text-sm disabled:opacity-50"
               >
-                {busy ? "Working…" : "Sync Now"}
+                {busy ? "Working…" : t("settings.syncNow")}
               </button>
               <button
                 onClick={handleDisconnect}
                 disabled={busy}
                 className="btn-danger px-4 py-2 text-sm disabled:opacity-50"
               >
-                Disconnect
+                {t("settings.disconnect")}
               </button>
             </div>
           </>
@@ -294,6 +294,7 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
  * the app closed — this is what makes event reminders real.
  */
 function NotificationSettings() {
+  const t = useT();
   const [status, setStatus] = useState<"loading" | "unsupported" | "unconfigured" | "denied" | "off" | "on">("loading");
   const [busy, setBusy] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -391,7 +392,7 @@ function NotificationSettings() {
 
   return (
     <section>
-      <h2 className="text-lg font-extrabold mb-1">Notifications</h2>
+      <h2 className="text-lg font-extrabold mb-1">{t("settings.notifications")}</h2>
       <p className="text-xs text-moss mb-3">
         Event reminders on this device — even when the app is closed.
       </p>
@@ -576,7 +577,7 @@ function SettingsContent() {
         setEmailResult({ ok: false, msg: data.error || "Failed" });
       }
     } catch {
-      setEmailResult({ ok: false, msg: "Something went wrong" });
+      setEmailResult({ ok: false, msg: t("common.somethingWrong") });
     } finally {
       setEmailSaving(false);
     }
@@ -735,7 +736,7 @@ function SettingsContent() {
         setPwResult({ ok: false, msg: data.error || "Failed" });
       }
     } catch {
-      setPwResult({ ok: false, msg: "Something went wrong" });
+      setPwResult({ ok: false, msg: t("common.somethingWrong") });
     } finally {
       setPwSaving(false);
     }
@@ -761,7 +762,7 @@ function SettingsContent() {
         setDeleteError(data.error || "Failed");
       }
     } catch {
-      setDeleteError("Something went wrong");
+      setDeleteError(t("common.somethingWrong"));
     } finally {
       setDeleting(false);
     }
@@ -774,7 +775,7 @@ function SettingsContent() {
   }
 
   if (loading) {
-    return <div className="text-moss text-center py-12 font-semibold">Loading...</div>;
+    return <div className="text-moss text-center py-12 font-semibold">{t("common.loading")}</div>;
   }
 
   return (
@@ -796,7 +797,7 @@ function SettingsContent() {
         <h2 className="text-lg font-extrabold mb-3">{t("settings.profile")}</h2>
         <div className="sticker p-4 space-y-4">
           <div>
-            <label className="label-xs block mb-1">Name</label>
+            <label className="label-xs block mb-1">{t("settings.name")}</label>
             <input
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
@@ -804,7 +805,7 @@ function SettingsContent() {
             />
           </div>
           <div>
-            <label className="label-xs block mb-1">Email</label>
+            <label className="label-xs block mb-1">{t("settings.email")}</label>
             {!emailEditOpen ? (
               <div className="flex items-center justify-between px-3 py-2">
                 <p className="text-sm text-moss">{profile?.email}</p>
@@ -843,14 +844,14 @@ function SettingsContent() {
                     onClick={() => { setEmailEditOpen(false); setNewEmail(""); setEmailPw(""); setEmailResult(null); }}
                     className="btn-quiet px-3 py-1.5 text-xs"
                   >
-                    Cancel
+                    {t("common.cancel")}
                   </button>
                   <button
                     onClick={handleEmailChange}
                     disabled={emailSaving || !newEmail.trim() || !emailPw}
                     className="btn-brocco px-3 py-1.5 text-xs"
                   >
-                    {emailSaving ? "Saving..." : "Save email"}
+                    {emailSaving ? t("common.saving") : "Save email"}
                   </button>
                 </div>
               </div>
@@ -895,7 +896,7 @@ function SettingsContent() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="label-xs block mb-1">Goal race</label>
+              <label className="label-xs block mb-1">{t("settings.goalRace")}</label>
               <input
                 value={editGoalRace}
                 onChange={(e) => setEditGoalRace(e.target.value)}
@@ -904,7 +905,7 @@ function SettingsContent() {
               />
             </div>
             <div>
-              <label className="label-xs block mb-1">Target time</label>
+              <label className="label-xs block mb-1">{t("settings.goalTime")}</label>
               <input
                 value={editGoalTime}
                 onChange={(e) => setEditGoalTime(e.target.value)}
@@ -914,7 +915,7 @@ function SettingsContent() {
             </div>
           </div>
           <div>
-            <label className="label-xs block mb-1">Race date</label>
+            <label className="label-xs block mb-1">{t("settings.raceDate")}</label>
             <input
               type="date"
               value={editGoalDate}
@@ -923,7 +924,7 @@ function SettingsContent() {
             />
           </div>
           <div>
-            <label className="label-xs block mb-1">Max heart rate (bpm)</label>
+            <label className="label-xs block mb-1">{t("settings.maxHr")} (bpm)</label>
             <input
               type="number"
               inputMode="numeric"
@@ -944,10 +945,10 @@ function SettingsContent() {
               disabled={profileSaving}
               className="btn-brocco px-4 py-2 text-sm"
             >
-              {profileSaving ? "Saving..." : "Save changes"}
+              {profileSaving ? t("common.saving") : "Save changes"}
             </button>
             {profileSaved && (
-              <span className="text-sm text-leaf font-bold">Saved</span>
+              <span className="text-sm text-leaf font-bold">{t("common.saved")}</span>
             )}
           </div>
         </div>
@@ -960,15 +961,15 @@ function SettingsContent() {
 
       {/* Features */}
       <section>
-        <h2 className="text-lg font-extrabold mb-1">Features</h2>
+        <h2 className="text-lg font-extrabold mb-1">{t("settings.features")}</h2>
         <p className="text-xs text-moss mb-3">
           Switch off what you don&apos;t use — navigation, the Today screen, and Brocco adapt.
           With everything off you get the classic running-coach experience. Your data is kept, just hidden.
         </p>
         <div className="sticker divide-y-2 divide-shade/40">
           {([
-            ["calendar", "Calendar", "Events, birthdays, and reminders"],
-            ["kitchen", "Kitchen", "Recipe library, photo scans, cooking ideas"],
+            ["calendar", t("nav.calendar"), "Events, birthdays, and reminders"],
+            ["kitchen", t("nav.kitchen"), t("more.kitchenDesc")],
           ] as Array<[keyof Features, string, string]>).map(([key, label, desc]) => (
             <div key={key} className="flex items-center gap-3 px-4 py-3">
               <div className="flex-1 min-w-0">
@@ -998,7 +999,7 @@ function SettingsContent() {
       {/* Calendar feed */}
       {featureFlags.calendar && (
         <section>
-          <h2 className="text-lg font-extrabold mb-1">Calendar feed</h2>
+          <h2 className="text-lg font-extrabold mb-1">{t("settings.calendarFeed")}</h2>
           <p className="text-xs text-moss mb-3">
             Subscribe from Google or Apple Calendar to see your brocco events and workouts there (read-only).
           </p>
@@ -1057,7 +1058,7 @@ function SettingsContent() {
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full border border-ink ${profile.stravaNeedsReconnect ? "bg-clay" : "bg-brocco"}`} />
                 <span className="text-sm text-ink font-bold">
-                  Connected (Athlete {profile.stravaAthleteId})
+                  {t("settings.connected")} (Athlete {profile.stravaAthleteId})
                 </span>
               </div>
               {/* Sync health — was completely invisible before: a dead token
@@ -1171,13 +1172,13 @@ function SettingsContent() {
 
       {/* Account */}
       <section>
-        <h2 className="text-lg font-extrabold mb-3">Account</h2>
+        <h2 className="text-lg font-extrabold mb-3">{t("settings.account")}</h2>
         <div className="sticker p-4 space-y-4">
           <button
             onClick={handleLogout}
             className="btn-quiet px-4 py-2 text-sm"
           >
-            Log out
+            {t("settings.logout")}
           </button>
 
           <div className="border-t-2 border-shade pt-4">
@@ -1186,7 +1187,7 @@ function SettingsContent() {
                 onClick={() => setShowDelete(true)}
                 className="text-sm text-clay font-bold hover:opacity-70 transition-opacity"
               >
-                Delete account
+                {t("settings.deleteAccount")}
               </button>
             ) : (
               <div className="space-y-3">
@@ -1215,7 +1216,7 @@ function SettingsContent() {
                     onClick={() => { setShowDelete(false); setDeletePw(""); setDeleteError(""); }}
                     className="btn-quiet px-4 py-2 text-sm"
                   >
-                    Cancel
+                    {t("common.cancel")}
                   </button>
                 </div>
               </div>
@@ -1226,7 +1227,7 @@ function SettingsContent() {
 
       {/* Install App */}
       <section>
-        <h2 className="text-lg font-extrabold mb-3">Install App</h2>
+        <h2 className="text-lg font-extrabold mb-3">{t("settings.installApp")}</h2>
         <div className="sticker p-4">
           <p className="text-sm text-moss mb-3">Add brocco.run to your home screen for the best experience — it works like a regular app.</p>
           <InstallInstructions />
@@ -1237,6 +1238,7 @@ function SettingsContent() {
 }
 
 export default function SettingsPage() {
+  const t = useT();
   return (
     <main className="min-h-screen max-w-lg mx-auto px-4 py-6 pb-24">
       <div className="safe-top sticky top-0 z-30 bg-cream/95 backdrop-blur-sm -mx-4 px-4 mb-6 border-b-2 border-ink/10">
@@ -1244,16 +1246,16 @@ export default function SettingsPage() {
         <div className="md:hidden flex items-center gap-2 pb-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6 rounded-full border-2 border-ink" />
-          <span className="font-extrabold text-sm text-ink">Settings</span>
+          <span className="font-extrabold text-sm text-ink">{t("settings.title")}</span>
         </div>
         {/* Desktop: full */}
         <div className="hidden md:flex items-center justify-between py-3">
-          <h1 className="text-2xl font-extrabold">Settings</h1>
+          <h1 className="text-2xl font-extrabold">{t("settings.title")}</h1>
           <DesktopNavLinks />
         </div>
       </div>
 
-      <Suspense fallback={<div className="text-moss text-center py-12 font-semibold">Loading...</div>}>
+      <Suspense fallback={<div className="text-moss text-center py-12 font-semibold">{t("common.loading")}</div>}>
         <SettingsContent />
       </Suspense>
     </main>

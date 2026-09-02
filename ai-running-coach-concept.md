@@ -7,7 +7,7 @@ A web app that acts as a personal AI running coach. It pulls training data autom
 **Domain:** brocco.run — "Run like a broccoli."
 **Hosted on:** Hetzner server via Coolify (EU-based)
 **Tech stack:** Next.js 15, PostgreSQL, Strava API, Anthropic API (Claude), Groq API (Whisper for voice input)
-**Users:** Invite-only — the creator and friends. Not commercial (yet).
+**Users:** The creator and friends, behind a shared signup code (`SIGNUP_ACCESS_CODE`). Not commercial (yet).
 
 ---
 
@@ -57,7 +57,7 @@ A conversational interface where you interact with Brocco — your AI running co
 - The app builds a context package: your recent training data (last 7-14 days of activities), your current training plan, your goals, your injury/health notes, any relevant long-term trends
 - This context + your message is sent to the Anthropic API (Claude)
 - Claude responds as Brocco with genuinely excellent coaching advice and personality
-- The response is displayed as text and optionally read aloud
+- The response is displayed as text (no text-to-speech)
 
 **What you can ask:**
 - "How did my week go?" → analyzes your last 7 days vs. the plan
@@ -172,7 +172,7 @@ Week 14-26 — TARGETS ONLY:
 ```
 
 **How plans are created:**
-- Always through a Plan Creation Interview (section 8) — a dedicated Brocco conversation using Opus 4.6
+- Always through a Plan Creation Interview (section 8) — a Brocco conversation in the regular chat, on `COACH_MODEL` (`src/lib/models.ts`)
 - Brocco generates: phase structure for the whole plan + detailed workouts for weeks 1-2 + outline for weeks 3-4 + weekly targets for the rest
 - First plan is typically created during onboarding, but can be deferred
 - Subsequent plans via user request or Brocco prompt when the current plan ends
@@ -240,11 +240,13 @@ A simple log for tracking things Strava doesn't capture.
 
 ### 7. Onboarding (optional, interruptible)
 
+> **As built:** there is no `/onboarding` page and no sync-depth choice. Signup (email + password + the shared access code) sets `onboarding_completed = true` immediately and nothing reads it; a new account lands on the Today screen with Strava-connect and build-a-plan CTAs, and Brocco asks background questions in normal chat. Connecting Strava always runs the 6-month backfill; `backfillActivitiesFull` and `analyzeTrainingHistory` exist in `src/lib/strava.ts` but are never called, so `training_history_summary` is never produced. The rest of this section is the original design.
+
 New users are welcomed by Brocco and given the choice to build a plan immediately or explore first. The app is usable without a plan — but the plan is where the real value is, so Brocco encourages it.
 
 **Flow:**
 
-**Step 0 — Account creation:** Email + password + invite code. Just auth, nothing else.
+**Step 0 — Account creation:** Email + password + the shared access code. Just auth, nothing else.
 
 **Step 1 — Strava first (optional):** Immediately after first login, Brocco introduces itself and offers to connect Strava. If the user connects, they choose a sync depth:
 
@@ -296,7 +298,7 @@ A dedicated conversation for building a new training plan. This is triggered:
 - By the user at any time ("I want a new plan", or via a button in /plan or /settings)
 - Proactively by Brocco when the current plan ends (see Plan Lifecycle below)
 
-Uses **Opus 4.6** for higher reasoning quality.
+Runs on `COACH_MODEL` (Opus 5, `src/lib/models.ts`) inside the regular general chat session — the `plan_creation` session type exists in the enum but is never created.
 
 **If an active plan exists:** Before starting, Brocco warns: "You currently have a plan for Valencia Marathon running through December. Creating a new plan will replace it. Want to continue?" The old plan is archived (status → 'completed') when the new one is confirmed.
 
@@ -334,7 +336,7 @@ Uses **Opus 4.6** for higher reasoning quality.
   4. **Targets only** for week 5+ (weekly km, session count, phase label)
   This is both better coaching (plans always change) and much cheaper/faster than generating 200+ workouts upfront. The runner sees the full shape of their plan but only commits to the next 2 weeks.
 
-- **Plan generation:** Brocco generates the plan using `modify_plan` tool. Creates `plan_weeks` metadata for every week and `planned_workouts` only for the detailed/outline windows. User reviews and can discuss adjustments before confirming.
+- **Plan generation:** Brocco generates the plan using the `generate_plan` tool. Creates `plan_weeks` metadata for every week and `planned_workouts` only for the detailed/outline windows. Weeks are Monday–Sunday; a mid-week start gets a partial "Week 0". User reviews and can discuss adjustments before confirming.
 
 **Plan Lifecycle:**
 
@@ -415,14 +417,20 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 | Page | URL | Description |
 |------|-----|-------------|
 | Login | /login | Email + password login |
-| Signup | /signup | Email + password + invite code |
-| Onboarding | /onboarding | Step 1: optional Strava connect. Step 2: welcome screen — "Build my plan" or "Let me look around first". Plan creation is encouraged but not forced. |
-| Dashboard | / | Training week, mileage chart, metrics, activity feed |
-| Chat | /chat | AI coach conversation with voice support |
+| Signup | /signup | Email + password + shared access code (`?code=` prefills it) |
+| Password reset | /forgot-password, /reset-password | Emailed reset link (Resend) |
+| Today | /today (and `/`) | Home screen: morning briefing, today's agenda, weekly goals, weekly review |
+| Calendar | /calendar | Day/week/month calendar with events + planned workouts (feature-gated) |
+| Chat | /chat, /chat/[sessionId] | AI coach conversation with voice support |
+| Kitchen | /kitchen, /kitchen/chat | Recipe library and kitchen chat (feature-gated) |
+| Workouts | /workout | Guided S&C sessions and the timer |
 | Plan | /plan | Full training plan view (phases, weeks, workouts) |
-| History | /history | All past activities with search/filter |
-| Settings | /settings | Profile, goals, Strava connection, AI preferences |
+| History | /history, /activity/[id] | All past activities with search/filter, trends, per-activity analysis |
+| More | /more | Submenu for the pages above plus Settings |
+| Settings | /settings | Profile, goals, language, primary sport, feature toggles, Strava, watch sync, ICS feed, push, account |
 | Legal | /legal | Imprint (Impressum) and privacy policy |
+
+There is no `/onboarding` page and no separate dashboard — the Today screen replaced it. See `CLAUDE-ai-coach.md` for the full page and API map.
 
 ---
 
@@ -437,7 +445,8 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 | email | text | unique, for login |
 | name | text | |
 | password_hash | text | bcrypt |
-| invite_code | text | nullable, the code they used to sign up |
+| invite_code | text | legacy — signup writes the literal "access-code" |
+| session_epoch | int | bumped on password/email change; older session cookies are rejected |
 | created_at | timestamp | |
 
 **user_profiles** (one row per user)
@@ -579,7 +588,7 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 |--------|------|-------|
 | id | uuid | PK |
 | user_id | uuid | FK → users |
-| type | enum | 'general' (default), 'onboarding', 'plan_creation' |
+| type | enum | 'general' (default), 'kitchen'; 'onboarding' and 'plan_creation' remain in the enum but are never created |
 | title | text | auto-generated summary, e.g., "Weekly review Mar 10" |
 | created_at | timestamp | |
 | updated_at | timestamp | |
@@ -609,9 +618,9 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 | undone | boolean | default false — set true if user clicks undo |
 | created_at | timestamp | |
 
-**Note:** The `pending_plan_changes` table has been removed. Plan modifications are confirmed conversationally in chat — Brocco proposes changes, the user confirms in natural language, and Brocco applies them directly via tool calls. No button-based approval flow.
+**Note:** The `pending_plan_changes` model still exists in the schema but nothing writes to it. Plan modifications are confirmed conversationally in chat — Brocco proposes changes, the user confirms in natural language, and Brocco applies them directly via tool calls. No button-based approval flow.
 
-**invite_codes**
+**invite_codes** (legacy — the seed creates a few for the creator, but signup checks the shared `SIGNUP_ACCESS_CODE` instead and never reads this table)
 | Column | Type | Notes |
 |--------|------|-------|
 | id | uuid | PK |
@@ -630,22 +639,22 @@ You are Brocco — a broccoli and a running coach. You have deep exercise physio
 2. Redirect to Strava authorization page
 3. User approves → Strava redirects back with authorization code
 4. Server exchanges code for access_token + refresh_token
-5. Store tokens in user_profiles table (encrypted)
-6. Register webhook subscription with Strava (one subscription per app, not per user)
-7. Trigger historical backfill for this user
+5. Store tokens in user_profiles table (AES-encrypted with `TOKEN_ENCRYPTION_KEY`, falling back to `SESSION_SECRET`)
+6. Webhook subscription is registered once per app, by hand, with `scripts/register-strava-webhook.ts` — not from the OAuth callback
+7. Trigger the 6-month historical backfill for this user, then analyse eligible activities
 
 ### Webhook Flow
 1. Strava sends POST to `/api/strava/webhook` when an activity is created/updated/deleted
 2. Webhook verification: GET requests return the hub.challenge (required by Strava)
-3. Validate: check `subscription_id` matches ours, `object_type` is "activity"
+3. Validate: reject unless `subscription_id` matches `STRAVA_WEBHOOK_SUBSCRIPTION_ID` and `object_type` is "activity"
 4. Look up user by `owner_id` (Strava athlete ID → user_profiles.strava_athlete_id)
 5. On activity create: fetch full activity details from Strava API (using that user's tokens)
 6. Store in activities table with `source = 'strava'`
-7. Auto-match to planned_workouts (same local date, compatible activity type)
-8. Update planned workout status to 'completed' if matched
-9. Trigger Brocco micro-adjustment: compare actual vs planned, auto-adjust remaining workouts this week if needed (via `adjust_plan` logic server-side), log to `plan_adjustment_log`
-10. (Phase 3) If matched workout is a quality session (tempo/interval/long/race/race_pace): fetch activity streams (time, heartrate, velocity_smooth, cadence, distance), process into `activity_analysis` jsonb, store on activity record, discard raw streams
-11. Rate-limit the webhook endpoint (reject if > 100 requests/minute)
+7. Matching to planned_workouts is not written to the row — it is derived on read (`src/lib/plan-progress.ts`: same local date, compatible activity type), so a late sync or a deleted activity is reflected the next time anyone looks
+8. The webhook does NOT call Brocco — there is no automatic micro-adjustment on import; `adjust_plan` only runs inside a chat turn
+9. If the activity is eligible for analysis: fetch streams and laps, process into `activity_analysis` jsonb, store on the activity record, discard raw streams
+10. `delete` events remove the stored activity; `update` events re-fetch it
+11. Rate-limit: 60 events per minute per athlete (`owner_id`)
 
 ### Token Refresh
 - Before each Strava API call, check if token is expired
@@ -864,10 +873,11 @@ Six tools available to Claude during chat:
 }
 ```
 
-### Model Selection — Opus Only
-- **Opus 4.6** (`claude-opus-4-6`) for all interactions. Single model, no routing logic.
-- Higher quality across the board: better coaching nuance, better plan generation, better pattern recognition in daily chat.
-- Simpler codebase — no model selection logic needed.
+### Model Selection
+- Model ids live in `src/lib/models.ts` and nowhere else.
+- `COACH_MODEL = "claude-opus-5"` — chat, voice, the daily opener and briefing, the weekly review, and generating the next week's detail: everything conversational or tool-calling.
+- `UTILITY_MODEL = "claude-sonnet-5"` — narrow structured extraction: building a guided workout, reading a recipe off a photo, condensing a finished day's chat into memory.
+- Thinking is on by default on these models and shares `max_tokens`; short side calls use `output_config: { effort: "low" }`. The static system prompt and tools are prompt-cached (1h TTL) and the volatile context rides as a trailing system message — see `CLAUDE-ai-coach.md` → Tech Stack.
 
 ### Cost Estimate
 - All interactions (Opus): ~2000 input + ~500 output tokens ≈ $0.02-0.03 per message
@@ -926,8 +936,8 @@ POST /api/voice/transcribe
 The app needs a `/legal` page accessible from the footer (next to "Powered by Strava"). Required because the site is publicly accessible and the operator is based in the EU (Germany/Spain).
 
 **Imprint (Impressum):**
-- Name: Jan Herberg
-- Email: jan@brocco.run
+- Name: Jan Ahrens
+- Email: krabsykrabs@gmail.com
 - Note: This is a non-commercial, personal project.
 
 **Privacy Policy (keep it short and honest):**
@@ -936,7 +946,7 @@ The app needs a `/legal` page accessible from the footer (next to "Powered by St
 - Your data is used solely to provide personalized coaching advice
 - We use the Anthropic API (Claude) to generate coaching responses — your training context is sent to their API with each chat message
 - We do not sell, share, or use your data for advertising
-- You can delete your account and all associated data by contacting jan@brocco.run
+- You can delete your account and all associated data in Settings (or by contacting krabsykrabs@gmail.com)
 - Strava data is handled per the Strava API Agreement
 
 **Footer:** Every page shows a footer with "Powered by Strava" logo and a link to /legal.
@@ -972,8 +982,8 @@ The app needs a `/legal` page accessible from the footer (next to "Powered by St
 **Goal:** A working multi-user app with Strava data and AI chat.
 
 1. Project setup (Next.js 15, PostgreSQL, Prisma, Coolify deployment, Docker)
-2. Auth: users table, email + password login, invite codes, session middleware
-3. Onboarding: chat-based Brocco interview (optional Strava connect first, then AI-guided conversation covering running background, fitness, goals, preferences, constraints). Uses `save_profile` tool to store typed fields + `coaching_notes` jsonb.
+2. Auth: users table, email + password login, shared signup code, session middleware
+3. Onboarding: no wizard shipped — Brocco gathers background in regular chat (optional Strava connect first) and uses the `save_profile` tool to store typed fields + `coaching_notes` jsonb.
 4. Strava OAuth + webhook + activity import + historical backfill (multi-user aware)
 5. Dashboard: current week, activity feed, weekly mileage chart
 6. AI chat: text-based conversation with training context + Brocco personality
@@ -1088,10 +1098,10 @@ The context builder includes `activity_analysis` for recent quality sessions (la
 |----------|--------|--------|
 | Frontend | Next.js 15 + TypeScript + Tailwind | Same stack as previous projects, reuse knowledge |
 | Database | PostgreSQL (via Coolify) | Relational data, free on your server |
-| AI | Anthropic API (Claude Opus 4.6) | Best reasoning, tool use support |
+| AI | Anthropic API (Opus 5 coach, Sonnet 5 utility — `src/lib/models.ts`) | Best reasoning, tool use support |
 | Voice Input | Groq Whisper API (whisper-large-v3-turbo) | Best accuracy, free tier, handles accents/multilingual |
 | Strava | Direct API integration | Free, well-documented |
-| Auth | Email + password, invite codes | Multi-user without complexity |
+| Auth | Email + password, shared signup code, iron-session cookies | Multi-user without complexity |
 | Hosting | Coolify on Hetzner | EU data, same server, already set up |
 | Timezone | date-fns-tz | Reliable TZ handling, no custom logic |
 | Pace storage | Dual: text for display, int (secs/km) for computation | Avoids parsing strings for analysis |
@@ -1115,15 +1125,18 @@ The context builder includes `activity_analysis` for recent quality sessions (la
 
 ---
 
-## Life Planner Expansion (June 2026) — shipped
+## Life Planner Expansion (June 2026) — shipped, then trimmed
 
 This document describes the original running-coach concept. In June 2026 the app
-was expanded into a **voice-first life planner** per `brocco-life-planner-spec.md`:
-calendar (day/week/month with recurring events), tasks (lists, subtasks, recurrence),
-notes, birthdays, a Today home screen with a generated morning briefing, and a
-floating-mic quick-capture pipeline (`POST /api/capture`) that routes utterances to
-Brocco tools with screen context. Running coaching is now one feature among several,
-still driven by the same single Brocco assistant; everything in this document about
-plans, Strava, adjustments, and chat remains accurate. The navigation changed to
-Today · Calendar · Chat · Tasks · More (training pages live under More).
-See `CLAUDE-ai-coach.md` ("Life Planner Architecture") for the implementation map.
+was expanded per `brocco-life-planner-spec.md`, and in July 2026 part of that was
+retired again. What remains: a Today home screen with a generated morning briefing,
+a calendar (day/week/month, recurring events, birthdays, read-only ICS feed, push
+reminders), and the `manage_event` / `query_schedule` tools. What was removed:
+tasks, notes, the journal, and the floating-mic quick-capture pipeline (the
+`QuickCapture` component and `POST /api/capture` are gone; voice lives in Chat).
+Added since: a recipe kitchen, guided S&C workouts with exercise diagrams, weekly
+goals, intervals.icu watch sync, German/Spanish, and non-running primary sports.
+Everything in this document about plans, Strava, adjustments, and chat remains the
+design intent; where the build diverged it is noted inline above. The navigation is
+Today · Calendar · Chat · Plan · More (History and Plan reclaim tab slots when the
+calendar is disabled). See `CLAUDE-ai-coach.md` for the implementation map.

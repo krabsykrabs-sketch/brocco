@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useT } from "@/app/features-provider";
 
 export default function ForgotPasswordPage() {
+  const t = useT();
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
@@ -20,12 +22,12 @@ export default function ForgotPasswordPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Something went wrong");
+        setError(data.error || t("common.somethingWrong"));
         return;
       }
       setSent(true);
     } catch {
-      setError("Something went wrong");
+      setError(t("common.somethingWrong"));
     } finally {
       setLoading(false);
     }
@@ -37,7 +39,7 @@ export default function ForgotPasswordPage() {
         <div className="text-center mb-8">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/brocco-runner.png" alt="Brocco, running" className="h-32 mx-auto mb-4" />
-          <h1 className="text-2xl font-extrabold text-ink">Reset password</h1>
+          <h1 className="text-2xl font-extrabold text-ink">{t("auth.resetPassword")}</h1>
           <p className="text-moss text-sm mt-1">
             Enter your account email and we&apos;ll send you a reset link.
           </p>
@@ -52,7 +54,7 @@ export default function ForgotPasswordPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label htmlFor="email" className="block text-sm font-bold text-ink mb-1">
-                Email
+                {t("settings.email")}
               </label>
               <input
                 id="email"

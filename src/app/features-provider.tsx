@@ -1,8 +1,11 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { ALL_FEATURES, resolveFeatures, type Features } from "@/lib/features";
-import { DEFAULT_LANG, detectLang, resolveLang, isLang, type Lang } from "@/lib/i18n";
+import {
+  DEFAULT_LANG, detectLang, resolveLang, isLang, fmtDate, fmtTime, fmtNumber, plural,
+  type Lang, type DateInput,
+} from "@/lib/i18n";
 import { translator, type DictKey } from "@/lib/dict";
 
 /**
@@ -97,4 +100,31 @@ export function useLang(): Lang {
 export function useT(): (key: DictKey) => string {
   const lang = useContext(LangContext);
   return translator(lang);
+}
+
+export interface Fmt {
+  /** Defaults to "2 Sep" style; pass Intl options for anything else. */
+  date: (d: DateInput, opts?: Intl.DateTimeFormatOptions) => string;
+  time: (d: DateInput) => string;
+  /** `digits` decimals like toFixed; a smaller `minDigits` drops trailing zeros. */
+  number: (n: number, digits?: number, minDigits?: number) => string;
+  plural: (n: number, one: string, many: string) => string;
+}
+
+/**
+ * Locale-aware formatting bound to the active language, so dates get the
+ * German/Spanish month names and numbers the decimal comma alongside the
+ * translated strings. `const fmt = useFmt()` then `fmt.number(km, 1)`.
+ */
+export function useFmt(): Fmt {
+  const lang = useContext(LangContext);
+  return useMemo(
+    () => ({
+      date: (d, opts) => fmtDate(d, lang, opts),
+      time: (d) => fmtTime(d, lang),
+      number: (n, digits, minDigits) => fmtNumber(n, lang, digits, minDigits),
+      plural: (n, one, many) => plural(lang, n, one, many),
+    }),
+    [lang],
+  );
 }

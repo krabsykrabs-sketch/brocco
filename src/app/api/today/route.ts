@@ -29,16 +29,11 @@ export async function GET() {
     const todayDate = parseWall(today);
     const features = resolveFeatures(profile.features);
 
-    // --- Today's agenda: events + workouts (incl. rest) + due/overdue tasks ---
+    // --- Today's agenda: events + workouts (incl. rest) ---
     // Disabled domains come back empty so the Today screen naturally shows
     // the classic training-only view.
-    const agenda = await getAgenda(userId, today, today, {
-      includeOverdueTodos: true,
-      today,
-      includeRestWorkouts: true,
-    });
+    const agenda = await getAgenda(userId, today, today, { includeRestWorkouts: true });
     if (!features.calendar) agenda.events = [];
-    agenda.todos = [];
 
     // --- Today's actual activities (to mark the workout as done) ---
     const dayStart = todayDate;
@@ -177,8 +172,7 @@ export async function GET() {
     const upcomingAgenda = await getAgenda(
       userId,
       addDays(todayDate, 1).toISOString().slice(0, 10),
-      addDays(todayDate, 3).toISOString().slice(0, 10),
-      { includeOverdueTodos: false }
+      addDays(todayDate, 3).toISOString().slice(0, 10)
     );
     if (!features.calendar) upcomingAgenda.events = [];
 
@@ -191,7 +185,6 @@ export async function GET() {
       events: agenda.events,
       workouts,
       unconfirmed,
-      todos: agenda.todos,
       activities: todayActivities.map((a) => ({
         ...a,
         distanceKm: a.distanceKm ? Number(a.distanceKm) : null,

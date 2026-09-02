@@ -40,6 +40,13 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
+      # Non-blocking for now: `eslint src` has 14 pre-existing errors
+      # (react-hooks/refs, set-state-in-effect, ...). Flip to blocking by
+      # removing continue-on-error once those are down to zero.
+      - name: Lint (non-blocking until baseline is clean)
+        run: npx eslint src
+        continue-on-error: true
+
       - name: Recurrence fixture tests
         run: npx tsx scripts/dev-check-recurrence.ts
 

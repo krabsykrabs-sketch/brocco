@@ -44,5 +44,8 @@ next-env.d.ts
 
 *Zone.Identifier
 
+# Scratch / one-off experiment files
+*.tmp.*
+
 # Generated exercise-art candidates (curated ones live in public/exercise-art)
 .art-candidates/

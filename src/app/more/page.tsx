@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { resolveFeatures } from "@/lib/features";
 import { PageHeader } from "../nav";
 import { translator } from "@/lib/dict";
-import { resolveLang } from "@/lib/i18n";
+import { isLang, langFromAcceptLanguage } from "@/lib/i18n";
 
 export default async function MorePage() {
   const session = await getSession();
@@ -16,8 +17,12 @@ export default async function MorePage() {
     select: { features: true, language: true },
   });
   const features = resolveFeatures(profile?.features);
-  // Server component — no hook here; translate from the stored language.
-  const t = translator(resolveLang(profile?.language));
+  // Server component — no hook here. A stored choice wins; without one, the
+  // browser's Accept-Language stands in for the client-side detectLang().
+  const lang = isLang(profile?.language)
+    ? profile.language
+    : langFromAcceptLanguage((await headers()).get("accept-language"));
+  const t = translator(lang);
 
   const items = [
     { name: t("more.trainingPlan"), href: "/plan", emoji: "📅", desc: t("more.planDesc") },

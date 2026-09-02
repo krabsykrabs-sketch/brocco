@@ -1,6 +1,7 @@
 "use client";
 
-import { useT } from "@/app/features-provider";
+import { useT, useLang } from "@/app/features-provider";
+import { fmtDate, fmtNumber, type Lang } from "@/lib/i18n";
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
@@ -28,18 +29,13 @@ interface WorkoutItem {
 interface UnconfirmedItem {
   workoutId: string; title: string; date: string; activityType: string; targetDurationMin: number | null;
 }
-interface TodoItem {
-  todoId: string; title: string; notes: string | null; dueDate: string | null; dueTime: string | null;
-  priority: string | null; recurrence: string; done: boolean; listId: string | null;
-  listName: string | null; parentId: string | null; overdue: boolean;
-}
 interface ActivityRow {
   id: string; name: string; activityType: string; distanceKm: number | null;
   avgPacePerKm: string | null; avgHeartRate: number | null; durationMin: number | null;
 }
 interface TodayData {
   date: string; userName: string;
-  events: EventOccurrence[]; workouts: WorkoutItem[]; todos: TodoItem[]; activities: ActivityRow[];
+  events: EventOccurrence[]; workouts: WorkoutItem[]; activities: ActivityRow[];
   upcoming: { events: EventOccurrence[]; workouts: WorkoutItem[] };
   unconfirmed: UnconfirmedItem[];
   weekSummary: {
@@ -55,14 +51,13 @@ function timeOf(e: EventOccurrence): string {
   return e.allDay ? "" : e.start.slice(11, 16);
 }
 
-function formatHeaderDate(dateStr: string): string {
-  const d = new Date(`${dateStr}T00:00:00`);
-  return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
+function formatHeaderDate(dateStr: string, lang: Lang): string {
+  return fmtDate(dateStr, lang, { weekday: "long", day: "numeric", month: "long" });
 }
 
-function activityDetail(a: ActivityRow): string {
+function activityDetail(a: ActivityRow, lang: Lang): string {
   return [
-    a.distanceKm ? `${a.distanceKm.toFixed(1)} km` : null,
+    a.distanceKm ? `${fmtNumber(a.distanceKm, lang, 1)} km` : null,
     a.avgPacePerKm,
     !a.distanceKm && a.durationMin ? `${Math.round(a.durationMin)} min` : null,
   ].filter(Boolean).join(" · ");
@@ -109,6 +104,7 @@ function EventRow({ event }: { event: EventOccurrence }) {
  */
 function WorkoutRow({ workout, matched }: { workout: WorkoutItem; matched: ActivityRow | null }) {
   const t = useT();
+  const lang = useLang();
   if (workout.workoutType === "rest") {
     return (
       <div className="flex items-center gap-3 bg-ghost border-2 border-ink/20 rounded-xl px-3.5 py-2.5">
@@ -148,7 +144,7 @@ function WorkoutRow({ workout, matched }: { workout: WorkoutItem; matched: Activ
       {done ? (
         <div className="px-3.5 py-2.5 bg-sprout min-w-0">
           <p className="label-xs mb-0.5 text-leaf!">✓ Done</p>
-          <p className="text-sm font-extrabold text-ink truncate tabular-nums">{matched ? activityDetail(matched) || matched.name : "completed"}</p>
+          <p className="text-sm font-extrabold text-ink truncate tabular-nums">{matched ? activityDetail(matched, lang) || matched.name : "completed"}</p>
           {matched?.avgHeartRate && <p className="text-xs text-leaf font-bold tabular-nums">{Math.round(matched.avgHeartRate)} bpm</p>}
         </div>
       ) : (
@@ -176,6 +172,7 @@ function WorkoutRow({ workout, matched }: { workout: WorkoutItem; matched: Activ
 
 /** A completed activity with no planned workout behind it. */
 function ExtraActivityRow({ activity }: { activity: ActivityRow }) {
+  const lang = useLang();
   return (
     <Link href={`/activity/${activity.id}`} className="sticker sticker-press grid grid-cols-2 overflow-hidden">
       <div className="px-3.5 py-2.5 border-r-2 border-dashed border-shade bg-ghost min-w-0">
@@ -185,40 +182,9 @@ function ExtraActivityRow({ activity }: { activity: ActivityRow }) {
       <div className="px-3.5 py-2.5 bg-sprout min-w-0">
         <p className="label-xs mb-0.5 text-leaf!">✓ Done</p>
         <p className="text-sm font-extrabold text-ink truncate">{activity.name}</p>
-        <p className="text-xs text-leaf font-bold truncate tabular-nums">{activityDetail(activity)}</p>
+        <p className="text-xs text-leaf font-bold truncate tabular-nums">{activityDetail(activity, lang)}</p>
       </div>
     </Link>
-  );
-}
-
-function TaskRow({ task, onToggle }: { task: TodoItem; onToggle: (t: TodoItem) => void }) {
-  const prioColor = task.priority === "high" ? "text-clay" : task.priority === "medium" ? "text-sun" : "";
-  return (
-    <div className="flex items-center gap-3 sticker px-3.5 py-2.5">
-      <div className="w-12 flex-shrink-0 text-right">
-        {task.dueTime ? <span className="text-sm font-extrabold text-ink tabular-nums">{task.dueTime}</span> : <span className="text-sm text-sage">☐</span>}
-      </div>
-      <button
-        onClick={() => onToggle(task)}
-        className={`w-5 h-5 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
-          task.done ? "bg-brocco border-ink" : "border-ink bg-card hover:bg-sprout"
-        }`}
-        aria-label={task.done ? "Mark not done" : "Mark done"}
-      >
-        {task.done && <span className="text-ink text-xs font-bold leading-none">✓</span>}
-      </button>
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm font-bold truncate ${task.done ? "text-sage line-through" : "text-ink"}`}>
-          {task.title}
-          {task.priority && <span className={`ml-1.5 text-xs ${prioColor}`}>{task.priority === "high" ? "!!" : "!"}</span>}
-        </p>
-        <p className="text-xs truncate font-semibold">
-          {task.overdue && <span className="text-clay">overdue · {task.dueDate} </span>}
-          {task.listName && <span className="text-sage">{task.listName}</span>}
-          {task.recurrence !== "none" && <span className="text-sage"> ↻</span>}
-        </p>
-      </div>
-    </div>
   );
 }
 
@@ -309,12 +275,13 @@ function BriefingCard({ briefing, loading }: { briefing: string | null; loading:
 
 function UnconfirmedCard({ items, today }: { items: UnconfirmedItem[]; today: string }) {
   const t = useT();
+  const lang = useLang();
   if (items.length === 0) return null;
   const yesterday = new Date(`${today}T00:00:00`);
   yesterday.setDate(yesterday.getDate() - 1);
   const yIso = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
   const dayLabel = (iso: string) =>
-    iso === yIso ? t("confirm.yesterday") : new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { weekday: "long" });
+    iso === yIso ? t("confirm.yesterday") : fmtDate(iso, lang, { weekday: "long" });
   return (
     <section className="mb-3 sticker-lg px-4 py-3">
       <p className="label-xs mb-2">🤔 {t("confirm.didItHappen")}</p>
@@ -339,6 +306,7 @@ function UnconfirmedCard({ items, today }: { items: UnconfirmedItem[]; today: st
 
 function WeekCard({ data }: { data: TodayData }) {
   const t = useT();
+  const lang = useLang();
   const ws = data.weekSummary;
   // A plan week with no km target but planned sessions (climbing and other
   // non-distance plans) is tracked by sessions instead of km.
@@ -367,7 +335,7 @@ function WeekCard({ data }: { data: TodayData }) {
           </p>
         ) : (
           <p className="text-sm text-ink tabular-nums">
-            <span className="font-extrabold text-lg">{ws.runKm.toFixed(1)}</span>
+            <span className="font-extrabold text-lg">{fmtNumber(ws.runKm, lang, 1)}</span>
             {ws.plannedKm > 0 && <span className="text-sage font-bold"> / {ws.plannedKm.toFixed(0)} km</span>}
           </p>
         )}
@@ -389,6 +357,7 @@ function WeekCard({ data }: { data: TodayData }) {
 export default function TodayView() {
   const features = useFeatures();
   const t = useT();
+  const lang = useLang();
   const goals = useWeeklyGoals();
   const [data, setData] = useState<TodayData | null>(null);
   const [briefing, setBriefing] = useState<string | null>(null);
@@ -423,31 +392,6 @@ export default function TodayView() {
   );
   useDataChanged(["calendar", "tasks", "plan", "activities", "health"], fetchData);
 
-  async function handleToggleTask(task: TodoItem) {
-    if (!data) return;
-    const newDone = !task.done;
-    setData({
-      ...data,
-      todos: data.todos.map((t) => (t.todoId === task.todoId ? { ...t, done: newDone } : t)),
-    });
-    try {
-      const res = await fetch(`/api/tasks/${task.todoId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ done: newDone }),
-      });
-      if (!res.ok) throw new Error();
-      if (task.recurrence !== "none") fetchData(); // next occurrence may appear
-    } catch {
-      // Roll back the optimistic toggle (offline PWA, expired session, ...)
-      setData((prev) =>
-        prev
-          ? { ...prev, todos: prev.todos.map((t) => (t.todoId === task.todoId ? { ...t, done: task.done } : t)) }
-          : prev
-      );
-    }
-  }
-
   if (loading || !data) {
     return (
       <main className="min-h-screen max-w-2xl mx-auto px-4">
@@ -458,18 +402,14 @@ export default function TodayView() {
   }
 
   // Sort agenda: all-day events + birthdays + multi-day continuations →
-  // timed items (events/tasks with time) by time → workout → undated tasks.
+  // timed events by time → workout.
   // Continuations sort with all-day items — their start time belongs to a
   // previous day and would mis-position them in today's timeline.
   const allDayEvents = data.events.filter((e) => e.allDay || e.continuation);
   const timedEvents = data.events.filter((e) => !e.allDay && !e.continuation);
-  const openTodos = data.todos.filter((t) => !t.done || t.dueDate === data.date);
-  const timedTodos = openTodos.filter((t) => t.dueTime);
-  const untimedTodos = openTodos.filter((t) => !t.dueTime);
 
   const timedRows: Array<{ key: string; time: string; node: React.ReactNode }> = [
     ...timedEvents.map((e) => ({ key: e.occurrenceKey, time: timeOf(e), node: <EventRow key={e.occurrenceKey} event={e} /> })),
-    ...timedTodos.map((t) => ({ key: t.todoId, time: t.dueTime!, node: <TaskRow key={t.todoId} task={t} onToggle={handleToggleTask} /> })),
   ].sort((a, b) => a.time.localeCompare(b.time));
 
   // Planned ↔ done reconciliation (same rule as calendar): each non-rest
@@ -490,7 +430,7 @@ export default function TodayView() {
 
   const isEmptyDay =
     allDayEvents.length === 0 && timedRows.length === 0 && visibleWorkoutRows.length === 0 &&
-    extraActivities.length === 0 && untimedTodos.length === 0;
+    extraActivities.length === 0;
   const showNewUserCTAs = !data.hasActivePlan && !data.planExpired;
 
   return (
@@ -499,7 +439,7 @@ export default function TodayView() {
 
       {/* Date + greeting */}
       <div className="mt-3 mb-3">
-        <h1 className="text-xl font-extrabold text-ink">{formatHeaderDate(data.date)}</h1>
+        <h1 className="text-xl font-extrabold text-ink">{formatHeaderDate(data.date, lang)}</h1>
       </div>
 
       {/* Strava connection broke (token revoked/expired) — without this
@@ -574,7 +514,6 @@ export default function TodayView() {
           <WorkoutRow key={workout.workoutId} workout={workout} matched={matched} />
         ))}
         {extraActivities.map((a) => <ExtraActivityRow key={a.id} activity={a} />)}
-        {untimedTodos.map((t) => <TaskRow key={t.todoId} task={t} onToggle={handleToggleTask} />)}
 
         {isEmptyDay && (
           <div className="text-center py-10">

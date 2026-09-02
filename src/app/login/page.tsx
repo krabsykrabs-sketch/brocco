@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useT } from "@/app/features-provider";
 
 export default function LoginPage() {
+  const t = useT();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -32,7 +34,7 @@ export default function LoginPage() {
       router.push("/");
       router.refresh();
     } catch {
-      setError("Something went wrong");
+      setError(t("common.somethingWrong"));
     } finally {
       setLoading(false);
     }
@@ -51,7 +53,7 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label htmlFor="email" className="block text-sm font-bold text-ink mb-1">
-              Email
+              {t("settings.email")}
             </label>
             <input
               id="email"
@@ -66,7 +68,7 @@ export default function LoginPage() {
 
           <div>
             <label htmlFor="password" className="block text-sm font-bold text-ink mb-1">
-              Password
+              {t("auth.password")}
             </label>
             <input
               id="password"
@@ -88,20 +90,20 @@ export default function LoginPage() {
             disabled={loading}
             className="btn-brocco w-full py-2 px-4"
           >
-            {loading ? "Logging in..." : "Log in"}
+            {loading ? t("auth.loggingIn") : t("auth.login")}
           </button>
         </form>
 
         <p className="text-center mt-3">
           <a href="/forgot-password" className="text-sm text-moss hover:text-ink underline underline-offset-2">
-            Forgot password?
+            {t("auth.forgotPassword")}
           </a>
         </p>
 
         <p className="text-center text-moss text-sm mt-6">
           Have an invite code?{" "}
           <a href="/signup" className="text-leaf font-bold underline">
-            Sign up
+            {t("auth.signup")}
           </a>
         </p>
       </div>

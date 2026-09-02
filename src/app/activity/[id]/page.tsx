@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 import type { StravaLap } from "@/lib/strava";
 import { getWorkoutTypeColor } from "@/lib/categories";
+import { useFmt } from "@/app/features-provider";
 
 interface Split {
   distance: number;
@@ -79,6 +80,7 @@ function Stat({ label, value }: { label: string; value: string | number }) {
  * than the run's median pace are highlighted as work reps.
  */
 function LapsTable({ laps }: { laps: StravaLap[] }) {
+  const fmt = useFmt();
   const paces = laps.map((l) => l.paceSecPerKm).filter((p): p is number => p != null).sort((a, b) => a - b);
   const median = paces.length > 0 ? paces[Math.floor(paces.length / 2)] : null;
   const hasHr = laps.some((l) => l.avgHr != null);
@@ -108,7 +110,7 @@ function LapsTable({ laps }: { laps: StravaLap[] }) {
                   {l.name || l.lapIndex}
                 </td>
                 <td className="py-1.5 px-3 text-right font-mono">
-                  {l.distanceM >= 1000 ? `${(l.distanceM / 1000).toFixed(2)}km` : `${l.distanceM}m`}
+                  {l.distanceM >= 1000 ? `${fmt.number(l.distanceM / 1000, 2)}km` : `${l.distanceM}m`}
                 </td>
                 <td className="py-1.5 px-3 text-right font-mono">{fmtTime(l.movingTimeSec)}</td>
                 <td className="py-1.5 px-3 text-right font-mono">{l.paceSecPerKm ? formatPace(l.paceSecPerKm) : "-"}</td>
@@ -223,6 +225,7 @@ const EFFORT_BADGE: Record<string, { label: string; className: string }> = {
 };
 
 function EffortSegmentsTable({ segments }: { segments: ActivityAnalysis["effortSegments"] }) {
+  const fmt = useFmt();
   if (segments.length === 0) return null;
   return (
     <div className="overflow-x-auto">
@@ -240,7 +243,7 @@ function EffortSegmentsTable({ segments }: { segments: ActivityAnalysis["effortS
           {segments.map((s) => (
             <tr key={s.rep} className="border-b border-shade text-ink">
               <td className="py-1.5 pr-3">{s.rep}</td>
-              <td className="py-1.5 px-3 text-right font-mono">{(s.distanceM / 1000).toFixed(2)}km</td>
+              <td className="py-1.5 px-3 text-right font-mono">{fmt.number(s.distanceM / 1000, 2)}km</td>
               <td className="py-1.5 px-3 text-right font-mono">{s.paceSecPerKm ? formatPace(s.paceSecPerKm) : "-"}</td>
               <td className="py-1.5 px-3 text-right">{s.avgHr ?? "-"}</td>
               <td className="py-1.5 pl-3 text-right text-moss">
@@ -351,6 +354,7 @@ function IntensitySection({
 }
 
 export default function ActivityDetailPage() {
+  const fmt = useFmt();
   const params = useParams();
   const id = params.id as string;
   const [activity, setActivity] = useState<ActivityDetail | null>(null);
@@ -389,16 +393,13 @@ export default function ActivityDetailPage() {
     );
   }
 
-  const dateStr = new Date(activity.startDateLocal).toLocaleDateString("en-GB", {
+  const dateStr = fmt.date(activity.startDateLocal, {
     weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
   });
-  const timeStr = new Date(activity.startDateLocal).toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const timeStr = fmt.time(activity.startDateLocal);
 
   const mw = activity.matchedWorkout;
 
@@ -454,7 +455,7 @@ export default function ActivityDetailPage() {
             {mw.workoutType} {mw.targetPace && `@ ${mw.targetPace}`}
             {" → "}
             <span className="text-leaf font-bold">Actual:</span>{" "}
-            {activity.distanceKm && `${activity.distanceKm.toFixed(1)}km`}
+            {activity.distanceKm && `${fmt.number(activity.distanceKm, 1)}km`}
             {activity.avgPacePerKm && ` @ ${activity.avgPacePerKm} avg`}
             {activity.avgHeartRate && `, HR ${activity.avgHeartRate}`}
           </p>
@@ -467,7 +468,7 @@ export default function ActivityDetailPage() {
       {/* Key stats */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         {activity.distanceKm != null && (
-          <Stat label="Distance" value={`${activity.distanceKm.toFixed(2)} km`} />
+          <Stat label="Distance" value={`${fmt.number(activity.distanceKm, 2)} km`} />
         )}
         <Stat label="Duration" value={formatDuration(activity.durationMin)} />
         {activity.movingTimeMin != null && activity.movingTimeMin !== activity.durationMin && (

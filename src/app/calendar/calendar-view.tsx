@@ -1,6 +1,7 @@
 "use client";
 
-import { useT } from "@/app/features-provider";
+import { useT, useLang } from "@/app/features-provider";
+import { fmtDate, fmtNumber, weekdayInitials, type Lang } from "@/lib/i18n";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
@@ -115,9 +116,9 @@ const WORKOUT_TYPE_LABEL: Record<string, string> = {
   climbing: "climbing session",
 };
 
-function activityDetail(a: ActivityItem): string {
+function activityDetail(a: ActivityItem, lang: Lang): string {
   if (a.distanceKm) {
-    return `${a.distanceKm.toFixed(1)} km${a.avgPacePerKm ? ` · ${a.avgPacePerKm.replace("/km", "")}` : ""}`;
+    return `${fmtNumber(a.distanceKm, lang, 1)} km${a.avgPacePerKm ? ` · ${a.avgPacePerKm.replace("/km", "")}` : ""}`;
   }
   if (a.durationMin) return `${Math.round(a.durationMin)} min`;
   return "";
@@ -146,8 +147,8 @@ function startOfMonthStr(s: string): string { return s.slice(0, 8) + "01"; }
 function addMonthsStr(s: string, n: number): string {
   const d = toDate(startOfMonthStr(s)); d.setMonth(d.getMonth() + n); return toStr(d);
 }
-function fmt(s: string, opts: Intl.DateTimeFormatOptions): string {
-  return toDate(s).toLocaleDateString("en-GB", opts);
+function fmt(s: string, lang: Lang, opts: Intl.DateTimeFormatOptions): string {
+  return fmtDate(toDate(s), lang, opts);
 }
 
 /** The dates one page of a view covers (the month grid spans whole weeks). */
@@ -328,6 +329,7 @@ function EventChip({ event, onTap }: { event: EventOccurrence; onTap: () => void
  */
 function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matched: ActivityItem | null; state: WorkoutState }) {
   const t = useT();
+  const lang = useLang();
   return (
     <Link href={matched ? `/activity/${matched.activityId}` : `/calendar?view=day&date=${workout.date}`} className={`sticker sticker-press grid grid-cols-2 overflow-hidden ${state === "today" ? "shadow-[3px_3px_0_var(--color-brocco)]" : ""}`}>
       <div className="px-2.5 py-1.5 border-r-2 border-dashed border-shade min-w-0">
@@ -343,7 +345,7 @@ function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matche
       {state === "done" ? (
         <div className="px-2.5 py-1.5 bg-sprout min-w-0">
           <p className="label-xs text-leaf!">{t("calendar.doneLabel")}</p>
-          <p className="text-xs font-extrabold text-ink truncate tabular-nums">{matched ? activityDetail(matched) || matched.name : "completed"}</p>
+          <p className="text-xs font-extrabold text-ink truncate tabular-nums">{matched ? activityDetail(matched, lang) || matched.name : "completed"}</p>
           {matched && <p className="text-[10px] text-leaf font-bold truncate">{matched.source === "strava" ? "strava" : "logged"}</p>}
         </div>
       ) : state === "missed" ? (
@@ -369,6 +371,7 @@ function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matche
 /** A completed activity with no planned workout behind it (spontaneous run, extra ride, ad-hoc session). */
 function ActivityChip({ activity }: { activity: ActivityItem }) {
   const t = useT();
+  const lang = useLang();
   return (
     <Link href={`/activity/${activity.activityId}`} className="sticker sticker-press grid grid-cols-2 overflow-hidden">
       <div className="px-2.5 py-1.5 border-r-2 border-dashed border-shade bg-ghost min-w-0">
@@ -379,7 +382,7 @@ function ActivityChip({ activity }: { activity: ActivityItem }) {
         <p className="label-xs text-leaf!">{t("calendar.doneLabel")}</p>
         <p className="text-xs font-extrabold text-ink truncate">{activity.name}</p>
         <p className="text-[10px] text-leaf font-bold truncate tabular-nums">
-          {[activityDetail(activity), activity.source === "strava" ? "strava" : "logged"].filter(Boolean).join(" · ")}
+          {[activityDetail(activity, lang), activity.source === "strava" ? "strava" : "logged"].filter(Boolean).join(" · ")}
         </p>
       </div>
     </Link>
@@ -392,23 +395,24 @@ const STEP_KIND_LABEL: Record<string, string> = {
   warmup: "Warm-up", steady: "Steady", work: "Work", recovery: "Recovery", cooldown: "Cool-down",
 };
 
-function stepAmount(s: DetailStep): string {
+function stepAmount(s: DetailStep, lang: Lang): string {
   const amount =
     s.distanceKm != null
-      ? s.distanceKm >= 1 ? `${Number(s.distanceKm.toFixed(2))} km` : `${Math.round(s.distanceKm * 1000)} m`
+      ? s.distanceKm >= 1 ? `${fmtNumber(s.distanceKm, lang, 2, 0)} km` : `${Math.round(s.distanceKm * 1000)} m`
       : s.durationMin != null ? `${Math.round(s.durationMin)} min`
       : "";
   return [amount, s.pace].filter(Boolean).join(" @ ") || "—";
 }
 
 function StepRow({ step, nested }: { step: DetailStep; nested?: boolean }) {
+  const lang = useLang();
   return (
     <div className="flex items-baseline gap-3 py-1">
       <span className={`text-xs font-bold flex-shrink-0 ${nested ? "text-moss" : "text-ink"}`}>
         {step.label || STEP_KIND_LABEL[step.kind] || step.kind}
       </span>
       <span className="flex-1 border-b border-dotted border-shade" />
-      <span className="text-xs font-semibold text-moss tabular-nums text-right">{stepAmount(step)}</span>
+      <span className="text-xs font-semibold text-moss tabular-nums text-right">{stepAmount(step, lang)}</span>
     </div>
   );
 }
@@ -437,10 +441,10 @@ function StepList({ steps }: { steps: DetailStep[] }) {
 }
 
 /** "2 Aug · 10 km · 5:34/km · HR 148" */
-function comparableLine(c: NonNullable<WorkoutDetail["comparable"]>): string {
+function comparableLine(c: NonNullable<WorkoutDetail["comparable"]>, lang: Lang): string {
   return [
-    fmt(c.date, { day: "numeric", month: "short" }),
-    c.distanceKm ? `${c.distanceKm.toFixed(1)} km` : null,
+    fmt(c.date, lang, { day: "numeric", month: "short" }),
+    c.distanceKm ? `${fmtNumber(c.distanceKm, lang, 1)} km` : null,
     c.durationMin && !c.distanceKm ? `${Math.round(c.durationMin)} min` : null,
     c.avgPacePerKm,
     c.avgHeartRate ? `HR ${c.avgHeartRate}` : null,
@@ -466,6 +470,7 @@ function WorkoutDetailCard({
   detail: WorkoutDetail | null | undefined; // undefined = still loading, null = failed
 }) {
   const t = useT();
+  const lang = useLang();
   // The range endpoint already carries the description, so the "why" is on
   // screen before the detail request lands.
   const description = detail?.workout.description ?? workout.description;
@@ -483,7 +488,7 @@ function WorkoutDetailCard({
         <div className="flex-1 min-w-0">
           <h2 className="text-base font-extrabold text-ink leading-tight">{workout.title}</h2>
           <p className="label-xs mt-0.5">
-            {fmt(workout.date, { weekday: "short", day: "numeric", month: "short" })} ·{" "}
+            {fmt(workout.date, lang, { weekday: "short", day: "numeric", month: "short" })} ·{" "}
             {WORKOUT_TYPE_LABEL[workout.workoutType] || workout.workoutType.replace("_", " ")}
           </p>
         </div>
@@ -506,7 +511,7 @@ function WorkoutDetailCard({
             {adjustment && (
               <div className="mt-1.5 border-2 border-ink rounded-xl bg-sun/25 px-2.5 py-1.5">
                 <p className="text-[10px] font-extrabold uppercase tracking-wide text-ink">
-                  Changed {new Date(adjustment.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                  Changed {fmtDate(adjustment.createdAt, lang, { day: "numeric", month: "short" })}
                 </p>
                 <p className="text-xs text-ink font-semibold leading-snug">{adjustment.reason}</p>
               </div>
@@ -524,7 +529,7 @@ function WorkoutDetailCard({
               Last {comparable.sameSessionType ? WORKOUT_TYPE_LABEL[workout.workoutType] || "similar session" : "similar session"}
             </p>
             <Link href={`/activity/${comparable.activityId}`} className="mt-1 block sticker sticker-press px-2.5 py-1.5">
-              <p className="text-sm font-bold text-ink tabular-nums">{comparableLine(comparable)}</p>
+              <p className="text-sm font-bold text-ink tabular-nums">{comparableLine(comparable, lang)}</p>
               <p className="text-[10px] text-moss font-semibold truncate">{comparable.name}</p>
             </Link>
           </div>
@@ -540,7 +545,7 @@ function WorkoutDetailCard({
         matched ? (
           <Link href={`/activity/${matched.activityId}`} className="block bg-sprout border-t-2 border-ink px-3 py-2 sticker-press">
             <p className="label-xs text-leaf!">{t("calendar.doneLabel")}</p>
-            <p className="text-sm font-extrabold text-ink tabular-nums">{activityDetail(matched) || matched.name}</p>
+            <p className="text-sm font-extrabold text-ink tabular-nums">{activityDetail(matched, lang) || matched.name}</p>
             <p className="text-[10px] text-leaf font-bold">
               {matched.source === "strava" ? "strava" : "logged"} · tap for the full activity
             </p>
@@ -805,6 +810,7 @@ function EventDetailSheet({
   onEdit: (form: EventFormData) => void;
   onChanged: () => void;
 }) {
+  const lang = useLang();
   const [busy, setBusy] = useState(false);
   const meta = categoryMeta(occurrence.category);
 
@@ -852,7 +858,7 @@ function EventDetailSheet({
           <div className="flex-1 min-w-0">
             <h2 className="text-base font-extrabold text-ink">{occurrence.category === "birthday" ? "🎂 " : ""}{occurrence.title}</h2>
             <p className="text-xs text-moss font-semibold mt-0.5">
-              {fmt(occurrence.date, { weekday: "long", day: "numeric", month: "long" })}
+              {fmt(occurrence.date, lang, { weekday: "long", day: "numeric", month: "long" })}
               {!occurrence.allDay && ` · ${occurrence.start.slice(11, 16)}${occurrence.end ? `–${occurrence.end.slice(11, 16)}` : ""}`}
               {occurrence.recurring && " · repeats"}
             </p>
@@ -904,6 +910,7 @@ export default function CalendarView() {
   const detailsRequested = useRef<Set<string>>(new Set());
   const today = todayStr();
   const t = useT();
+  const lang = useLang();
 
   // Visible range per view
   const [rangeStart, rangeEnd] = useMemo(() => rangeFor(view, anchor), [view, anchor]);
@@ -981,14 +988,14 @@ export default function CalendarView() {
   }, [view]);
 
   const headerLabel = useMemo(() => {
-    if (view === "day") return fmt(anchor, { weekday: "long", day: "numeric", month: "long" });
+    if (view === "day") return fmt(anchor, lang, { weekday: "long", day: "numeric", month: "long" });
     if (view === "week") {
       const ws = startOfWeekStr(anchor);
       const we = addDaysStr(ws, 6);
-      return `${fmt(ws, { day: "numeric", month: "short" })} – ${fmt(we, { day: "numeric", month: "short" })}`;
+      return `${fmt(ws, lang, { day: "numeric", month: "short" })} – ${fmt(we, lang, { day: "numeric", month: "short" })}`;
     }
-    return fmt(startOfMonthStr(anchor), { month: "long", year: "numeric" });
-  }, [view, anchor]);
+    return fmt(startOfMonthStr(anchor), lang, { month: "long", year: "numeric" });
+  }, [view, anchor, lang]);
 
   // --- Day section (used by day + week views) ---
   function DaySection({ date, compact }: { date: string; compact?: boolean }) {
@@ -1083,7 +1090,7 @@ export default function CalendarView() {
             <div className="flex items-center justify-between px-1 pb-1.5 text-xs font-bold tabular-nums">
               {plannedKm > 0 || runKm > 0 ? (
                 <p className="text-moss">
-                  🏃 {runKm.toFixed(1)}
+                  🏃 {fmtNumber(runKm, lang, 1)}
                   {plannedKm > 0 ? <span className="text-sage"> / {plannedKm.toFixed(0)} km</span> : <span> km</span>}
                 </p>
               ) : (
@@ -1121,7 +1128,7 @@ export default function CalendarView() {
   function DayLabel({ date, isToday }: { date: string; isToday: boolean }) {
     return (
       <button onClick={() => { setAnchor(date); setView("day"); }} className="w-11 flex-shrink-0 text-center pt-0.5">
-        <p className={`text-[10px] font-extrabold uppercase ${isToday ? "text-leaf" : "text-sage"}`}>{fmt(date, { weekday: "short" })}</p>
+        <p className={`text-[10px] font-extrabold uppercase ${isToday ? "text-leaf" : "text-sage"}`}>{fmt(date, lang, { weekday: "short" })}</p>
         <p className={`text-lg font-extrabold leading-tight tabular-nums ${isToday ? "text-leaf" : "text-ink"}`}>{toDate(date).getDate()}</p>
       </button>
     );
@@ -1256,6 +1263,7 @@ function MonthGrid({
   stravaConnected?: boolean;
   onDayTap: (date: string) => void;
 }) {
+  const lang = useLang();
   const days: string[] = [];
   let d = rangeStart;
   while (d <= rangeEnd) { days.push(d); d = addDaysStr(d, 1); }
@@ -1265,7 +1273,7 @@ function MonthGrid({
   return (
     <div>
       <div className="grid grid-cols-7 mb-1">
-        {["M", "T", "W", "T", "F", "S", "S"].map((l, i) => (
+        {weekdayInitials(lang).map((l, i) => (
           <div key={i} className="text-center text-[10px] font-extrabold text-sage">{l}</div>
         ))}
       </div>

@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
   const features = resolveFeatures(profile.features);
 
   const [agenda, birthdays, activePlan] = await Promise.all([
-    getAgenda(userId, today, today, { includeOverdueTodos: true, today, includeRestWorkouts: true }),
+    getAgenda(userId, today, today, { includeRestWorkouts: true }),
     features.calendar ? getUpcomingBirthdays(userId, today, 7) : Promise.resolve([]),
     prisma.plan.findFirst({ where: { userId, status: "active" }, select: { name: true, raceDate: true } }),
   ]);
@@ -71,7 +71,6 @@ export async function GET(request: NextRequest) {
   // Disabled domains stay out of the briefing — a coach-only user gets a
   // pure training check-in
   if (!features.calendar) agenda.events = [];
-  agenda.todos = [];
 
   // Same shared figures as the opener: one week definition, one running total,
   // with the timezone pad trimmed off exactly once.
@@ -123,10 +122,10 @@ export async function GET(request: NextRequest) {
       return block && block.type === "text" ? block.text.trim() : "";
     });
 
-    content = checked || fallbackBriefing(agenda.events.length, agenda.todos.length);
+    content = checked || fallbackBriefing(agenda.events.length);
   } catch (err) {
     console.error("Briefing generation error:", err);
-    content = fallbackBriefing(agenda.events.length, agenda.todos.length);
+    content = fallbackBriefing(agenda.events.length);
   }
 
   await prisma.dailyBriefing.upsert({
@@ -138,9 +137,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ briefing: content, cached: false });
 }
 
-function fallbackBriefing(eventCount: number, taskCount: number): string {
+function fallbackBriefing(eventCount: number): string {
   const parts: string[] = [];
   parts.push(eventCount > 0 ? `${eventCount} thing${eventCount === 1 ? "" : "s"} on the calendar today` : "Nothing on the calendar today");
-  if (taskCount > 0) parts.push(`${taskCount} task${taskCount === 1 ? "" : "s"} due`);
   return parts.join(", ") + ".";
 }

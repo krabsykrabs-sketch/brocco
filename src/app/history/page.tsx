@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { DesktopNavLinks } from "@/app/nav";
+import { useT } from "@/app/features-provider";
 
 interface Activity {
   id: string;
@@ -37,6 +38,7 @@ function formatDate(iso: string): string {
 }
 
 function ActivityCard({ activity }: { activity: Activity }) {
+  const t = useT();
   return (
     <Link href={`/activity/${activity.id}`} className="sticker sticker-press block p-4">
       <div className="flex items-start justify-between mb-2">
@@ -61,7 +63,7 @@ function ActivityCard({ activity }: { activity: Activity }) {
           <div>
             <p className="label-xs">Distance</p>
             <p className="text-sm font-bold text-ink">
-              {parseFloat(activity.distanceKm).toFixed(1)} km
+              {parseFloat(activity.distanceKm).toFixed(1)} {t("common.km")}
             </p>
           </div>
         )}
@@ -244,6 +246,7 @@ function TrendsSection() {
 }
 
 export default function HistoryPage() {
+  const t = useT();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -282,7 +285,7 @@ export default function HistoryPage() {
         <div className="md:hidden flex items-center gap-2 pb-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6 rounded-full border-2 border-ink" />
-          <span className="font-extrabold text-sm text-ink">History</span>
+          <span className="font-extrabold text-sm text-ink">{t("history.title")}</span>
           <span className="text-xs text-sage font-bold ml-auto">{total} activities</span>
         </div>
         {/* Desktop */}
@@ -303,25 +306,25 @@ export default function HistoryPage() {
           onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}
           className="field w-auto"
         >
-          <option value="">All types</option>
-          <option value="Run">Run</option>
-          <option value="Ride">Ride</option>
+          <option value="">{t("history.all")}</option>
+          <option value="Run">{t("history.runs")}</option>
+          <option value="Ride">{t("history.rides")}</option>
           <option value="Hike">Hike & Walk</option>
           <option value="Swim">Swim</option>
-          <option value="RockClimbing">Climb</option>
-          <option value="WeightTraining">Strength</option>
+          <option value="RockClimbing">{t("history.climbs")}</option>
+          <option value="WeightTraining">{t("history.strength")}</option>
         </select>
       </div>
 
       {loading ? (
-        <div className="text-moss text-center py-12 font-semibold">Loading...</div>
+        <div className="text-moss text-center py-12 font-semibold">{t("common.loading")}</div>
       ) : activities.length === 0 ? (
         <div className="text-center py-12">
-          <p className="text-moss font-semibold mb-2">No activities yet.</p>
+          <p className="text-moss font-semibold mb-2">{t("history.noActivities")}</p>
           <p className="text-sage text-sm font-semibold">
             Connect Strava in{" "}
             <Link href="/settings" className="text-leaf font-bold underline">
-              Settings
+              {t("nav.settings")}
             </Link>{" "}
             to import your activities.
           </p>
@@ -341,7 +344,7 @@ export default function HistoryPage() {
                 disabled={page === 1}
                 className="btn-quiet px-3 py-1.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                Previous
+                {t("calendar.previous")}
               </button>
               <span className="text-sm text-moss font-semibold">
                 {page} / {totalPages}
@@ -351,7 +354,7 @@ export default function HistoryPage() {
                 disabled={page === totalPages}
                 className="btn-quiet px-3 py-1.5 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                Next
+                {t("calendar.next")}
               </button>
             </div>
           )}

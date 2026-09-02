@@ -1,6 +1,7 @@
 "use client";
 
-import { useT } from "@/app/features-provider";
+import { useT, useLang } from "@/app/features-provider";
+import { fmtDate, type Lang } from "@/lib/i18n";
 
 import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
@@ -51,13 +52,13 @@ function weekDates(startDate: string): string[] {
   });
 }
 
-function formatDay(iso: string): string {
-  return new Date(`${iso.split("T")[0]}T00:00:00`).toLocaleDateString("en-GB", { month: "short", day: "numeric" });
+function formatDay(iso: string, lang: Lang): string {
+  return fmtDate(iso.split("T")[0], lang, { month: "short", day: "numeric" });
 }
 
-function formatWeekRange(startDate: string): string {
+function formatWeekRange(startDate: string, lang: Lang): string {
   const dates = weekDates(startDate);
-  return `${formatDay(dates[0])} – ${formatDay(dates[6])}`;
+  return `${formatDay(dates[0], lang)} – ${formatDay(dates[6], lang)}`;
 }
 
 function daysUntil(iso: string): number {
@@ -114,6 +115,8 @@ function ArcHeader({
   plan: Plan; phase: Phase | undefined; nextPhase: Phase | undefined;
   weekPos: number; totalWeeks: number; currentWeekNum: number | undefined;
 }) {
+  const t = useT();
+  const lang = useLang();
   const phaseLen = phase ? phase.endWeek - phase.startWeek + 1 : 0;
   const phaseWeek = phase && currentWeekNum !== undefined ? currentWeekNum - phase.startWeek + 1 : 0;
   const weeksLeft = phase && currentWeekNum !== undefined ? phase.endWeek - currentWeekNum : 0;
@@ -124,7 +127,7 @@ function ArcHeader({
       <div className="flex items-baseline justify-between gap-3">
         <h1 className="text-2xl font-extrabold text-ink truncate">{phase?.name || plan.goal || plan.name}</h1>
         <span className="text-sm font-bold text-moss tabular-nums flex-shrink-0">
-          {weekPos > 0 ? `Week ${weekPos} of ${totalWeeks}` : `${totalWeeks} weeks`}
+          {weekPos > 0 ? `${t("common.week")} ${weekPos} ${t("plan.weekOf")} ${totalWeeks}` : `${totalWeeks} ${t("plan.weeksTotal")}`}
         </span>
       </div>
 
@@ -135,8 +138,8 @@ function ArcHeader({
           </div>
           <p className="text-xs font-bold text-moss mt-1.5">
             {weeksLeft <= 0
-              ? `Last week of ${phase.name}`
-              : `Phase ends in ${weeksLeft} week${weeksLeft === 1 ? "" : "s"}`}
+              ? `${t("plan.lastWeekOf")} ${phase.name}`
+              : `${t("plan.phaseEndsIn")} ${weeksLeft} ${weeksLeft === 1 ? t("unit.week") : t("unit.weeks")}`}
             {nextPhase ? <span className="text-leaf"> → {nextPhase.name}</span> : <span className="text-leaf"> → race</span>}
           </p>
         </>
@@ -146,19 +149,19 @@ function ArcHeader({
         <div className="flex items-center gap-3 mt-3 pt-3 border-t-2 border-dashed border-shade">
           <span className="text-lg flex-shrink-0">🏁</span>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-ink truncate">{plan.goal || "Race day"}</p>
+            <p className="text-sm font-bold text-ink truncate">{plan.goal || t("plan.raceDay")}</p>
             <p className="text-xs text-moss font-semibold tabular-nums">
-              {new Date(`${plan.raceDate.split("T")[0]}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
+              {fmtDate(plan.raceDate.split("T")[0], lang, { day: "numeric", month: "long", year: "numeric" })}
             </p>
           </div>
           <div className="text-right flex-shrink-0">
             {raceIn > 0 ? (
               <>
                 <p className="text-xl font-extrabold text-ink leading-none tabular-nums">{raceIn}</p>
-                <p className="label-xs">{raceIn === 1 ? "day" : "days"}</p>
+                <p className="label-xs">{raceIn === 1 ? t("plan.day") : t("plan.days")}</p>
               </>
             ) : (
-              <p className="text-sm font-extrabold text-leaf">{raceIn === 0 ? "Today!" : "Done"}</p>
+              <p className="text-sm font-extrabold text-leaf">{raceIn === 0 ? `${t("common.today")}!` : t("common.done")}</p>
             )}
           </div>
         </div>
@@ -176,6 +179,7 @@ function ThisWeekCard({
   tasks: WeeklyTask[]; onToggleTask: (id: string, status: string) => void;
 }) {
   const t = useT();
+  const lang = useLang();
   const sessionsBased = !!summary && isSessionsBased(summary);
   const pct = !summary
     ? 0
@@ -191,22 +195,22 @@ function ThisWeekCard({
         <>
           <div className="flex items-baseline justify-between gap-2">
             <p className="label-xs">{t("plan.thisWeek")}</p>
-            <p className="text-xs text-sage font-bold">{formatWeekRange(week.startDate)}</p>
+            <p className="text-xs text-sage font-bold">{formatWeekRange(week.startDate, lang)}</p>
           </div>
           <div className="flex items-baseline justify-between gap-2 mt-0.5">
             {sessionsBased ? (
               <p className="text-ink tabular-nums">
                 <span className="text-2xl font-extrabold">{summary.sessions}</span>
-                <span className="text-sage font-bold"> / {summary.targetSessions} sessions</span>
+                <span className="text-sage font-bold"> / {summary.targetSessions} {t("common.sessions")}</span>
               </p>
             ) : (
               <>
                 <p className="text-ink tabular-nums">
                   <span className="text-2xl font-extrabold">{summary.actualKm.toFixed(0)}</span>
-                  {summary.targetKm > 0 && <span className="text-sage font-bold"> / {summary.targetKm.toFixed(0)} km</span>}
+                  {summary.targetKm > 0 && <span className="text-sage font-bold"> / {summary.targetKm.toFixed(0)} {t("common.km")}</span>}
                 </p>
                 {summary.targetSessions > 0 && (
-                  <p className="text-xs font-bold text-moss tabular-nums">{summary.sessions} of {summary.targetSessions} sessions</p>
+                  <p className="text-xs font-bold text-moss tabular-nums">{summary.sessions} {t("plan.weekOf")} {summary.targetSessions} {t("common.sessions")}</p>
                 )}
               </>
             )}
@@ -229,19 +233,19 @@ function ThisWeekCard({
             {isSessionsBased(lastSummary) ? (
               <>
                 <span className="text-ink">{lastSummary.sessions}</span>
-                <span className="text-sage"> / {lastSummary.targetSessions} sessions</span>
+                <span className="text-sage"> / {lastSummary.targetSessions} {t("common.sessions")}</span>
                 {targetHit(lastSummary)
                   ? <span className="text-leaf"> ✓ {t("plan.targetHit")}</span>
-                  : <span className="text-clay"> · {lastSummary.targetSessions - lastSummary.sessions} short</span>}
+                  : <span className="text-clay"> · {lastSummary.targetSessions - lastSummary.sessions} {t("plan.short")}</span>}
               </>
             ) : (
               <>
                 <span className="text-ink">{lastSummary.actualKm.toFixed(0)}</span>
-                {lastSummary.targetKm > 0 && <span className="text-sage"> / {lastSummary.targetKm.toFixed(0)} km</span>}
+                {lastSummary.targetKm > 0 && <span className="text-sage"> / {lastSummary.targetKm.toFixed(0)} {t("common.km")}</span>}
                 {lastSummary.targetKm > 0 && (
                   targetHit(lastSummary)
                     ? <span className="text-leaf"> ✓ {t("plan.targetHit")}</span>
-                    : <span className="text-clay"> · {(lastSummary.targetKm - lastSummary.actualKm).toFixed(0)} km short</span>
+                    : <span className="text-clay"> · {(lastSummary.targetKm - lastSummary.actualKm).toFixed(0)} {t("common.km")} {t("plan.short")}</span>
                 )}
               </>
             )}
@@ -301,7 +305,7 @@ function BlockCard({
         <p className="label-xs">{t("plan.theBlock")}</p>
         {peak > 0 && (
           <p className="text-xs text-sage font-bold tabular-nums">
-            peak {peak.toFixed(0)} {sessionsBars ? t("common.sessions") : "km"}
+            {t("plan.peak")} {peak.toFixed(0)} {sessionsBars ? t("common.sessions") : t("common.km")}
           </p>
         )}
       </div>
@@ -322,7 +326,7 @@ function BlockCard({
                     <div
                       className="w-full rounded-sm bg-shade relative overflow-hidden"
                       style={{ height: `${Math.max((target / peak) * 100, 4)}%` }}
-                      title={`Week ${w.weekNumber}: ${target.toFixed(0)} ${sessionsBars ? "sessions" : "km"} target`}
+                      title={`${t("common.week")} ${w.weekNumber}: ${target.toFixed(0)} ${sessionsBars ? t("common.sessions") : t("common.km")} target`}
                     >
                       {fill > 0 && <div className="absolute inset-x-0 bottom-0 bg-brocco" style={{ height: `${fill}%` }} />}
                     </div>
@@ -359,7 +363,7 @@ function BlockCard({
                   <div className={`h-full ${isCurrent ? "bg-brocco" : "bg-sprout"}`} style={{ width: `${(done / len) * 100}%` }} />
                 </div>
                 <span className="text-[10px] text-sage font-bold tabular-nums w-16 flex-shrink-0 text-right">
-                  {isCurrent ? `${done} of ${len}` : `W${phase.startWeek}–${phase.endWeek}`}
+                  {isCurrent ? `${done} ${t("plan.weekOf")} ${len}` : `W${phase.startWeek}–${phase.endWeek}`}
                 </span>
               </button>
               {open && phase.description && (
@@ -396,6 +400,7 @@ function WeekListCard({
   weekList: PlanWeekData[]; summaries: WeekSummary[]; currentWeekIdx: number;
 }) {
   const t = useT();
+  const lang = useLang();
   if (weekList.length === 0) return null;
 
   return (
@@ -420,7 +425,7 @@ function WeekListCard({
                   <span className={`text-xs font-extrabold w-9 flex-shrink-0 tabular-nums ${isCurrent ? "text-ink" : "text-moss"}`}>
                     W{w.weekNumber}
                   </span>
-                  <span className="text-[10px] text-sage font-bold w-14 flex-shrink-0">{formatDay(w.startDate)}</span>
+                  <span className="text-[10px] text-sage font-bold w-14 flex-shrink-0">{formatDay(w.startDate, lang)}</span>
                   <span className="text-[10px] text-sage font-semibold flex-1 truncate tracking-[0.2em] uppercase">
                     {(w.sessionTypes || []).join(" ")}
                   </span>
@@ -431,7 +436,7 @@ function WeekListCard({
                           <span className={isPast && targetHit(s) ? "text-leaf" : isPast ? "text-clay" : "text-ink"}>
                             {s.sessions}
                           </span>
-                          <span className="text-sage"> / {s.targetSessions} sessions</span>
+                          <span className="text-sage"> / {s.targetSessions} {t("common.sessions")}</span>
                           {isPast && targetHit(s) && <span className="text-leaf"> ✓</span>}
                         </>
                       ) : (
@@ -439,15 +444,15 @@ function WeekListCard({
                           <span className={isPast && targetHit(s) ? "text-leaf" : isPast ? "text-clay" : "text-ink"}>
                             {s.actualKm.toFixed(0)}
                           </span>
-                          {s.targetKm > 0 && <span className="text-sage"> / {s.targetKm.toFixed(0)} km</span>}
+                          {s.targetKm > 0 && <span className="text-sage"> / {s.targetKm.toFixed(0)} {t("common.km")}</span>}
                           {isPast && targetHit(s) && <span className="text-leaf"> ✓</span>}
                         </>
                       )
                     ) : isSessionsBased(s) ? (
-                      <span className="text-ink">{s.targetSessions} sessions</span>
+                      <span className="text-ink">{s.targetSessions} {t("common.sessions")}</span>
                     ) : (
                       <span className="text-ink">
-                        {s.targetKm > 0 ? `${s.targetKm.toFixed(0)} km` : "—"}
+                        {s.targetKm > 0 ? `${s.targetKm.toFixed(0)} ${t("common.km")}` : "—"}
                         {s.targetSessions > 0 && <span className="text-sage font-semibold"> · {s.targetSessions}×</span>}
                       </span>
                     )}
@@ -479,6 +484,7 @@ export default function PlanPage() {
 
 function PlanPageContent() {
   const t = useT();
+  const lang = useLang();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -520,7 +526,7 @@ function PlanPageContent() {
   );
 
   if (loading) {
-    return <main className="min-h-screen max-w-2xl mx-auto px-4"><PageHeader title={t("plan.title")} /><div className="text-moss text-center py-12 font-semibold">Loading...</div></main>;
+    return <main className="min-h-screen max-w-2xl mx-auto px-4"><PageHeader title={t("plan.title")} /><div className="text-moss text-center py-12 font-semibold">{t("common.loading")}</div></main>;
   }
 
   if (!plan) {
@@ -530,10 +536,10 @@ function PlanPageContent() {
         <div className="text-center py-16">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/brocco-runner.png" alt="" className="h-32 mx-auto mb-4" />
-          <p className="text-ink text-lg font-extrabold">No training plan yet</p>
+          <p className="text-ink text-lg font-extrabold">{t("plan.noPlan")}</p>
           <p className="text-moss text-sm mt-2 mb-4 font-semibold">Let Brocco build you a personalized plan.</p>
           <button onClick={handleNewPlan} disabled={startingPlan} className="btn-brocco px-6 py-2.5">
-            {startingPlan ? "Starting..." : "Build a new plan"}
+            {startingPlan ? "Starting..." : t("today.buildPlan")}
           </button>
         </div>
       </main>
@@ -622,7 +628,7 @@ function PlanPageContent() {
             </p>
             <p className="text-xs text-moss font-semibold mt-0.5">
               {notStarted
-                ? `Week 1 begins ${formatDay(weekList[0]?.startDate || plan.startDate)}.`
+                ? `Week 1 begins ${formatDay(weekList[0]?.startDate || plan.startDate, lang)}.`
                 : "Ask Brocco for the next one when you're ready."}
             </p>
           </section>

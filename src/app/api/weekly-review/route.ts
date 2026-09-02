@@ -105,13 +105,10 @@ export async function GET(request: NextRequest) {
       where: { plan: { userId, status: "active" }, date: { gte: weekStartDt, lte: weekEndDt } },
       orderBy: { date: "asc" },
     }),
-    // Next week's preview: workouts + (if enabled) events and due tasks
-    getAgenda(userId, wallDateString(addDaysWall(reviewWeekStart, 7)), wallDateString(addDaysWall(reviewWeekStart, 13)), {
-      includeOverdueTodos: false,
-    }),
+    // Next week's preview: workouts + (if enabled) events
+    getAgenda(userId, wallDateString(addDaysWall(reviewWeekStart, 7)), wallDateString(addDaysWall(reviewWeekStart, 13))),
   ]);
   if (!features.calendar) agendaNext.events = [];
-  agendaNext.todos = [];
 
   // Recap numbers
   const runs = activities.filter((a) => RUN_TYPES.includes(a.activityType));
