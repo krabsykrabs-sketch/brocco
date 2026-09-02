@@ -19,7 +19,7 @@ const PUBLIC_PATHS = [
   // Read on public pages by the provider; a redirect here fed HTML to r.json().
   "/api/features",
   // Container liveness — must work with no cookie.
-  "/api/_health",
+  "/api/health-check",
 ];
 
 export async function middleware(request: NextRequest) {

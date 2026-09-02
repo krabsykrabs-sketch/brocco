@@ -58,8 +58,8 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Liveness = process up AND database reachable (see /api/_health).
+# Liveness = process up AND database reachable (see /api/health-check).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:3000/api/_health || exit 1
+  CMD wget -qO- http://127.0.0.1:3000/api/health-check || exit 1
 
 ENTRYPOINT ["sh", "./docker-entrypoint.sh"]
