@@ -32,3 +32,9 @@ export function isCompatibleType(workoutActivityType: string, stravaActivityType
 export function isRunning(stravaActivityType: string): boolean {
   return RUN_TYPES.includes(stravaActivityType);
 }
+
+/** The Strava-style type a manually confirmed session of this sport is logged as. */
+export const MANUAL_TYPE_FOR_KIND: Record<string, string> = {
+  run: "Run", cycle: "Ride", swim: "Swim", hike: "Hike",
+  strength: "WeightTraining", climb: "RockClimbing", other: "Workout",
+};

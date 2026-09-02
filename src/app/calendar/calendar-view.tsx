@@ -9,6 +9,8 @@ import { PageHeader } from "../nav";
 import { categoryMeta, EVENT_CATEGORY_META, getWorkoutTypeColor } from "@/lib/categories";
 import { useScreenContext, useDataChanged } from "@/lib/capture-context";
 import { isCompatibleType, isRunning } from "@/lib/activity-types";
+import { isAutoDetectable } from "@/lib/plan-progress";
+import { ResolveButtons } from "@/app/resolve-buttons";
 
 // --- Types ---
 
@@ -51,7 +53,9 @@ interface WorkoutDetail {
 
 // --- Planned ↔ done reconciliation (same rule as the plan tab) ---
 
-type WorkoutState = "done" | "missed" | "today" | "future";
+// "unconfirmed": past, nothing matched, and no way there could have been —
+// asked about instead of being called missed.
+type WorkoutState = "done" | "missed" | "unconfirmed" | "today" | "future";
 
 interface ReconciledDay {
   rows: { workout: WorkoutItem; matched: ActivityItem | null; state: WorkoutState }[];
@@ -60,14 +64,18 @@ interface ReconciledDay {
 
 const EMPTY_DAY = { events: [] as EventOccurrence[], workouts: [] as WorkoutItem[], activities: [] as ActivityItem[] };
 
-function reconcileDay(workouts: WorkoutItem[], activities: ActivityItem[], today: string): ReconciledDay {
+function reconcileDay(workouts: WorkoutItem[], activities: ActivityItem[], today: string, stravaConnected = true): ReconciledDay {
   const used = new Set<string>();
   const rows = workouts.map((w) => {
     const matched =
       activities.find((a) => !used.has(a.activityId) && isCompatibleType(w.activityType, a.activityType)) || null;
     if (matched) used.add(matched.activityId);
     const done = !!matched || w.status === "completed";
-    const state: WorkoutState = done ? "done" : w.date < today ? "missed" : w.date === today ? "today" : "future";
+    const state: WorkoutState = done
+      ? "done"
+      : w.date < today
+        ? isAutoDetectable(w.activityType, stravaConnected) ? "missed" : "unconfirmed"
+        : w.date === today ? "today" : "future";
     return { workout: w, matched, state };
   });
   return { rows, extras: activities.filter((a) => !used.has(a.activityId)) };
@@ -343,6 +351,11 @@ function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matche
           <p className="label-xs text-clay!">{t("calendar.missed")}</p>
           <p className="text-xs font-bold text-clay truncate">{t("calendar.notRun")}</p>
         </div>
+      ) : state === "unconfirmed" ? (
+        <div className="px-2.5 py-1.5 bg-[#faeed8] min-w-0">
+          <p className="label-xs">? {t("confirm.notConfirmed")}</p>
+          <p className="text-[10px] text-moss font-semibold truncate">{t("confirm.notConfirmedHint")}</p>
+        </div>
       ) : (
         <div className="px-2.5 py-1.5 bg-ghost min-w-0">
           <p className="label-xs">{t("calendar.actual")}</p>
@@ -444,7 +457,9 @@ function WorkoutDetailCard({
   matched,
   state,
   detail,
+  stravaConnected = true,
 }: {
+  stravaConnected?: boolean;
   workout: WorkoutItem;
   matched: ActivityItem | null;
   state: WorkoutState;
@@ -541,6 +556,15 @@ function WorkoutDetailCard({
           <p className="label-xs text-clay!">{t("calendar.missed")}</p>
           <p className="text-xs font-bold text-clay">Nothing matching was logged this day.</p>
         </div>
+      ) : state === "unconfirmed" || (state === "today" && !isAutoDetectable(workout.activityType, stravaConnected)) ? (
+        // The app can't see this sport happen — ask, don't accuse.
+        <div className="bg-[#faeed8] border-t-2 border-ink px-3 py-2 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="label-xs">{t("confirm.didItHappen")}</p>
+            <p className="text-[10px] text-moss font-semibold">{t("confirm.notConfirmedHint")}</p>
+          </div>
+          <ResolveButtons workoutId={workout.workoutId} compact />
+        </div>
       ) : (
         <Link href={`/calendar?view=day&date=${workout.date}`} className="block bg-ghost border-t-2 border-ink px-3 py-2 sticker-press">
           <p className="text-xs font-bold text-moss">
@@ -558,15 +582,17 @@ function DayView({
   today,
   details,
   onEventTap,
+  stravaConnected = true,
 }: {
   date: string;
+  stravaConnected?: boolean;
   data: { events: EventOccurrence[]; workouts: WorkoutItem[]; activities: ActivityItem[] };
   today: string;
   details: Record<string, WorkoutDetail | null>;
   onEventTap: (e: EventOccurrence) => void;
 }) {
   const t = useT();
-  const { rows, extras } = reconcileDay(data.workouts, data.activities, today);
+  const { rows, extras } = reconcileDay(data.workouts, data.activities, today, stravaConnected);
   return (
     <div className="space-y-3 pb-2">
       {data.events.length > 0 && (
@@ -577,6 +603,7 @@ function DayView({
 
       {rows.map(({ workout, matched, state }) => (
         <WorkoutDetailCard
+          stravaConnected={stravaConnected}
           key={workout.workoutId}
           workout={workout}
           matched={matched}
@@ -868,6 +895,7 @@ export default function CalendarView() {
   const [events, setEvents] = useState<EventOccurrence[]>([]);
   const [workouts, setWorkouts] = useState<WorkoutItem[]>([]);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [stravaConnected, setStravaConnected] = useState(true);
   const [formOpen, setFormOpen] = useState<EventFormData | null>(null);
   const [detail, setDetail] = useState<EventOccurrence | null>(null);
   // Per-workout depth for the day view. null = the request failed, so the card
@@ -890,7 +918,7 @@ export default function CalendarView() {
   const fetchData = useCallback(() => {
     fetch(`/api/events?from=${fetchStart}&to=${fetchEnd}`)
       .then((r) => r.json())
-      .then((d) => { setEvents(d.events || []); setWorkouts(d.workouts || []); setActivities(d.activities || []); })
+      .then((d) => { setEvents(d.events || []); setWorkouts(d.workouts || []); setActivities(d.activities || []); setStravaConnected(d.stravaConnected !== false); })
       .catch(() => {});
   }, [fetchStart, fetchEnd]);
 
@@ -998,7 +1026,7 @@ export default function CalendarView() {
         </div>
       );
     }
-    const { rows, extras } = reconcileDay(data.workouts, data.activities, today);
+    const { rows, extras } = reconcileDay(data.workouts, data.activities, today, stravaConnected);
     return (
       <div {...rowTap} className="flex gap-3 py-1.5 cursor-pointer">
         <DayLabel date={date} isToday={isToday} />
@@ -1043,7 +1071,7 @@ export default function CalendarView() {
         for (const a of data.activities) {
           if (isRunning(a.activityType) && a.distanceKm) runKm += a.distanceKm;
         }
-        const { rows } = reconcileDay(data.workouts, data.activities, today);
+        const { rows } = reconcileDay(data.workouts, data.activities, today, stravaConnected);
         const sessions = rows.filter((r) => r.workout.workoutType !== "rest");
         plannedSessions += sessions.length;
         doneSessions += sessions.filter((r) => r.state === "done").length;
@@ -1079,6 +1107,7 @@ export default function CalendarView() {
     }
     return (
       <DayView
+        stravaConnected={stravaConnected}
         date={pageAnchor}
         data={byDate.get(pageAnchor) || EMPTY_DAY}
         today={today}

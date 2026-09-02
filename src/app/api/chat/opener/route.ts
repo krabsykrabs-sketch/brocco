@@ -4,7 +4,7 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { format } from "date-fns";
 import { todayInTimezone, nowInTimezone, dateInTimezone, parseWall, wallDateString } from "@/lib/schedule";
-import { groupActivitiesByDay, workoutOutcome, activityDayKey } from "@/lib/plan-progress";
+import { groupActivitiesByDay, workoutOutcome, activityDayKey, isAutoDetectable } from "@/lib/plan-progress";
 import { ensureFreshStravaData } from "@/lib/strava-fresh";
 import { groundStatusMarker } from "@/app/api/chat/route";
 import { COACH_MODEL } from "@/lib/models";
@@ -135,18 +135,22 @@ export async function POST(request: NextRequest) {
   const byDay = groupActivitiesByDay(weekActivities);
   const daySummaries: string[] = [];
   const pastMissed: string[] = [];
+  const pastUnconfirmed: string[] = [];
+  const openerStrava = !!profile?.stravaAccessToken;
   const matchedIds = new Set<string>();
 
   for (const pw of weekPlanned) {
     const dateStr = wallDateString(pw.date);
     const { outcome, matched } = workoutOutcome(
-      { dateStr, activityType: pw.activityType, workoutType: pw.workoutType, status: pw.status },
+      { dateStr, activityType: pw.activityType, workoutType: pw.workoutType, status: pw.status, detectable: isAutoDetectable(pw.activityType, openerStrava) },
       byDay,
       todayStr
     );
     if (matched) matchedIds.add(matched.id);
     if (outcome === "rest") continue;
-    if (outcome === "missed") {
+    if (outcome === "unconfirmed") {
+      pastUnconfirmed.push(pw.title);
+    } else if (outcome === "missed") {
       pastMissed.push(pw.title);
     } else if (outcome === "done") {
       if (matched) {
@@ -184,6 +188,7 @@ export async function POST(request: NextRequest) {
   analysisContext += `Running this week: ${weekRunKm.toFixed(1)}km of ${plannedKm.toFixed(0)}km planned\n`;
   if (daySummaries.length > 0) analysisContext += `Sessions: ${daySummaries.join("; ")}\n`;
   if (pastMissed.length > 0) analysisContext += `Missed (day fully over, no matching activity): ${pastMissed.join(", ")}\n`;
+  if (pastUnconfirmed.length > 0) analysisContext += `Unconfirmed (no way to auto-detect these — they may have happened; ask lightly, never call them missed): ${pastUnconfirmed.join(", ")}\n`;
   if (extrasSummary) analysisContext += `${extrasSummary}\n`;
 
   // Trigger-specific context

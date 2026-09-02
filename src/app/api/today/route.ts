@@ -3,6 +3,8 @@ import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { getAgenda, todayInTimezone, parseWall } from "@/lib/schedule";
 import { isCompatibleType, RUN_TYPES } from "@/lib/activity-types";
+import { groupActivitiesByDay, workoutOutcome, isAutoDetectable } from "@/lib/plan-progress";
+import { addDaysWall, wallDateString } from "@/lib/schedule";
 import { resolveFeatures } from "@/lib/features";
 import { format, startOfWeek, endOfWeek, addDays } from "date-fns";
 
@@ -50,12 +52,54 @@ export async function GET() {
       },
     });
 
+    const stravaConnected = !!profile.stravaAccessToken;
     const workouts = agenda.workouts.map((w) => ({
       ...w,
       completed:
         w.status === "completed" ||
         todayActivities.some((a) => isCompatibleType(w.activityType, a.activityType)),
+      // False = the app has no way to notice this session happening, so the
+      // UI offers a one-tap Done / Skipped instead of waiting for a sync.
+      detectable: isAutoDetectable(w.activityType, stravaConnected),
     }));
+
+    // --- Recent sessions the app can't detect, still unanswered ---
+    // Only these ever get asked about: a Strava runner's runs will sync, so
+    // they never see this. Three-day window — after that we stop asking.
+    const lookbackStart = addDaysWall(todayDate, -3);
+    const lookbackEnd = addDaysWall(todayDate, -1);
+    const [pastPlanned, pastActivities] = await Promise.all([
+      prisma.plannedWorkout.findMany({
+        where: {
+          plan: { userId, status: "active" },
+          date: { gte: lookbackStart, lte: lookbackEnd },
+          status: "planned",
+          workoutType: { not: "rest" },
+        },
+        orderBy: { date: "desc" },
+        select: { id: true, title: true, date: true, activityType: true, workoutType: true, status: true, targetDurationMin: true },
+      }),
+      prisma.activity.findMany({
+        where: { userId, startDateLocal: { gte: lookbackStart, lte: parseWall(`${wallDateString(lookbackEnd)}T23:59`) } },
+        select: { activityType: true, startDateLocal: true },
+      }),
+    ]);
+    const pastByDay = groupActivitiesByDay(pastActivities);
+    const unconfirmed = pastPlanned
+      .filter((pw) =>
+        workoutOutcome(
+          { dateStr: wallDateString(pw.date), activityType: pw.activityType, workoutType: pw.workoutType, status: pw.status, detectable: isAutoDetectable(pw.activityType, stravaConnected) },
+          pastByDay,
+          today
+        ).outcome === "unconfirmed"
+      )
+      .map((pw) => ({
+        workoutId: pw.id,
+        title: pw.title,
+        date: wallDateString(pw.date),
+        activityType: pw.activityType,
+        targetDurationMin: pw.targetDurationMin,
+      }));
 
     // --- Week summary (Mon-Sun around the user's today) ---
     const weekStart = startOfWeek(todayDate, { weekStartsOn: 1 });
@@ -138,6 +182,7 @@ export async function GET() {
       timezone: profile.timezone,
       events: agenda.events,
       workouts,
+      unconfirmed,
       todos: agenda.todos,
       activities: todayActivities.map((a) => ({
         ...a,

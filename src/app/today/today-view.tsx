@@ -11,6 +11,7 @@ import { useScreenContext, useDataChanged } from "@/lib/capture-context";
 import { useFeatures } from "../features-provider";
 import { anyLifeFeature } from "@/lib/features";
 import { isCompatibleType } from "@/lib/activity-types";
+import { ResolveButtons } from "@/app/resolve-buttons";
 
 // --- Types (mirror /api/today) ---
 
@@ -22,7 +23,10 @@ interface EventOccurrence {
 interface WorkoutItem {
   workoutId: string; date: string; title: string; workoutType: string; activityType: string;
   targetDistanceKm: number | null; targetPace: string | null; targetDurationMin: number | null;
-  description: string | null; status: string; completed: boolean;
+  description: string | null; status: string; completed: boolean; detectable: boolean;
+}
+interface UnconfirmedItem {
+  workoutId: string; title: string; date: string; activityType: string; targetDurationMin: number | null;
 }
 interface TodoItem {
   todoId: string; title: string; notes: string | null; dueDate: string | null; dueTime: string | null;
@@ -37,6 +41,7 @@ interface TodayData {
   date: string; userName: string;
   events: EventOccurrence[]; workouts: WorkoutItem[]; todos: TodoItem[]; activities: ActivityRow[];
   upcoming: { events: EventOccurrence[]; workouts: WorkoutItem[] };
+  unconfirmed: UnconfirmedItem[];
   weekSummary: {
     runKm: number; plannedKm: number; completedSessions: number; totalSessions: number;
     weekNumber: number | null; totalWeeks: number; phaseName: string | null;
@@ -103,6 +108,7 @@ function EventRow({ event }: { event: EventOccurrence }) {
  * happened on the right — real distance/pace instead of a tiny badge.
  */
 function WorkoutRow({ workout, matched }: { workout: WorkoutItem; matched: ActivityRow | null }) {
+  const t = useT();
   if (workout.workoutType === "rest") {
     return (
       <div className="flex items-center gap-3 bg-ghost border-2 border-ink/20 rounded-xl px-3.5 py-2.5">
@@ -150,10 +156,17 @@ function WorkoutRow({ workout, matched }: { workout: WorkoutItem; matched: Activ
           {isStrength ? (
             <span className="btn-brocco self-start px-3 py-1.5 text-xs">Start ▶</span>
           ) : (
-            <>
-              <p className="label-xs mb-0.5">Actual</p>
-              <p className="text-sm font-bold text-ghost-ink">— not yet run</p>
-            </>
+            workout.detectable ? (
+              <>
+                <p className="label-xs mb-0.5">{t("calendar.actual")}</p>
+                <p className="text-sm font-bold text-ghost-ink">—</p>
+              </>
+            ) : (
+              <>
+                <p className="label-xs mb-1">{t("confirm.didItHappen")}</p>
+                <ResolveButtons workoutId={workout.workoutId} compact />
+              </>
+            )
           )}
         </div>
       )}
@@ -287,6 +300,36 @@ function BriefingCard({ briefing, loading }: { briefing: string | null; loading:
             )}
           </div>
         )}
+      </div>
+    </section>
+  );
+}
+
+// --- Unconfirmed sessions (the app can't detect these; ask once, quietly) ---
+
+function UnconfirmedCard({ items, today }: { items: UnconfirmedItem[]; today: string }) {
+  const t = useT();
+  if (items.length === 0) return null;
+  const yesterday = new Date(`${today}T00:00:00`);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yIso = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
+  const dayLabel = (iso: string) =>
+    iso === yIso ? t("confirm.yesterday") : new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, { weekday: "long" });
+  return (
+    <section className="mb-3 sticker-lg px-4 py-3">
+      <p className="label-xs mb-2">🤔 {t("confirm.didItHappen")}</p>
+      <div className="space-y-2">
+        {items.map((it) => (
+          <div key={it.workoutId} className="flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-ink truncate">{it.title}</p>
+              <p className="text-xs text-moss font-semibold">
+                {dayLabel(it.date)}{it.targetDurationMin ? ` · ${it.targetDurationMin} ${t("common.min")}` : ""}
+              </p>
+            </div>
+            <ResolveButtons workoutId={it.workoutId} />
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -471,6 +514,9 @@ export default function TodayView() {
 
       {/* Morning briefing */}
       <BriefingCard briefing={briefing} loading={briefingLoading} />
+
+      {/* Sessions the app couldn't detect — one quiet question, gone once answered */}
+      <UnconfirmedCard items={data.unconfirmed || []} today={data.date} />
 
       {/* Weekly review (Sunday evening / Monday only) */}
       <WeeklyReviewCard />

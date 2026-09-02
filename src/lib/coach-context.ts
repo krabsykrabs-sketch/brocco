@@ -13,7 +13,7 @@ import {
   formatDateShort,
   addDaysWall,
 } from "@/lib/schedule";
-import { groupActivitiesByDay, workoutOutcome, activityDayKey } from "@/lib/plan-progress";
+import { groupActivitiesByDay, workoutOutcome, activityDayKey, isAutoDetectable } from "@/lib/plan-progress";
 import { getPaceCurve, formatTimeSec, formatPaceSec } from "@/lib/run-trends";
 import type { StravaLap } from "@/lib/strava";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
@@ -417,6 +417,9 @@ async function buildPlanContext(userId: string, timezone: string): Promise<strin
   const weekStart = addDaysWall(todayWall, -(dow - 1));
   const rangeEnd = addDaysWall(weekStart, 13);
 
+  const planProfile = await prisma.userProfile.findUnique({ where: { userId }, select: { stravaAccessToken: true } });
+  const planStravaConnected = !!planProfile?.stravaAccessToken;
+
   const [workouts, weekActivities] = await Promise.all([
     prisma.plannedWorkout.findMany({
       where: { planId: plan.id, date: { gte: weekStart, lte: rangeEnd } },
@@ -466,7 +469,7 @@ async function buildPlanContext(userId: string, timezone: string): Promise<strin
   const renderLine = (w: (typeof workouts)[number]) => {
     const dateStr = wallDateString(w.date);
     const { outcome, matched } = workoutOutcome(
-      { dateStr, activityType: w.activityType, workoutType: w.workoutType, status: w.status },
+      { dateStr, activityType: w.activityType, workoutType: w.workoutType, status: w.status, detectable: isAutoDetectable(w.activityType, planStravaConnected) },
       byDay,
       todayStr
     );
@@ -487,6 +490,9 @@ async function buildPlanContext(userId: string, timezone: string): Promise<strin
       }
       case "missed":
         ann = "✗ NOT DONE";
+        break;
+      case "unconfirmed":
+        ann = "? UNCONFIRMED — the app has NO way to detect this session (not a Strava sport, or Strava not connected), so it may well have happened. Never call it missed. Ask about it lightly, at most once, and log it with log_activity when they answer.";
         break;
       case "skipped":
         ann = "skipped";

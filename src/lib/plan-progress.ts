@@ -33,10 +33,22 @@ export function groupActivitiesByDay<T extends MatchableActivity>(
   return map;
 }
 
-export type WorkoutOutcome = "done" | "missed" | "skipped" | "today_pending" | "upcoming" | "rest";
+/**
+ * Strava records the sports it is built around. A planned session in any
+ * other sport — climbing, off-app strength, "other" — can never be matched
+ * automatically, so its absence is not evidence of anything. Those sessions
+ * get asked about; Strava-detectable ones never are.
+ */
+const STRAVA_SPORTS = new Set(["run", "cycle", "swim", "hike"]);
+export function isAutoDetectable(activityType: string, stravaConnected: boolean): boolean {
+  return stravaConnected && STRAVA_SPORTS.has(activityType);
+}
+
+/** "unconfirmed" = past, no activity, and no way there could have been one. */
+export type WorkoutOutcome = "done" | "missed" | "unconfirmed" | "skipped" | "today_pending" | "upcoming" | "rest";
 
 export function workoutOutcome<T extends MatchableActivity>(
-  workout: { dateStr: string; activityType: string; workoutType: string; status: string },
+  workout: { dateStr: string; activityType: string; workoutType: string; status: string; detectable?: boolean },
   byDay: Map<string, T[]>,
   todayStr: string
 ): { outcome: WorkoutOutcome; matched: T | null } {
@@ -48,7 +60,9 @@ export function workoutOutcome<T extends MatchableActivity>(
 
   if (matched || workout.status === "completed") return { outcome: "done", matched };
   if (workout.status === "skipped") return { outcome: "skipped", matched: null };
-  if (workout.dateStr < todayStr) return { outcome: "missed", matched: null };
+  if (workout.dateStr < todayStr) {
+    return { outcome: workout.detectable === false ? "unconfirmed" : "missed", matched: null };
+  }
   if (workout.dateStr === todayStr) return { outcome: "today_pending", matched: null };
   return { outcome: "upcoming", matched: null };
 }

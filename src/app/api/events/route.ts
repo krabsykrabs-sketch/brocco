@@ -62,7 +62,12 @@ export async function GET(request: NextRequest) {
     }))
     .filter((a) => a.date >= from && a.date <= to);
 
-  return NextResponse.json({ events, workouts, activities });
+  // The calendar needs this to tell "missed" from "no way to know".
+  const evProfile = await prisma.userProfile.findUnique({
+    where: { userId: session.userId },
+    select: { stravaAccessToken: true },
+  });
+  return NextResponse.json({ events, workouts, activities, stravaConnected: !!evProfile?.stravaAccessToken });
 }
 
 /** POST /api/events — create event (manual form) */
