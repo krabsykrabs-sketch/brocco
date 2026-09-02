@@ -12,6 +12,9 @@ import { EquipmentSection } from "./equipment-section";
 import { Suspense } from "react";
 
 
+/** "" is the running default (stored as null). Anything else Brocco saved from chat shows as its own option. */
+const PRIMARY_SPORTS = ["", "climbing", "cycling", "swimming", "triathlon", "hyrox"];
+
 interface ProfileData {
   name: string;
   email: string;
@@ -24,6 +27,7 @@ interface ProfileData {
   intervalsAthleteId: string | null;
   timezone: string;
   language: string | null;
+  primarySport: string | null;
   goalRace: string | null;
   goalTime: string | null;
   goalRaceDate: string | null;
@@ -139,6 +143,7 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
       <h2 className="text-lg font-extrabold mb-1">{t("settings.watchSync")}</h2>
       <p className="text-xs text-moss mb-3">
         Your planned workouts on your COROS or Garmin — intervals, paces, and all — via a free intervals.icu account.
+        Only runs and rides go to the watch; strength, climbing and other sessions stay in the app.
       </p>
       <div className="sticker p-4 space-y-3">
         {connected ? (
@@ -669,6 +674,21 @@ function SettingsContent() {
    * re-renders in the new language immediately, so a "did that apply?" moment
    * would be strange. The provider re-reads via FEATURES_CHANGED_EVENT.
    */
+  // Same save-on-change treatment as language: it changes how Brocco talks
+  // from the next message, and there is nothing else on the form it belongs to.
+  async function handlePrimarySportChange(next: string) {
+    setProfile((p) => (p ? { ...p, primarySport: next || null } : p));
+    try {
+      await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ primarySport: next }),
+      });
+    } catch {
+      /* optimistic value stays; next load re-reads */
+    }
+  }
+
   async function handleLanguageChange(next: Lang) {
     setSavingLang(true);
     setProfile((p) => (p ? { ...p, language: next } : p));
@@ -856,6 +876,22 @@ function SettingsContent() {
               ))}
             </select>
             <p className="text-xs text-moss font-semibold mt-1">{t("settings.languageHint")}</p>
+          </div>
+          <div>
+            <label className="label-xs block mb-1">{t("settings.primarySport")}</label>
+            <select
+              value={PRIMARY_SPORTS.includes(profile?.primarySport || "") ? profile?.primarySport || "" : profile?.primarySport ? "__custom" : ""}
+              onChange={(e) => { if (e.target.value !== "__custom") handlePrimarySportChange(e.target.value); }}
+              className="field"
+            >
+              {PRIMARY_SPORTS.map((sp) => (
+                <option key={sp} value={sp}>{t(`sport.${sp || "running"}` as Parameters<typeof t>[0])}</option>
+              ))}
+              {profile?.primarySport && !PRIMARY_SPORTS.includes(profile.primarySport) && (
+                <option value="__custom">{profile.primarySport}</option>
+              )}
+            </select>
+            <p className="text-xs text-moss font-semibold mt-1">{t("settings.primarySportHint")}</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

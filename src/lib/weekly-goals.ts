@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { parseWall, wallDateString, addDaysWall, todayInTimezone } from "@/lib/schedule";
+import { RUN_TYPES, CYCLE_TYPES, SWIM_TYPES, CLIMB_TYPES } from "@/lib/activity-types";
 
 /**
  * Flexible weekly goals — "do this N times this week", days unspecified.
@@ -22,6 +23,8 @@ const CATEGORY_ACTIVITY_TYPES: Record<string, string[]> = {
   strength: ["WeightTraining", "Crossfit", "Workout"],
   mobility: ["Yoga", "Pilates", "Workout"],
   recovery: ["Yoga", "Walk", "Hike"],
+  // "Three climbing sessions this week": any session of the sport itself.
+  sport: [...CLIMB_TYPES, ...CYCLE_TYPES, ...SWIM_TYPES, ...RUN_TYPES],
   // Nothing in an activity feed evidences a nutrition goal, and "other" is too
   // vague to guess at. Both are tracked, neither auto-credits.
   nutrition: [],

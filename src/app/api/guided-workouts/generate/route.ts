@@ -5,6 +5,9 @@ import { prisma } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
 import { validateWorkoutDefinition, estimateDurationMin, type WorkoutDefinition } from "@/lib/guided-workout";
 import { UTILITY_MODEL } from "@/lib/models";
+import { ILLUSTRATED_LABELS } from "@/lib/exercise-art";
+import { resolveLang, LANGUAGE_FULL } from "@/lib/i18n";
+import { sportProfile } from "@/lib/sport";
 
 const anthropic = new Anthropic();
 
@@ -21,13 +24,14 @@ const DEFINITION_SPEC = `Return ONLY a JSON object, no other text:
         "rounds": 3,            // 1-10
         "restBetweenRoundsSec": 45,
         "exercises": [          // 3-8 per block
-          { "name": "Plank", "mode": "time", "workSec": 40, "restSec": 15, "note": "short form cue" },
-          { "name": "Push-ups", "mode": "reps", "reps": 12, "restSec": 30 }
+          { "name": "Plank", "art": "plank", "mode": "time", "workSec": 40, "restSec": 15, "note": "short form cue" },
+          { "name": "Push-ups", "art": "push-ups", "mode": "reps", "reps": 12, "restSec": 30 }
         ]
       }
     ]
   }
 }
+"art" is the diagram key: the ILLUSTRATED EXERCISES name in lowercase with hyphens ("Side plank" -> "side-plank", "Calf raises (bent knee)" -> "calf-raises-bent-knee"). ALWAYS set it when an illustrated exercise fits — the picture is chosen by this key, not by the name, so it matters most when the name is written in another language. Omit it only for an exercise with no diagram.
 Rules: bodyweight-only unless equipment was mentioned. Prefer mode "time" (30-45s work) for a smooth timer flow; use "reps" only where counting matters. Left/right exercises are TWO entries. Notes are short form cues. Respect any injuries listed — work around them, never load them.`;
 
 /**
@@ -81,9 +85,21 @@ export async function POST(request: NextRequest) {
     ? `\nACTIVE INJURIES (work around these): ${injuries.map((i) => `${i.bodyPart ? `[${i.bodyPart}] ` : ""}${i.description}${i.severity ? ` (${i.severity})` : ""}`).join("; ")}`
     : "";
 
+  // Sport and language: plan strength sessions used to come out as English
+  // sessions "for runners" with no diagram keys, whatever the athlete did.
+  const prefs = await prisma.userProfile.findUnique({ where: { userId }, select: { primarySport: true, language: true } });
+  const sp = sportProfile(prefs?.primarySport);
+  const lang = resolveLang(prefs?.language);
+  const sportLine = sp.isClimbing
+    ? " Climbers need antagonist work (push, shoulder stability), core, hips and forearm/finger care; never add hard finger loading to a conditioning session."
+    : sp.sessionsBased
+      ? ` Build conditioning that supports ${sp.sport}.`
+      : "";
+  const languageLine = lang === "en" ? "" : ` Write title, focus, exercise names and notes in ${LANGUAGE_FULL[lang]}; keep "art" keys and "mode" values exactly as specified.`;
+
   const ask = planned
-    ? `Create the guided S&C session for this planned workout from a runner's training plan:\nTitle: ${planned.title}\nDescription: ${planned.description || "(none)"}\nTarget duration: ${planned.targetDurationMin ? `${planned.targetDurationMin} min` : "15-20 min"}${injuryBlock}`
-    : `Create a guided S&C session for a runner who asked: "${freeform}"${injuryBlock}`;
+    ? `Create the guided S&C session for this planned workout from a ${sp.athleteNoun}'s training plan:\nTitle: ${planned.title}\nDescription: ${planned.description || "(none)"}\nTarget duration: ${planned.targetDurationMin ? `${planned.targetDurationMin} min` : "15-20 min"}${injuryBlock}`
+    : `Create a guided S&C session for a ${sp.athleteNoun} who asked: "${freeform}"${injuryBlock}`;
 
   let parsed: { title?: string; focus?: string; definition?: unknown } | null = null;
   let def: WorkoutDefinition | null = null;
@@ -94,7 +110,7 @@ export async function POST(request: NextRequest) {
         model: UTILITY_MODEL,
         // Sonnet 5 thinks by default; thinking shares the cap.
         max_tokens: 8000,
-        system: `You are Brocco, a running coach designing strength & conditioning sessions for runners. ${DEFINITION_SPEC}`,
+        system: `You are Brocco, a ${sp.coachNoun} designing strength & conditioning sessions for ${sp.athleteNoun}s.${sportLine}${languageLine}\n\nILLUSTRATED EXERCISES (these have diagrams): ${ILLUSTRATED_LABELS.join(", ")}\n\n${DEFINITION_SPEC}`,
         messages: [
           {
             role: "user",

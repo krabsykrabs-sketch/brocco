@@ -19,6 +19,7 @@ import { format } from "date-fns";
 import { COACH_MODEL } from "@/lib/models";
 import { rateLimit } from "@/lib/rate-limit";
 import { generateNumberChecked } from "@/lib/number-guard";
+import { sportProfile, totalMinutes } from "@/lib/sport";
 
 const anthropic = new Anthropic();
 
@@ -97,7 +98,7 @@ export async function GET(request: NextRequest) {
       orderBy: { startDateLocal: "asc" },
       select: {
         name: true, activityType: true, distanceKm: true, avgPacePerKm: true,
-        avgHeartRate: true, startDateLocal: true, activityAnalysis: true,
+        avgHeartRate: true, startDateLocal: true, activityAnalysis: true, durationMin: true,
       },
     }),
     prisma.plannedWorkout.findMany({
@@ -145,8 +146,8 @@ export async function GET(request: NextRequest) {
   for (const a of activities) {
     const an = a.activityAnalysis as unknown as ActivityAnalysis | null;
     if (!an) continue;
-    if (an.effortVsPlanned === "harder_than_planned") intensityNotes.push(`${a.name}: ran harder than planned`);
-    if (an.effortVsPlanned === "easier_than_planned") intensityNotes.push(`${a.name}: ran easier than planned`);
+    if (an.effortVsPlanned === "harder_than_planned") intensityNotes.push(`${a.name}: harder than planned`);
+    if (an.effortVsPlanned === "easier_than_planned") intensityNotes.push(`${a.name}: easier than planned`);
     if (an.decouplingPct != null && an.decouplingPct >= 8) intensityNotes.push(`${a.name}: high cardiac drift (+${an.decouplingPct}%)`);
   }
 
@@ -156,11 +157,17 @@ export async function GET(request: NextRequest) {
     null
   );
 
+  // A climber's review used to open with "Running: 0.0km of 0km planned".
+  const sp = sportProfile(profile.primarySport);
   let dataBlock = `WEEK REVIEWED: ${weekStartStr} to ${weekEndStr}${force && dow !== 0 && dow !== 1 ? " (week still in progress)" : ""}\n`;
-  dataBlock += `Running: ${runKm.toFixed(1)}km of ${plannedKm.toFixed(0)}km planned; sessions completed ${completed}/${nonRest.length}.\n`;
+  if (sp.sessionsBased) {
+    dataBlock += `Training (${sp.sport}): ${completed}/${nonRest.length} planned sessions completed; ${activities.length} sessions recorded, ${totalMinutes(activities)} minutes in total${runKm > 0 ? `; plus ${runKm.toFixed(1)}km of running` : ""}.\n`;
+  } else {
+    dataBlock += `Running: ${runKm.toFixed(1)}km of ${plannedKm.toFixed(0)}km planned; sessions completed ${completed}/${nonRest.length}.\n`;
+  }
   if (missed.length) dataBlock += `Missed: ${missed.join(", ")}.\n`;
   if (unconfirmed.length) dataBlock += `Unconfirmed (no way to auto-detect these — they may have happened; never call them missed): ${unconfirmed.join(", ")}.\n`;
-  if (longest && Number(longest.distanceKm || 0) > 0) {
+  if (!sp.sessionsBased && longest && Number(longest.distanceKm || 0) > 0) {
     dataBlock += `Longest run: "${longest.name}" ${Number(longest.distanceKm).toFixed(1)}km${longest.avgPacePerKm ? ` @ ${longest.avgPacePerKm}` : ""}.\n`;
   }
   if (intensityNotes.length) dataBlock += `Intensity flags: ${intensityNotes.join("; ")}.\n`;
@@ -177,7 +184,7 @@ export async function GET(request: NextRequest) {
         // truncate. Low effort: this is templated prose, not coaching strategy.
         max_tokens: 4000,
         output_config: { effort: "low" },
-        system: `You are Brocco, a broccoli running coach and life assistant, writing the weekly review shown on the Today screen. 4-6 short sentences, two parts: (1) the week that was — headline numbers, one genuine highlight, one honest observation (missed sessions, intensity discipline) without nagging; (2) next week — the key session, any calendar collisions with training worth flagging, and one concrete focus. Quote only figures that appear in the data — never calculate or estimate distances. Plain text, no markdown, no greeting, no questions. Direct, warm, specific. A single vegetable flourish is allowed if it earns its place.`,
+        system: `You are Brocco, a broccoli ${sp.coachNoun} and life assistant, writing the weekly review shown on the Today screen. 4-6 short sentences, two parts: (1) the week that was — headline numbers, one genuine highlight, one honest observation (missed sessions, intensity discipline) without nagging; (2) next week — the key session, any calendar collisions with training worth flagging, and one concrete focus. Quote only figures that appear in the data — never calculate or estimate distances${sp.sessionsBased ? "; this athlete trains in sessions and minutes, never talk in kilometres unless the data lists running" : ""}. Plain text, no markdown, no greeting, no questions. Direct, warm, specific. A single vegetable flourish is allowed if it earns its place.`,
         messages: [
           {
             role: "user",
@@ -194,7 +201,9 @@ export async function GET(request: NextRequest) {
     console.error("Weekly review generation error:", err);
   }
   if (!content) {
-    content = `Week done: ${runKm.toFixed(1)}km of ${plannedKm.toFixed(0)}km planned, ${completed}/${nonRest.length} sessions completed.`;
+    content = sp.sessionsBased
+      ? `Week done: ${completed}/${nonRest.length} sessions completed, ${totalMinutes(activities)} minutes trained.`
+      : `Week done: ${runKm.toFixed(1)}km of ${plannedKm.toFixed(0)}km planned, ${completed}/${nonRest.length} sessions completed.`;
   }
 
   await prisma.weeklyReview.upsert({

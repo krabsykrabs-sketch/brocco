@@ -148,3 +148,55 @@ export function formatPaceSec(secPerKm: number): string {
   const s = secPerKm % 60;
   return `${m}:${String(s).padStart(2, "0")}/km`;
 }
+
+
+export interface WeekSessionMix {
+  weekStart: string; // yyyy-MM-dd (Monday)
+  label: string; // "Jul 14"
+  sessions: number;
+  minutes: number;
+  /** Minutes by bucket: climb / strength / run / ride / other. */
+  byKind: { climb: number; strength: number; run: number; ride: number; other: number };
+}
+
+const KIND_OF: Array<[keyof WeekSessionMix["byKind"], string[]]> = [
+  ["climb", ["RockClimbing"]],
+  ["strength", ["WeightTraining", "Workout", "Crossfit"]],
+  ["run", RUN_TYPES],
+  ["ride", ["Ride", "VirtualRide", "EBikeRide", "MountainBikeRide"]],
+];
+
+/**
+ * Sessions and minutes per week across ALL activity types. The pace curve
+ * and zone mix are running-only, so a climber's History page had no trend
+ * at all; this is the one they get, and runners see it beside theirs.
+ */
+export async function getWeeklySessionMix(userId: string, weeks = 8): Promise<WeekSessionMix[]> {
+  const now = new Date();
+  const thisWeekStart = startOfWeek(now, { weekStartsOn: 1 });
+  const rangeStart = subWeeks(thisWeekStart, weeks - 1);
+
+  const activities = await prisma.activity.findMany({
+    where: { userId, startDateLocal: { gte: rangeStart } },
+    select: { startDateLocal: true, activityType: true, movingTimeMin: true, durationMin: true },
+  });
+
+  const rows: WeekSessionMix[] = [];
+  for (let i = weeks - 1; i >= 0; i--) {
+    const ws = subWeeks(thisWeekStart, i);
+    const we = endOfWeek(ws, { weekStartsOn: 1 });
+    const byKind = { climb: 0, strength: 0, run: 0, ride: 0, other: 0 };
+    let sessions = 0;
+    let minutes = 0;
+    for (const a of activities) {
+      if (a.startDateLocal < ws || a.startDateLocal > we) continue;
+      const min = Math.round(Number(a.movingTimeMin ?? a.durationMin ?? 0));
+      sessions++;
+      minutes += min;
+      const kind = KIND_OF.find(([, types]) => types.includes(a.activityType))?.[0] ?? "other";
+      byKind[kind] += min;
+    }
+    rows.push({ weekStart: format(ws, "yyyy-MM-dd"), label: format(ws, "MMM d"), sessions, minutes, byKind });
+  }
+  return rows;
+}

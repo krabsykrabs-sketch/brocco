@@ -442,6 +442,8 @@ enum TaskCategory {
   nutrition
   recovery
   other
+  /// A session of the athlete's sport itself — climbing, riding, swimming, running.
+  sport
 }
 
 enum TaskStatus {

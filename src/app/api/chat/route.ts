@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     where: { id: session.userId },
     select: { name: true },
   });
-  const userName = user?.name || "Runner";
+  const userName = user?.name || "Athlete";
 
   const context = await buildCoachContext(session.userId);
   const { staticPart, dynamicPart } = await buildSystemPrompt(

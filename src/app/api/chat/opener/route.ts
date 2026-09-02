@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
     }),
   ]);
 
-  const userName = user?.name || "Runner";
+  const userName = user?.name || "Athlete";
 
   // Day-by-day reconciliation — the SAME matcher the plan tab and chat
   // context use, covering every activity type (incl. strength/WeightTraining

@@ -16,6 +16,7 @@ import { renderWeeklyGoalsLine } from "@/lib/weekly-goals";
 import { generateNumberChecked } from "@/lib/number-guard";
 import { rateLimit } from "@/lib/rate-limit";
 import { weekTrainingFigures } from "@/lib/week-training";
+import { sportProfile, totalMinutes } from "@/lib/sport";
 
 const anthropic = new Anthropic();
 
@@ -74,10 +75,15 @@ export async function GET(request: NextRequest) {
 
   // Same shared figures as the opener: one week definition, one running total,
   // with the timezone pad trimmed off exactly once.
-  const { runKm: weekRunKm } = await weekTrainingFigures(userId, today);
+  const { runKm: weekRunKm, activities: weekActs } = await weekTrainingFigures(userId, today);
+  const sp = sportProfile(profile.primarySport);
 
   let dataBlock = `Today (${format(todayDate, "EEEE, MMMM d")}):\n${renderAgendaText(agenda)}\n`;
-  dataBlock += `\nRunning this week so far: ${weekRunKm.toFixed(1)}km.`;
+  // Sessions and minutes for a climber/cyclist — "Running this week: 0.0km"
+  // was the first line of every briefing they got.
+  dataBlock += sp.sessionsBased
+    ? `\nTraining this week so far: ${weekActs.length} session${weekActs.length === 1 ? "" : "s"}, ${totalMinutes(weekActs)} minutes${weekRunKm > 0 ? ` (incl. ${weekRunKm.toFixed(1)}km running)` : ""}.`
+    : `\nRunning this week so far: ${weekRunKm.toFixed(1)}km.`;
   if (activePlan) {
     dataBlock += ` Active plan: "${activePlan.name}"${activePlan.raceDate ? ` (race ${format(new Date(activePlan.raceDate), "MMM d")})` : ""}.`;
   }
@@ -91,7 +97,7 @@ export async function GET(request: NextRequest) {
   dataBlock += await renderWeeklyGoalsLine(userId, profile.timezone);
 
   let content: string;
-  const systemPrompt = `You are Brocco, a broccoli who is ${user?.name || "the user"}'s running coach and life assistant. Write the morning briefing for the top of their Today screen: 2-3 short sentences summarizing the day — appointments, today's workout, due tasks — plus anything genuinely worth flagging (a conflict, an overdue item, a birthday coming up, yesterday's run worth a nod). Plain text, no markdown, no greeting, no status tags, no questions. Direct and specific; mention times. NUMBERS: quote only distances that appear in the data below, exactly as written — never calculate, sum or estimate one, and never add bike kilometres to running kilometres. If the day is empty, say so briefly and point at the week's training. Today is ${format(todayDate, "EEEE, MMMM d, yyyy")}.`;
+  const systemPrompt = `You are Brocco, a broccoli who is ${user?.name || "the user"}'s ${sp.coachNoun} and life assistant. Write the morning briefing for the top of their Today screen: 2-3 short sentences summarizing the day — appointments, today's workout, due tasks — plus anything genuinely worth flagging (a conflict, an overdue item, a birthday coming up, yesterday's session worth a nod). Plain text, no markdown, no greeting, no status tags, no questions. Direct and specific; mention times. NUMBERS: quote only distances that appear in the data below, exactly as written — never calculate, sum or estimate one, and never add bike kilometres to running kilometres${sp.sessionsBased ? "; this athlete trains in sessions and minutes — don't talk in kilometres unless the data lists running" : ""}. If the day is empty, say so briefly and point at the week's training. Today is ${format(todayDate, "EEEE, MMMM d, yyyy")}.`;
 
   try {
     // Same distance check as the opener — this text is generated from a data

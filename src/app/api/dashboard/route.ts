@@ -313,7 +313,7 @@ export async function GET() {
     const activityCount = await prisma.activity.count({ where: { userId } });
 
     return NextResponse.json({
-      userName: user?.name || "Runner",
+      userName: user?.name || "Athlete",
       goalRace: profile.goalRace,
       goalTime: profile.goalTime,
       stravaConnected,

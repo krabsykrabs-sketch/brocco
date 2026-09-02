@@ -36,6 +36,7 @@ export async function GET() {
       hrMaxBpm: profile.hrMaxBpm,
       features: resolveFeatures(profile.features),
       language: profile.language,
+      primarySport: profile.primarySport,
       icsFeedUrl: profile.icsToken ? `${process.env.BASE_URL}/api/calendar/ics?token=${profile.icsToken}` : null,
       stravaConnected: !!profile.stravaAccessToken,
       stravaAthleteId: profile.stravaAthleteId,
@@ -59,7 +60,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, timezone, goalRace, goalTime, goalRaceDate, hrMaxBpm, features, language } = body;
+    const { name, timezone, goalRace, goalTime, goalRaceDate, hrMaxBpm, features, language, primarySport } = body;
 
     if (name !== undefined) {
       await prisma.user.update({
@@ -82,6 +83,12 @@ export async function PUT(request: NextRequest) {
     // Unknown codes are ignored rather than stored, so a bad value can never
     // leave the app in a language that has no dictionary.
     if (language !== undefined) profileUpdate.language = isLang(language) ? language : null;
+    // Free text (the coach saves whatever the athlete said); "" / "running"
+    // mean the running default and are stored as null.
+    if (primarySport !== undefined) {
+      const v = String(primarySport || "").trim().toLowerCase().slice(0, 40);
+      profileUpdate.primarySport = v && v !== "running" && v !== "run" ? v : null;
+    }
     if (features !== undefined) {
       // Normalize through resolveFeatures so only known keys with boolean
       // values are ever stored

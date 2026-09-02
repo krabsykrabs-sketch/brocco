@@ -96,6 +96,14 @@ function ActivityCard({ activity }: { activity: Activity }) {
   );
 }
 
+interface WeekSessionMix {
+  weekStart: string;
+  label: string;
+  sessions: number;
+  minutes: number;
+  byKind: { climb: number; strength: number; run: number; ride: number; other: number };
+}
+
 interface PaceCurveEntry {
   distanceM: number; label: string; bestTimeSec: number; paceSecPerKm: number;
   activityName: string; date: string; prevBestTimeSec: number | null;
@@ -121,23 +129,61 @@ const ZONE_COLORS = ["#99a17e", "#9ccb2e", "#e0b23c", "#e8813c", "#d9534c"];
 function TrendsSection() {
   const [paceCurve, setPaceCurve] = useState<PaceCurveEntry[]>([]);
   const [weeks, setWeeks] = useState<WeekZoneMix[]>([]);
+  const [sessionWeeks, setSessionWeeks] = useState<WeekSessionMix[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     fetch("/api/trends")
       .then((r) => r.json())
-      .then((d) => { setPaceCurve(d.paceCurve || []); setWeeks(d.weeklyZones || []); })
+      .then((d) => { setPaceCurve(d.paceCurve || []); setWeeks(d.weeklyZones || []); setSessionWeeks(d.weeklySessions || []); })
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, []);
 
   const hasZones = weeks.some((w) => w.analyzedMin > 0);
-  if (!loaded || (paceCurve.length === 0 && !hasZones)) return null;
+  // Sessions-per-week is the trend every athlete has. Shown whenever there
+  // is non-running training in the window, or nothing running-specific to
+  // show — a climber's History used to have no trends card at all.
+  const nonRunMinutes = sessionWeeks.reduce((s, w) => s + w.minutes - w.byKind.run, 0);
+  const hasSessions = sessionWeeks.some((w) => w.sessions > 0) && (nonRunMinutes > 0 || (paceCurve.length === 0 && !hasZones));
+  if (!loaded || (paceCurve.length === 0 && !hasZones && !hasSessions)) return null;
 
   const maxMin = Math.max(...weeks.map((w) => w.zoneMin.reduce((a, b) => a + b, 0)), 1);
+  const maxSessionMin = Math.max(...sessionWeeks.map((w) => w.minutes), 1);
+  const KIND_COLORS: Record<string, string> = { climb: "#6db3e8", strength: "#e0b23c", run: "#9ccb2e", ride: "#e8813c", other: "#99a17e" };
+  const kindsPresent = (["climb", "strength", "run", "ride", "other"] as const).filter((k) => sessionWeeks.some((w) => w.byKind[k] > 0));
 
   return (
     <div className="mb-6 space-y-4">
+      {hasSessions && (
+        <div className="sticker p-4">
+          <p className="label-xs mb-3">Sessions per week · minutes by sport</p>
+          <div className="flex items-end gap-1.5 h-20">
+            {sessionWeeks.map((w) => (
+              <div key={w.weekStart} className="flex-1 flex flex-col justify-end h-full" title={`${w.label}: ${w.sessions} session${w.sessions === 1 ? "" : "s"}, ${w.minutes} min`}>
+                <div className="w-full flex flex-col-reverse rounded-[4px] overflow-hidden" style={{ height: `${(w.minutes / maxSessionMin) * 100}%` }}>
+                  {kindsPresent.map((k) =>
+                    w.byKind[k] > 0 ? (
+                      <div key={k} style={{ height: `${(w.byKind[k] / Math.max(w.minutes, 1)) * 100}%`, backgroundColor: KIND_COLORS[k] }} className="w-full" />
+                    ) : null
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-1.5 mt-1">
+            {sessionWeeks.map((w) => (
+              <p key={w.weekStart} className="flex-1 text-center text-[9px] text-sage font-bold">{w.sessions || ""}</p>
+            ))}
+          </div>
+          <p className="text-[10px] text-sage font-semibold mt-1.5">
+            {kindsPresent.map((k) => (
+              <span key={k} className="mr-2"><span className="inline-block w-2 h-2 rounded-sm mr-1 align-middle" style={{ backgroundColor: KIND_COLORS[k] }} />{k}</span>
+            ))}
+            · number = sessions that week
+          </p>
+        </div>
+      )}
       {paceCurve.length > 0 && (
         <div className="sticker p-4">
           <p className="label-xs mb-3">Best efforts · last 90 days</p>
@@ -277,7 +323,7 @@ export default function HistoryPage() {
             <Link href="/settings" className="text-leaf font-bold underline">
               Settings
             </Link>{" "}
-            to import your runs.
+            to import your activities.
           </p>
         </div>
       ) : (

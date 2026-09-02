@@ -396,8 +396,8 @@ export const toolDefinitions: Anthropic.Tool[] = [
         },
         category: {
           type: "string",
-          enum: ["strength", "mobility", "nutrition", "recovery", "other"],
-          description: "For set. Determines which activities can count: strength counts WeightTraining/Crossfit/Workout, mobility counts Yoga/Pilates/Workout, recovery counts Yoga/Walk/Hike. nutrition and other are tracked but never auto-counted.",
+          enum: ["strength", "mobility", "nutrition", "recovery", "sport", "other"],
+          description: "For set. Determines which activities can count: strength counts WeightTraining/Crossfit/Workout, mobility counts Yoga/Pilates/Workout, recovery counts Yoga/Walk/Hike, sport counts sessions of the sport itself (climbing, rides, swims, runs). nutrition and other are tracked but never auto-counted.",
         },
         target_count: { type: "integer", description: "For set: how many sessions this week." },
         week_start: {
@@ -429,7 +429,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
               description: { type: "string", description: "e.g., '2x lower body strength (squats, lunges, calf raises)'" },
               category: {
                 type: "string",
-                enum: ["strength", "mobility", "nutrition", "recovery", "other"],
+                enum: ["strength", "mobility", "nutrition", "recovery", "sport", "other"],
               },
             },
             required: ["week_number", "description", "category"],
@@ -1471,12 +1471,12 @@ async function handleAddWeeklyTasks(
     return { success: false, error: "No active plan. Create a plan first." };
   }
 
-  const validCategories = ["strength", "mobility", "nutrition", "recovery", "other"];
+  const validCategories = ["strength", "mobility", "nutrition", "recovery", "sport", "other"];
   const taskData = tasks.map((t) => ({
     planId: activePlan.id,
     weekNumber: t.week_number,
     description: t.description,
-    category: (validCategories.includes(t.category) ? t.category : "other") as "strength" | "mobility" | "nutrition" | "recovery" | "other",
+    category: (validCategories.includes(t.category) ? t.category : "other") as "strength" | "mobility" | "nutrition" | "recovery" | "sport" | "other",
     status: "pending" as const,
   }));
 
@@ -2021,8 +2021,8 @@ async function handleManageWeeklyGoals(
     const category = String(input.category || "");
     const target = Number(input.target_count);
     if (!label) return { success: false, error: "set needs a `label`." };
-    if (!["strength", "mobility", "nutrition", "recovery", "other"].includes(category)) {
-      return { success: false, error: `\`category\` must be one of strength, mobility, nutrition, recovery, other — got "${category}".` };
+    if (!["strength", "mobility", "nutrition", "recovery", "sport", "other"].includes(category)) {
+      return { success: false, error: `\`category\` must be one of strength, mobility, nutrition, recovery, sport, other — got "${category}".` };
     }
     if (!Number.isFinite(target) || target < 1) {
       return { success: false, error: "set needs a `target_count` of at least 1." };

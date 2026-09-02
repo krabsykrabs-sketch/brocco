@@ -186,7 +186,7 @@ export async function GET() {
 
     return NextResponse.json({
       date: today,
-      userName: user?.name || "Runner",
+      userName: user?.name || "Athlete",
       timezone: profile.timezone,
       events: agenda.events,
       workouts,

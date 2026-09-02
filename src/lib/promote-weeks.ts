@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildCoachContext } from "@/lib/coach-context";
 import { format } from "date-fns";
@@ -174,32 +175,54 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
         return !Number.isNaN(d.getTime()) && !keptDays.has(w.date.slice(0, 10));
       });
 
+      // Carry ids through. Guided timer sessions, adjustment logs and the
+      // watch calendar are all keyed by planned_workout id; delete-and-recreate
+      // orphaned every one of them and regenerated each strength session (a
+      // second Opus call per week). Rows on the same day are updated in place;
+      // only genuinely new sessions are created and genuinely gone ones deleted.
+      const reusable = await prisma.plannedWorkout.findMany({
+        where: { planId: plan.id, weekNumber: week.weekNumber, status: "planned", date: { gte: todayWall } },
+        orderBy: { date: "asc" },
+        select: { id: true, date: true },
+      });
+      const pool = new Map<string, string[]>();
+      for (const r of reusable) {
+        const k = wallDateString(r.date);
+        pool.set(k, [...(pool.get(k) || []), r.id]);
+      }
+      const reusedIds = new Set<string>();
+      const writes = fresh.map((w) => {
+        const fields = {
+          date: new Date(w.date),
+          title: w.title,
+          workoutType: (w.workout_type || "easy") as "easy" | "long" | "tempo" | "interval" | "race_pace" | "recovery" | "rest" | "cross_training" | "strength" | "race" | "climbing",
+          activityType: (w.activity_type || "run") as "run" | "cycle" | "swim" | "hike" | "strength" | "rest" | "other" | "climb",
+          detailLevel: "detailed" as const,
+          targetDistanceKm: w.target_distance_km ?? null,
+          targetPace: w.target_pace || null,
+          targetDurationMin: w.target_duration_min ?? null,
+          description: w.description || null,
+          steps: w.steps === undefined ? Prisma.DbNull : (w.steps as Prisma.InputJsonValue),
+          status: "planned" as const,
+        };
+        const id = pool.get(w.date.slice(0, 10))?.shift();
+        if (id) {
+          reusedIds.add(id);
+          return prisma.plannedWorkout.update({ where: { id }, data: fields });
+        }
+        return prisma.plannedWorkout.create({
+          data: { planId: plan.id, phaseId: week.phaseId, weekNumber: week.weekNumber, ...fields },
+        });
+      });
+      const leftover = reusable.filter((r) => !reusedIds.has(r.id)).map((r) => r.id);
+
       await prisma.$transaction([
-        prisma.plannedWorkout.deleteMany({
-          where: { planId: plan.id, weekNumber: week.weekNumber, status: "planned", date: { gte: todayWall } },
-        }),
+        ...(leftover.length > 0 ? [prisma.plannedWorkout.deleteMany({ where: { id: { in: leftover } } })] : []),
         prisma.planWeek.update({
           where: { id: week.id },
           data: { detailLevel: "detailed", promotionClaimedAt: null },
         }),
-        prisma.plannedWorkout.createMany({
-          data: fresh.map((w) => ({
-            planId: plan.id,
-            phaseId: week.phaseId,
-            weekNumber: week.weekNumber,
-            date: new Date(w.date),
-            title: w.title,
-            workoutType: (w.workout_type || "easy") as "easy" | "long" | "tempo" | "interval" | "race_pace" | "recovery" | "rest" | "cross_training" | "strength" | "race" | "climbing",
-            activityType: (w.activity_type || "run") as "run" | "cycle" | "swim" | "hike" | "strength" | "rest" | "other" | "climb",
-            detailLevel: "detailed" as const,
-            targetDistanceKm: w.target_distance_km ?? null,
-            targetPace: w.target_pace || null,
-            targetDurationMin: w.target_duration_min ?? null,
-            description: w.description || null,
-            steps: w.steps ?? undefined,
-            status: "planned" as const,
-          })),
-        }),
+        ...writes,
       ]);
 
       promoted++;

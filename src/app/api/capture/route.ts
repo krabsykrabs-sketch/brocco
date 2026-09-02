@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
   // --- Build prompt ---
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
   const context = await buildCoachContext(userId);
-  const { staticPart, dynamicPart } = await buildSystemPrompt(userId, user?.name || "Runner", context, "capture");
+  const { staticPart, dynamicPart } = await buildSystemPrompt(userId, user?.name || "Athlete", context, "capture");
   // Same cache split as the chat route — captures share the user's cached
   // static prefix across the day's interactions; the volatile context rides
   // as a trailing system message.
