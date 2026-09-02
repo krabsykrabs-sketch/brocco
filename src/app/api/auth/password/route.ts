@@ -35,10 +35,15 @@ export async function POST(request: NextRequest) {
     }
 
     const newHash = await hashPassword(newPassword);
-    await prisma.user.update({
+    // Invalidate every OTHER session; re-stamp this one so the device that
+    // changed the password stays logged in.
+    const updated = await prisma.user.update({
       where: { id: session.userId },
-      data: { passwordHash: newHash },
+      data: { passwordHash: newHash, sessionEpoch: { increment: 1 } },
+      select: { sessionEpoch: true },
     });
+    session.epoch = updated.sessionEpoch;
+    await session.save();
 
     return NextResponse.json({ ok: true });
   } catch {

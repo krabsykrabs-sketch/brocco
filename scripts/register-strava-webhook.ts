@@ -40,6 +40,7 @@ async function createSubscription() {
   }
 
   console.log("Webhook registered:", data);
+  console.log(`\nPin it so forged events are rejected — set in Coolify:\n  STRAVA_WEBHOOK_SUBSCRIPTION_ID=${data.id}\n`);
 }
 
 async function main() {
@@ -50,6 +51,7 @@ async function main() {
     console.log("Existing subscription(s) found:");
     console.log(JSON.stringify(existing, null, 2));
     console.log("\nStrava only allows one subscription per app. Delete the existing one first if you want to re-register.");
+    console.log(`\nMake sure this is set in Coolify:\n  STRAVA_WEBHOOK_SUBSCRIPTION_ID=${existing[0].id}\n`);
     return;
   }
 

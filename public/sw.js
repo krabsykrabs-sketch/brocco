@@ -1,14 +1,16 @@
-// v4: precache brand assets (boot splash artwork + icons)
-const CACHE_NAME = 'brocco-v4';
+// v5: real route set. '/' always redirects (to /login or /today) and
+// cache.addAll REJECTS on a redirected response — so v4 silently precached
+// nothing at all. Each URL is now added on its own.
+const CACHE_NAME = 'brocco-v5';
 const SHELL_URLS = [
-  '/', '/chat', '/plan', '/history', '/settings', '/legal',
+  '/today', '/calendar', '/chat', '/plan', '/history', '/workout', '/kitchen', '/more', '/settings', '/legal',
   '/brand/brocco-runner.png', '/icons/icon-64.png', '/icons/icon-192.png',
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(SHELL_URLS).catch(() => {});
+      return Promise.allSettled(SHELL_URLS.map((u) => cache.add(u)));
     })
   );
   self.skipWaiting();

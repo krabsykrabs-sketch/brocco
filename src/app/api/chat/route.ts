@@ -130,7 +130,10 @@ export async function POST(request: NextRequest) {
         role: m.role as "user" | "assistant",
         content: text || "",
       };
-    });
+    })
+    // An empty assistant row (a crashed earlier turn) used to be replayed as
+    // content:"" and the API rejected every later request in the session.
+    .filter((m) => typeof m.content !== "string" || m.content.trim().length > 0);
 
   // Cache marker on the end of the SHARED prefix (the just-sent user
   // message) — not after the volatile tail, which would pay the write
@@ -191,8 +194,13 @@ export async function POST(request: NextRequest) {
           tools
         );
 
-        // Update assistant message with final text
-        const groundedText = groundStatusMarker(result.fullText, result.appliedMutation);
+        // Update assistant message with final text. A tool-only turn used to
+        // persist "" — which then poisoned the session on replay (see above).
+        const fallbackText =
+          result.toolLog.length > 0
+            ? "Done ✓ " + result.toolLog.filter((l) => l.includes("→ OK")).map((l) => l.replace(/^.*→ OK: /, "")).join("; ")
+            : "…";
+        const groundedText = groundStatusMarker(result.fullText.trim() ? result.fullText : fallbackText, result.appliedMutation);
         await prisma.chatMessage.update({
           where: { id: assistantMsg.id },
           data: {
@@ -222,7 +230,10 @@ export async function POST(request: NextRequest) {
         controller.close();
       } catch (err) {
         console.error("Chat stream error:", err);
-        const errorMsg = err instanceof Error ? err.message : "Unknown error";
+        // Never leave the empty placeholder behind — it bricked the session.
+        await prisma.chatMessage.deleteMany({ where: { sessionId, role: "assistant", displayText: "" } }).catch(() => {});
+        // Internal messages (Prisma dumps, stack fragments) stay in the log.
+        const errorMsg = "Something went wrong on my side — try that again.";
         try {
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ error: errorMsg })}\n\n`)
@@ -376,6 +387,14 @@ async function runWithTools(
       break;
     }
 
+    // A max_tokens cut-off can leave a tool_use block with half its
+    // arguments; executing it once archived a real plan behind a partial one.
+    if (response.stop_reason === "max_tokens" && toolUseBlocks.length > 0) {
+      toolLog.push("(response truncated — tool calls NOT executed)");
+      if (!fullText.trim()) fullText = "That got cut off before I could finish — ask again, maybe in a smaller step?";
+      break;
+    }
+
     // If no tool use, we're done
     if (toolUseBlocks.length === 0) {
       break;
@@ -396,12 +415,16 @@ async function runWithTools(
         }
       }
 
-      const result = await handleToolCall(
-        toolUse.name,
-        toolUse.input,
-        userId,
-        chatMessageId
-      );
+      let result: Awaited<ReturnType<typeof handleToolCall>>;
+      try {
+        result = await handleToolCall(toolUse.name, toolUse.input, userId, chatMessageId);
+      } catch (err) {
+        // A handler throw (bad enum, invalid date, Prisma validation) is a
+        // failed tool the model can recover from — not a reason to kill
+        // the stream and orphan the assistant row.
+        console.error(`[chat] tool ${toolUse.name} threw (session=${sessionId}):`, err);
+        result = { success: false, error: "The tool crashed on that input — check the values and try once more." };
+      }
 
       toolLog.push(
         result.success
@@ -424,10 +447,13 @@ async function runWithTools(
         );
       }
 
+      // is_error is what the model actually keys on; failed adjust/modify
+      // calls used to return their `data` and read exactly like success.
       toolResults.push({
         type: "tool_result",
         tool_use_id: toolUse.id,
-        content: JSON.stringify(result.data || { error: result.error }),
+        is_error: !result.success,
+        content: JSON.stringify(result.success ? (result.data ?? { ok: true }) : { error: result.error, details: result.data ?? null }),
       });
     }
 

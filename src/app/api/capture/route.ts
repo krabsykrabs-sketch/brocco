@@ -179,6 +179,11 @@ export async function POST(request: NextRequest) {
       finalText = turnText || finalText;
 
       if (toolUses.length === 0) break;
+      if (response.stop_reason === "max_tokens") {
+        // Half-formed tool arguments — never execute them.
+        finalText = "";
+        break;
+      }
 
       // Text accompanying a tool call describes an intent, not the outcome.
       // If this turns out to be the last iteration, returning it as `say`
@@ -187,7 +192,13 @@ export async function POST(request: NextRequest) {
 
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const tu of toolUses) {
-        const result = await handleToolCall(tu.name, tu.input as Record<string, unknown>, userId);
+        let result: Awaited<ReturnType<typeof handleToolCall>>;
+        try {
+          result = await handleToolCall(tu.name, tu.input as Record<string, unknown>, userId);
+        } catch (err) {
+          console.error(`[capture] tool ${tu.name} threw:`, err);
+          result = { success: false, error: "The tool crashed on that input." };
+        }
         toolLog.push(
           result.success
             ? `${tu.name} → OK: ${result.notification?.message ?? "applied"}`

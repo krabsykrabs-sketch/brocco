@@ -26,15 +26,25 @@ async function main() {
     return;
   }
 
-  const jan = existing
-    ? existing
-    : await prisma.user.create({
+  // Two containers booting against a fresh database both pass the
+  // findUnique above; the loser of the create used to exit 1 under set -e
+  // and crash-loop. A unique violation just means the other one won.
+  let jan = existing;
+  if (!jan) {
+    try {
+      jan = await prisma.user.create({
         data: {
           email: "jan@brocco.run",
           name: "Jan",
           passwordHash: await bcrypt.hash(seedPassword!, 12),
         },
       });
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      if (code !== "P2002") throw err;
+      jan = await prisma.user.findUniqueOrThrow({ where: { email: "jan@brocco.run" } });
+    }
+  }
 
   console.log(`Seed user ${existing ? "exists" : "created"} (${jan.id})`);
 

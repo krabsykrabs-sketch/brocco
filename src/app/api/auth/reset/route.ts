@@ -33,7 +33,8 @@ export async function POST(request: NextRequest) {
 
     const passwordHash = await hashPassword(password);
     await prisma.$transaction([
-      prisma.user.update({ where: { id: reset.userId }, data: { passwordHash } }),
+      // Bump the epoch: every existing session for this account is now invalid.
+      prisma.user.update({ where: { id: reset.userId }, data: { passwordHash, sessionEpoch: { increment: 1 } } }),
       // Mark this token used and kill any other outstanding tokens for the user
       prisma.passwordResetToken.update({ where: { id: reset.id }, data: { usedAt: new Date() } }),
       prisma.passwordResetToken.deleteMany({

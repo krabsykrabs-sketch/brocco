@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getValidToken, fetchStravaActivity, storeStravaActivity } from "@/lib/strava";
 import { isEligibleForAnalysis, analyzeActivity } from "@/lib/activity-analysis";
+import { recordSyncOutcome } from "@/lib/strava";
+import { rateLimit } from "@/lib/rate-limit";
 
 /**
  * GET: Strava webhook verification (subscription creation).
@@ -27,6 +29,22 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const event = await request.json();
+
+    // Authenticity. Strava signs nothing, but every event carries the
+    // subscription id it was created under, and that id is a secret only
+    // Strava and our registration script know. Without this check anyone
+    // who knows a public athlete id could POST delete events and wipe a
+    // user's history. Enforced whenever the id is configured; a missing
+    // env var logs loudly (see lib/env.ts) rather than silently rejecting.
+    const expectedSub = process.env.STRAVA_WEBHOOK_SUBSCRIPTION_ID;
+    if (expectedSub && String(event.subscription_id) !== expectedSub) {
+      console.warn(`[webhook] rejected event with subscription_id=${event.subscription_id}`);
+      return NextResponse.json({ ok: true }); // still 200: never invite retries
+    }
+    // Even a legitimate subscription can't be allowed to hammer one athlete.
+    if (!rateLimit(`webhook:${event.owner_id}`, 60, 60 * 1000)) {
+      return NextResponse.json({ ok: true });
+    }
 
     console.log(`[webhook] Received: object_type=${event.object_type}, aspect_type=${event.aspect_type}, owner_id=${event.owner_id}, object_id=${event.object_id}`);
 
@@ -76,6 +94,9 @@ export async function POST(request: NextRequest) {
       }
     } catch (err) {
       console.error(`[webhook] Failed to process activity ${activityId} for user ${userId}:`, err);
+      // Surface it: a dead refresh token used to fail here silently and the
+      // Settings reconnect banner never appeared.
+      await recordSyncOutcome(userId, `Webhook sync failed: ${err instanceof Error ? err.message : "unknown error"}`);
     }
 
     return NextResponse.json({ ok: true });

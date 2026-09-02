@@ -9,7 +9,10 @@ const STRAVA_OAUTH = "https://www.strava.com/oauth";
 const ALGO = "aes-256-cbc";
 
 function getEncryptionKey(): Buffer {
-  const secret = process.env.SESSION_SECRET!;
+  // Separate from the session secret so rotating one doesn't silently make
+  // every stored Strava/intervals token unreadable. Falls back to the old
+  // derivation for deployments that predate TOKEN_ENCRYPTION_KEY.
+  const secret = process.env.TOKEN_ENCRYPTION_KEY || process.env.SESSION_SECRET!;
   return crypto.createHash("sha256").update(secret).digest();
 }
 

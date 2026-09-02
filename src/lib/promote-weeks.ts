@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import Anthropic from "@anthropic-ai/sdk";
 import { buildCoachContext } from "@/lib/coach-context";
 import { format } from "date-fns";
-import { todayInTimezone, parseWall, addDaysWall } from "@/lib/schedule";
+import { todayInTimezone, parseWall, addDaysWall, wallDateString } from "@/lib/schedule";
 import { syncWorkoutsInBackground } from "@/lib/intervals-icu";
 import { COACH_MODEL } from "@/lib/models";
 
@@ -45,22 +45,23 @@ export async function promoteWeekDetails(userId: string): Promise<{ promoted: nu
 
   // Find outline weeks that should be promoted to detailed
   // (start_date is this week or next week)
+  // Only this week and next. With no lower bound, coming back after a break
+  // regenerated every PAST outline week — wiping what had actually been done.
   const outlineWeeks = await prisma.planWeek.findMany({
     where: {
       planId: plan.id,
       detailLevel: "outline",
-      startDate: { lte: addDaysWall(nextMonday, 6) },
+      startDate: { gte: thisMonday, lte: addDaysWall(nextMonday, 6) },
     },
     orderBy: { weekNumber: "asc" },
     include: { phase: { select: { name: true } } },
   });
 
-  if (outlineWeeks.length === 0) return { promoted: 0 };
-
-  // Build context for Opus to generate detailed workouts
-  const context = await buildCoachContext(userId);
-  const profile = await prisma.userProfile.findUnique({ where: { userId } });
-  const userName = (await prisma.user.findUnique({ where: { id: userId }, select: { name: true } }))?.name || "Runner";
+  // NOT an early return: the target→outline refill and the actualKm
+  // backfill below must run even when there is nothing to promote, or a plan
+  // generated with no outline weeks stalls forever at week 2.
+  const context = outlineWeeks.length > 0 ? await buildCoachContext(userId) : "";
+  const todayWall = parseWall(today);
 
   let promoted = 0;
 
@@ -68,11 +69,19 @@ export async function promoteWeekDetails(userId: string): Promise<{ promoted: nu
     // Atomic claim: flip outline→detailed BEFORE the slow Opus call so a
     // concurrent request (second tab/device) skips instead of promoting the
     // same week twice. Reverted on failure.
+    // A lease, not a level flip: flipping outline→detailed before the Opus
+    // call meant a crash mid-generation left the week "detailed" with
+    // placeholder rows forever. A stale lease (>10 min) is reclaimable.
+    const staleBefore = new Date(Date.now() - 10 * 60 * 1000);
     const claim = await prisma.planWeek.updateMany({
-      where: { id: week.id, detailLevel: "outline" },
-      data: { detailLevel: "detailed" },
+      where: {
+        id: week.id,
+        detailLevel: "outline",
+        OR: [{ promotionClaimedAt: null }, { promotionClaimedAt: { lt: staleBefore } }],
+      },
+      data: { promotionClaimedAt: new Date() },
     });
-    if (claim.count === 0) continue; // another request is already promoting this week
+    if (claim.count === 0) continue; // another request holds the lease
 
     const weekStart = format(new Date(week.startDate), "yyyy-MM-dd");
     const sessionTypes = (week.sessionTypes as string[]) || [];
@@ -126,14 +135,35 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
 
       if (generatedWorkouts.length === 0) throw new Error("Generation returned zero workouts");
 
-      // Swap outline workouts for detailed ones atomically — the old
-      // workouts are only deleted once we have valid replacements in hand.
+      // Merge, never replace. Sessions that already happened, were skipped,
+      // were adjusted by hand, or whose day has passed are kept exactly as
+      // they are; only future rows that are still plain "planned" get swapped
+      // for the detailed generation. (The old deleteMany on the whole week
+      // erased Monday's completed run on a Wednesday promotion.)
+      const kept = await prisma.plannedWorkout.findMany({
+        where: {
+          planId: plan.id,
+          weekNumber: week.weekNumber,
+          OR: [{ status: { not: "planned" } }, { date: { lt: todayWall } }],
+        },
+        select: { date: true },
+      });
+      const keptDays = new Set(kept.map((k) => wallDateString(k.date)));
+      const fresh = generatedWorkouts.filter((w) => {
+        const d = new Date(w.date);
+        return !Number.isNaN(d.getTime()) && !keptDays.has(w.date.slice(0, 10));
+      });
+
       await prisma.$transaction([
         prisma.plannedWorkout.deleteMany({
-          where: { planId: plan.id, weekNumber: week.weekNumber },
+          where: { planId: plan.id, weekNumber: week.weekNumber, status: "planned", date: { gte: todayWall } },
+        }),
+        prisma.planWeek.update({
+          where: { id: week.id },
+          data: { detailLevel: "detailed", promotionClaimedAt: null },
         }),
         prisma.plannedWorkout.createMany({
-          data: generatedWorkouts.map((w) => ({
+          data: fresh.map((w) => ({
             planId: plan.id,
             phaseId: week.phaseId,
             weekNumber: week.weekNumber,
@@ -155,10 +185,10 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
       promoted++;
     } catch (err) {
       console.error(`Failed to promote week ${week.weekNumber}:`, err);
-      // Release the claim so the outline week (and its workouts, still
-      // intact) can be promoted on a later attempt.
+      // Release the lease; the week is still "outline" with its workouts
+      // intact and will be retried on the next trigger.
       await prisma.planWeek
-        .update({ where: { id: week.id }, data: { detailLevel: "outline" } })
+        .update({ where: { id: week.id }, data: { promotionClaimedAt: null } })
         .catch(() => {});
     }
   }

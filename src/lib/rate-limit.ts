@@ -41,9 +41,19 @@ export function rateLimit(key: string, limit: number, windowMs: number): boolean
   return true;
 }
 
-/** Best-effort client IP from proxy headers (Coolify/Traefik set x-forwarded-for). */
+/**
+ * Client IP as seen by OUR proxy. Traefik appends to x-forwarded-for, so
+ * the LEFTMOST entry is whatever the client chose to send — keying limits
+ * on it let anyone reset every bucket per request. x-real-ip is set by the
+ * proxy itself; failing that, the rightmost forwarded hop is the one it saw.
+ */
 export function clientIp(request: Request): string {
+  const real = request.headers.get("x-real-ip");
+  if (real) return real.trim();
   const fwd = request.headers.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0].trim();
-  return request.headers.get("x-real-ip") || "unknown";
+  if (fwd) {
+    const hops = fwd.split(",").map((h) => h.trim()).filter(Boolean);
+    if (hops.length) return hops[hops.length - 1];
+  }
+  return "unknown";
 }

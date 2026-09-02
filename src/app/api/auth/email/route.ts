@@ -42,10 +42,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "That email is already in use" }, { status: 409 });
     }
 
-    await prisma.user.update({ where: { id: user.id }, data: { email: normalized } });
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: { email: normalized, sessionEpoch: { increment: 1 } },
+      select: { sessionEpoch: true },
+    });
 
     // Keep the session cookie in sync with the login identifier
     session.email = normalized;
+    session.epoch = updated.sessionEpoch;
     await session.save();
 
     return NextResponse.json({ ok: true, email: normalized });
