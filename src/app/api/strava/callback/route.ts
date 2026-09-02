@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { exchangeStravaCode, encryptToken, backfillActivities } from "@/lib/strava";
+import { analyzeEligibleActivities } from "@/lib/activity-analysis";
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -48,8 +49,9 @@ export async function GET(request: NextRequest) {
     });
 
     // Always trigger backfill after Strava connect
-    backfillActivities(session.userId).then((count) => {
-      console.log(`Backfill complete for user ${session.userId}: ${count} activities`);
+    backfillActivities(session.userId).then(async ({ newCount, newActivities }) => {
+      console.log(`Backfill complete for user ${session.userId}: ${newCount} new activities`);
+      await analyzeEligibleActivities(session.userId, newActivities);
     }).catch((err) => {
       console.error(`Backfill error for user ${session.userId}:`, err);
     });

@@ -116,7 +116,7 @@ export async function GET() {
       }),
       prisma.plan.findFirst({
         where: { userId, status: "active" },
-        select: { id: true, name: true, raceDate: true },
+        select: { id: true, name: true, raceDate: true, endDate: true },
       }),
     ]);
 
@@ -134,13 +134,18 @@ export async function GET() {
 
     let completedSessions = 0;
     const nonRest = weekPlanned.filter((w) => w.workoutType !== "rest");
+    const weekByDay = groupActivitiesByDay(weekActivities);
+    const usedWeek = new Set<(typeof weekActivities)[number]>();
     for (const w of nonRest) {
-      const wDate = w.date.toISOString().slice(0, 10);
+      const wDate = wallDateString(w.date);
       if (wDate > today) continue;
-      const dayActs = weekActivities.filter(
-        (a) => format(new Date(a.startDateLocal), "yyyy-MM-dd") === wDate
+      const { outcome } = workoutOutcome(
+        { dateStr: wDate, activityType: w.activityType, workoutType: w.workoutType, status: "planned" },
+        weekByDay,
+        today,
+        usedWeek
       );
-      if (dayActs.some((a) => isCompatibleType(w.activityType, a.activityType))) completedSessions++;
+      if (outcome === "done") completedSessions++;
     }
 
     let totalWeeks = 0;
@@ -163,7 +168,10 @@ export async function GET() {
     // to the run-only workout sum when a plan has no per-week target.
     const weekPlannedKm = currentWeekTargetKm ?? weekPlannedKmFallback;
 
-    const planExpired = activePlan?.raceDate ? new Date(activePlan.raceDate) < new Date() : false;
+    // A block ends when its last week does — not when its race date passes
+    // (a general-fitness plan has none and used to run forever), and compared
+    // as wall dates so race-day morning isn't already "expired".
+    const planExpired = activePlan ? wallDateString(activePlan.endDate) < today : false;
 
     // --- Next 3 days preview (small "coming up" strip) ---
     const upcomingAgenda = await getAgenda(

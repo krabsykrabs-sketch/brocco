@@ -138,13 +138,15 @@ export async function POST(request: NextRequest) {
   const pastUnconfirmed: string[] = [];
   const openerStrava = !!profile?.stravaAccessToken;
   const matchedIds = new Set<string>();
+  const usedActs = new Set<(typeof weekActivities)[number]>();
 
   for (const pw of weekPlanned) {
     const dateStr = wallDateString(pw.date);
     const { outcome, matched } = workoutOutcome(
       { dateStr, activityType: pw.activityType, workoutType: pw.workoutType, status: pw.status, detectable: isAutoDetectable(pw.activityType, openerStrava) },
       byDay,
-      todayStr
+      todayStr,
+      usedActs
     );
     if (matched) matchedIds.add(matched.id);
     if (outcome === "rest") continue;

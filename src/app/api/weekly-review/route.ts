@@ -11,7 +11,8 @@ import {
   wallDateString,
   addDaysWall,
 } from "@/lib/schedule";
-import { isCompatibleType, RUN_TYPES } from "@/lib/activity-types";
+import { RUN_TYPES } from "@/lib/activity-types";
+import { groupActivitiesByDay, workoutOutcome, isAutoDetectable } from "@/lib/plan-progress";
 import { resolveFeatures } from "@/lib/features";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 import { format } from "date-fns";
@@ -76,7 +77,11 @@ export async function GET(request: NextRequest) {
   const existing = await prisma.weeklyReview.findUnique({
     where: { userId_weekStart: { userId, weekStart: reviewWeekStart } },
   });
-  if (existing && !force) {
+  // A review rendered Sunday evening is written while the week is still
+  // running; serving it again on Monday repeated "you missed your long run"
+  // about a run done at 18:00. On Monday, regenerate anything from before.
+  const staleFromSunday = dow === 1 && existing && existing.createdAt < mondayOf(today);
+  if (existing && !force && !staleFromSunday) {
     return NextResponse.json({ available: true, review: existing.content, weekStart: weekStartStr });
   }
 
@@ -113,13 +118,26 @@ export async function GET(request: NextRequest) {
   const nonRest = planned.filter((w) => w.workoutType !== "rest");
   const plannedKm = nonRest.reduce((s, w) => s + (w.targetDistanceKm ? Number(w.targetDistanceKm) : 0), 0);
 
+  // The same matcher every other surface uses: consumes activities (a
+  // double day needs two), honours skipped/covered status, and keeps
+  // "unconfirmed" (no way to detect) apart from "missed".
   let completed = 0;
   const missed: string[] = [];
+  const unconfirmed: string[] = [];
+  const byDayReview = groupActivitiesByDay(activities);
+  const usedReview = new Set<(typeof activities)[number]>();
+  const reviewStrava = !!profile.stravaAccessToken;
   for (const w of nonRest) {
     const wDate = wallDateString(w.date);
-    const dayActs = activities.filter((a) => format(new Date(a.startDateLocal), "yyyy-MM-dd") === wDate);
-    if (dayActs.some((a) => isCompatibleType(w.activityType, a.activityType))) completed++;
-    else if (wDate <= today) missed.push(`${w.title} (${format(new Date(w.date), "EEE")})`);
+    const { outcome } = workoutOutcome(
+      { dateStr: wDate, activityType: w.activityType, workoutType: w.workoutType, status: w.status, detectable: isAutoDetectable(w.activityType, reviewStrava) },
+      byDayReview,
+      today,
+      usedReview
+    );
+    if (outcome === "done") completed++;
+    else if (outcome === "missed") missed.push(`${w.title} (${format(new Date(w.date), "EEE")})`);
+    else if (outcome === "unconfirmed") unconfirmed.push(w.title);
   }
 
   // Intensity flags from HR analysis
@@ -141,6 +159,7 @@ export async function GET(request: NextRequest) {
   let dataBlock = `WEEK REVIEWED: ${weekStartStr} to ${weekEndStr}${force && dow !== 0 && dow !== 1 ? " (week still in progress)" : ""}\n`;
   dataBlock += `Running: ${runKm.toFixed(1)}km of ${plannedKm.toFixed(0)}km planned; sessions completed ${completed}/${nonRest.length}.\n`;
   if (missed.length) dataBlock += `Missed: ${missed.join(", ")}.\n`;
+  if (unconfirmed.length) dataBlock += `Unconfirmed (no way to auto-detect these — they may have happened; never call them missed): ${unconfirmed.join(", ")}.\n`;
   if (longest && Number(longest.distanceKm || 0) > 0) {
     dataBlock += `Longest run: "${longest.name}" ${Number(longest.distanceKm).toFixed(1)}km${longest.avgPacePerKm ? ` @ ${longest.avgPacePerKm}` : ""}.\n`;
   }
@@ -181,7 +200,7 @@ export async function GET(request: NextRequest) {
   await prisma.weeklyReview.upsert({
     where: { userId_weekStart: { userId, weekStart: reviewWeekStart } },
     create: { userId, weekStart: reviewWeekStart, content },
-    update: { content },
+    update: { content, createdAt: new Date() },
   });
 
   return NextResponse.json({ available: true, review: content, weekStart: weekStartStr });

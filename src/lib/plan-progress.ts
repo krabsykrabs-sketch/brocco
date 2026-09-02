@@ -1,4 +1,3 @@
-import { format } from "date-fns";
 import { isCompatibleType } from "@/lib/activity-types";
 
 /**
@@ -15,9 +14,13 @@ export interface MatchableActivity {
   startDateLocal: Date;
 }
 
-/** Day key convention used across the app (see /api/plan). */
+/**
+ * Day key convention used across the app (see /api/plan). UTC slice of the
+ * wall-anchored instant — NOT date-fns format(), which uses the server's
+ * local calendar and only agreed with this because the Dockerfile pins TZ.
+ */
 export function activityDayKey(startDateLocal: Date): string {
-  return format(new Date(startDateLocal), "yyyy-MM-dd");
+  return new Date(startDateLocal).toISOString().slice(0, 10);
 }
 
 export function groupActivitiesByDay<T extends MatchableActivity>(
@@ -50,13 +53,21 @@ export type WorkoutOutcome = "done" | "missed" | "unconfirmed" | "skipped" | "to
 export function workoutOutcome<T extends MatchableActivity>(
   workout: { dateStr: string; activityType: string; workoutType: string; status: string; detectable?: boolean },
   byDay: Map<string, T[]>,
-  todayStr: string
+  todayStr: string,
+  /**
+   * Activities already claimed by an earlier workout that day. Without it,
+   * a double day (AM easy + PM intervals) was marked fully done by one run.
+   * Pass the same set across all workouts of a range; it is mutated.
+   */
+  used?: Set<T>
 ): { outcome: WorkoutOutcome; matched: T | null } {
   if (workout.workoutType === "rest") return { outcome: "rest", matched: null };
 
   const matched =
-    byDay.get(workout.dateStr)?.find((a) => isCompatibleType(workout.activityType, a.activityType)) ??
-    null;
+    byDay
+      .get(workout.dateStr)
+      ?.find((a) => !used?.has(a) && isCompatibleType(workout.activityType, a.activityType)) ?? null;
+  if (matched && used) used.add(matched);
 
   if (matched || workout.status === "completed") return { outcome: "done", matched };
   if (workout.status === "skipped") return { outcome: "skipped", matched: null };

@@ -85,7 +85,7 @@ export async function buildCoachContext(userId: string): Promise<string> {
     `- Timezone: ${profile.timezone}`,
     stravaConnected
       ? `- Strava: connected (their recorded history is below — trust it)`
-      : `- Strava: NOT CONNECTED — no training history available. See STRAVA FIRST below.`,
+      : `- Strava: NOT CONNECTED — no training history available (see the STRAVA section of your instructions).`,
   ].filter(Boolean).join("\n");
 
   // --- Coaching notes ---
@@ -471,9 +471,9 @@ async function buildPlanContext(userId: string, timezone: string): Promise<strin
     const { outcome, matched } = workoutOutcome(
       { dateStr, activityType: w.activityType, workoutType: w.workoutType, status: w.status, detectable: isAutoDetectable(w.activityType, planStravaConnected) },
       byDay,
-      todayStr
+      todayStr,
+      matchedActs // consumed: one activity can't satisfy two sessions
     );
-    if (matched) matchedActs.add(matched);
     let ann: string;
     switch (outcome) {
       case "done": {
@@ -950,7 +950,9 @@ Keep the status text short — one line, max 10-15 words. Examples:
 [STATUS:info]Your pace is trending faster — great progress.[/STATUS]
 [STATUS:info]Tomorrow's long run is the key session this week.[/STATUS]
 
-Always include exactly one status line at the very end of your message. Never skip it.${mode === "capture" ? `
+Always include exactly one status line at the very end of your message. Never skip it.`;
+
+  const modeBlock = `${mode === "capture" ? `
 
 QUICK CAPTURE MODE — OVERRIDES EVERYTHING ABOVE ABOUT MESSAGE STYLE:
 This message is a voice quick-capture, not a chat conversation. The user spoke into the mic from some screen of the app and expects the action to just happen.
@@ -969,6 +971,6 @@ This conversation happens in the Kitchen tab — a dedicated cooking chat, separ
 - Groceries, portions, substitutions, technique questions — all fair game.
 - Status lines still apply. Vegetable enthusiasm is permitted at slightly elevated levels; you are, after all, an ingredient.` : ""}`;
 
-  return { staticPart, dynamicPart };
+  return { staticPart, dynamicPart: dynamicPart + modeBlock };
 }
 

@@ -97,14 +97,17 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  // Load conversation history — the LAST 40 messages for this session.
-  // (orderBy asc + take would return the FIRST 40, silently cutting off the
-  // newest messages — including the one just sent — once a long-running
-  // daily session grows past 40.)
+  // Load conversation history — the LAST ~40 messages for this session
+  // (desc + reverse, so the newest are never cut off). The window grows to
+  // the next multiple of ten before it slides: a window that dropped exactly
+  // one message per turn changed messages[0] every turn past 40, which
+  // invalidated the whole cached prefix — ~7× the input cost, silently.
+  const total = await prisma.chatMessage.count({ where: { sessionId } });
+  const windowSize = total <= 40 ? 40 : 40 + (total % 10);
   const historyDesc = await prisma.chatMessage.findMany({
     where: { sessionId },
     orderBy: { createdAt: "desc" },
-    take: 40,
+    take: windowSize,
     select: { role: true, content: true },
   });
   const history = historyDesc.reverse();

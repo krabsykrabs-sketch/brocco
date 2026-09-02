@@ -19,7 +19,7 @@ const TYPE_MAP: Record<string, string[]> = {
   strength: STRENGTH_TYPES,
   climb: CLIMB_TYPES,
   rest: [],
-  other: [],
+  other: ["Workout"],
 };
 
 /** Check if a Strava activity type is compatible with a planned workout's activity type */

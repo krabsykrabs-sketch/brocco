@@ -1053,6 +1053,7 @@ export default function CalendarView() {
           anchorMonth={pageAnchor.slice(0, 7)}
           today={today}
           byDate={byDate}
+          stravaConnected={stravaConnected}
           onDayTap={(d) => { setAnchor(d); setView("day"); }}
         />
       );
@@ -1244,6 +1245,7 @@ function MonthGrid({
   anchorMonth,
   today,
   byDate,
+  stravaConnected = true,
   onDayTap,
 }: {
   rangeStart: string;
@@ -1251,6 +1253,7 @@ function MonthGrid({
   anchorMonth: string; // yyyy-MM
   today: string;
   byDate: Map<string, { events: EventOccurrence[]; workouts: WorkoutItem[]; activities: ActivityItem[] }>;
+  stravaConnected?: boolean;
   onDayTap: (date: string) => void;
 }) {
   const days: string[] = [];
@@ -1271,7 +1274,7 @@ function MonthGrid({
           {week.map((date) => {
             const inMonth = date.slice(0, 7) === anchorMonth;
             const data = byDate.get(date);
-            const reconciled = reconcileDay(data?.workouts || [], data?.activities || [], today);
+            const reconciled = reconcileDay(data?.workouts || [], data?.activities || [], today, stravaConnected);
             // Colour says WHAT it is, shape and fill say HOW IT WENT. Colour
             // alone was ambiguous: an easy run and a completed session are both
             // #9ccb2e, intervals and a missed session are both #d9534c — so a

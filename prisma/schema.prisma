@@ -97,6 +97,7 @@ model UserProfile {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([stravaAthleteId])
   @@map("user_profiles")
 }
 
@@ -117,6 +118,7 @@ model Plan {
   workouts    PlannedWorkout[]
   weeklyTasks WeeklyTask[]
 
+  @@index([userId, status])
   @@map("plans")
 }
 
@@ -203,6 +205,7 @@ model PlannedWorkout {
   phase           PlanPhase?         @relation(fields: [phaseId], references: [id], onDelete: SetNull)
   adjustmentLog   PlanAdjustmentLog[]
 
+  @@index([planId, date])
   @@map("planned_workouts")
 }
 
@@ -274,6 +277,8 @@ model Activity {
   goalCredits     WeeklyGoalCredit[]
 
   @@unique([userId, stravaId])
+  @@index([userId, startDateLocal(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
   @@map("activities")
 }
 
@@ -296,6 +301,7 @@ model HealthLog {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId, status])
   @@map("health_log")
 }
 
@@ -332,6 +338,7 @@ model ChatSession {
   user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages ChatMessage[]
 
+  @@index([userId, type, updatedAt(sort: Desc)])
   @@map("chat_sessions")
 }
 
@@ -347,6 +354,7 @@ model ChatMessage {
   session        ChatSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   pendingChanges PendingPlanChange[]
 
+  @@index([sessionId, createdAt(sort: Desc)])
   @@map("chat_messages")
 }
 
@@ -402,6 +410,8 @@ model PlanAdjustmentLog {
   user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   workout PlannedWorkout @relation(fields: [workoutId], references: [id], onDelete: Cascade)
 
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([workoutId])
   @@map("plan_adjustment_log")
 }
 
@@ -422,6 +432,7 @@ model WeeklyTask {
 
   plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
 
+  @@index([planId, weekNumber])
   @@map("weekly_tasks")
 }
 

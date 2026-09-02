@@ -5,6 +5,7 @@ import { format } from "date-fns";
 import { todayInTimezone, parseWall, addDaysWall, wallDateString } from "@/lib/schedule";
 import { syncWorkoutsInBackground } from "@/lib/intervals-icu";
 import { COACH_MODEL } from "@/lib/models";
+import { resolveLang, LANGUAGE_FULL } from "@/lib/i18n";
 
 const anthropic = new Anthropic();
 
@@ -63,6 +64,25 @@ export async function promoteWeekDetails(userId: string): Promise<{ promoted: nu
   const context = outlineWeeks.length > 0 ? await buildCoachContext(userId) : "";
   const todayWall = parseWall(today);
 
+  // The generation prompt used to be a hard-coded English running coach —
+  // a climber's or cyclist's outline weeks rolled forward as runs with km.
+  const promoProfile = await prisma.userProfile.findUnique({
+    where: { userId },
+    select: { primarySport: true, language: true },
+  });
+  const sport = (promoProfile?.primarySport || "").trim().toLowerCase() || null;
+  const lang = resolveLang(promoProfile?.language);
+  const isClimbing = !!sport && sport.includes("climb");
+  const coachIntro = sport
+    ? `You are Brocco, a ${sport} coach.`
+    : "You are Brocco, a running coach.";
+  const sportRules = sport
+    ? `
+PRIMARY SPORT: ${sport.toUpperCase()}. Volume is SESSIONS and MINUTES, never kilometres: every non-rest session gets target_duration_min and NO target_distance_km and NO target_pace. ${isClimbing ? 'On-wall sessions are workout_type "climbing" with activity_type "climb" (put the focus in the title: "Power bouldering", "4x4 route endurance"); hangboard, antagonist and conditioning are workout_type "strength" with activity_type "strength". Finger load ramps slowly; rest around limit sessions; outdoor days replace indoor volume.' : 'Sport sessions are workout_type "cross_training" with activity_type "other"; gym/conditioning are workout_type "strength" with activity_type "strength".'} If the athlete also runs, those runs keep km targets like any run.`
+    : "";
+  const languageLine = lang === "en" ? "" : `
+LANGUAGE: write every title and description in ${LANGUAGE_FULL[lang]}. Keep workout_type, activity_type and dates exactly as specified in English.`;
+
   let promoted = 0;
 
   for (const week of outlineWeeks) {
@@ -95,7 +115,7 @@ export async function promoteWeekDetails(userId: string): Promise<{ promoted: nu
           // Opus 5 thinks by default; a week of workout JSON plus thinking
           // needs headroom (streaming, so the ceiling is free).
           max_tokens: 16000,
-          system: `You are Brocco, a running coach. Generate detailed workouts for one week of a training plan. Return ONLY a JSON array of workout objects. No other text.
+          system: `${coachIntro} Generate detailed workouts for one week of a training plan. Return ONLY a JSON array of workout objects. No other text.${sportRules}${languageLine}
 
 Plan: ${plan.name} (${plan.goal})
 Phase: ${phaseName}
@@ -106,7 +126,7 @@ ${week.notes ? `Notes: ${week.notes}` : ""}
 
 ${context}
 
-Each workout object must have: date (ISO), title, workout_type (easy/long/tempo/interval/race_pace/recovery/rest/cross_training/strength/race), target_distance_km (number), target_pace (string like "5:00-5:15/km"), description (string with warm-up, main set, cool-down details). For interval/tempo/race_pace workouts ALSO include steps: an array of structured steps for the watch — [{kind:"warmup",duration_min,pace},{kind:"repeat",times,steps:[{kind:"work",distance_km,pace},{kind:"recovery",duration_min,pace}]},{kind:"cooldown",duration_min,pace}] with pace like "4:25-4:35/km". Omit steps for easy/long/recovery runs.
+Each workout object must have: date (ISO), title, workout_type (easy/long/tempo/interval/race_pace/recovery/rest/cross_training/strength/race/climbing), activity_type (run/cycle/swim/hike/strength/climb/other), ${sport ? "target_duration_min (number)" : 'target_distance_km (number) for runs, target_pace (string like "5:00-5:15/km")'}, description (string with warm-up, main set, cool-down details). For interval/tempo/race_pace workouts ALSO include steps: an array of structured steps for the watch — [{kind:"warmup",duration_min,pace},{kind:"repeat",times,steps:[{kind:"work",distance_km,pace},{kind:"recovery",duration_min,pace}]},{kind:"cooldown",duration_min,pace}] with pace like "4:25-4:35/km". Omit steps for easy/long/recovery runs.
 
 Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a race or taper week, include 1-2 short S&C sessions (workout_type "strength", activity_type "strength", target_duration_min 15-25, title like "S&C: Core & Hips", short description like "core + hip stability circuit") on easy or rest days, never the day before a hard session — these get a guided timer session in the app automatically.`,
           messages: [{ role: "user", content: "Generate the detailed workouts for this week as a JSON array." }],
@@ -216,40 +236,47 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
       // Create outline workouts (type + approximate distance only)
       const sessionTypes = (tw.sessionTypes as string[]) || [];
       const twStart = new Date(tw.startDate);
-      const kmPerSession = tw.targetKm ? Number(tw.targetKm) / Math.max(sessionTypes.length, tw.targetSessions || 1) : 8;
 
-      const typeMap: Record<string, string> = {
-        E: "easy", I: "interval", T: "tempo", L: "long", R: "rest",
-        S: "strength", X: "cross_training", P: "race_pace", V: "recovery",
-        // Climbing plans (see the PRIMARY SPORT prompt block): B boulder,
-        // C routes/general climbing. R stays rest, S stays strength.
-        B: "climbing", C: "climbing",
+      // One row per session code: what it is, what sport, whether it is
+      // measured in km. "X" used to become "Cross_training Run 7.1 km".
+      type Wt = "easy" | "long" | "tempo" | "interval" | "race_pace" | "recovery" | "rest" | "cross_training" | "strength" | "race" | "climbing";
+      type At = "run" | "cycle" | "swim" | "hike" | "strength" | "rest" | "other" | "climb";
+      const CODES: Record<string, { wt: Wt; at: At; title: string; km: boolean }> = {
+        E: { wt: "easy", at: "run", title: "Easy Run", km: true },
+        I: { wt: "interval", at: "run", title: "Intervals", km: true },
+        T: { wt: "tempo", at: "run", title: "Tempo Run", km: true },
+        L: { wt: "long", at: "run", title: "Long Run", km: true },
+        V: { wt: "recovery", at: "run", title: "Recovery Run", km: true },
+        P: { wt: "race_pace", at: "run", title: "Race-pace Run", km: true },
+        R: { wt: "rest", at: "rest", title: "Rest", km: false },
+        S: { wt: "strength", at: "strength", title: "S&C session", km: false },
+        X: { wt: "cross_training", at: "other", title: "Cross-training", km: false },
+        B: { wt: "climbing", at: "climb", title: "Bouldering", km: false },
+        C: { wt: "climbing", at: "climb", title: "Climbing session", km: false },
       };
+      const codes = Array.from({ length: 7 }, (_, d) => sessionTypes[d] || (d === 6 ? "R" : "E"));
+      // Spread the week's km over the RUN days only. Dividing by all seven
+      // codes (rest days included) used to hand a 50 km week ~36 km.
+      const runDays = codes.filter((c) => CODES[c]?.km).length;
+      const kmPerRun = tw.targetKm && runDays > 0 ? Number(tw.targetKm) / runDays : 0;
 
-      for (let d = 0; d < 7; d++) {
-        const date = addDaysWall(twStart, d);
-        const code = sessionTypes[d] || (d === 6 ? "R" : "E");
-        const wt = typeMap[code] || "easy";
-        const isRest = wt === "rest";
-        const isClimb = wt === "climbing";
-
-        await prisma.plannedWorkout.create({
-          data: {
+      await prisma.plannedWorkout.createMany({
+        data: codes.map((code, d) => {
+          const c = CODES[code] || CODES.E;
+          return {
             planId: plan.id,
             phaseId: tw.phaseId,
             weekNumber: tw.weekNumber,
-            date,
-            title: isRest ? "Rest" : isClimb ? (code === "B" ? "Bouldering" : "Climbing session") : `${wt.charAt(0).toUpperCase() + wt.slice(1)} Run`,
-            workoutType: wt as "easy" | "long" | "tempo" | "interval" | "race_pace" | "recovery" | "rest" | "cross_training" | "strength" | "race" | "climbing",
+            date: addDaysWall(twStart, d),
+            title: c.title,
+            workoutType: c.wt,
+            activityType: c.at,
             detailLevel: "outline" as const,
-            // Sessions-based sports carry no km — Brocco fills duration and
-            // focus when the week is promoted to detailed.
-            targetDistanceKm: isRest || isClimb ? null : Math.round(kmPerSession * 10) / 10,
+            targetDistanceKm: c.km && kmPerRun > 0 ? Math.round(kmPerRun * 10) / 10 : null,
             status: "planned" as const,
-            ...(isClimb ? { activityType: "climb" as const } : {}),
-          },
-        });
-      }
+          };
+        }),
+      });
     }
   }
 
@@ -263,7 +290,9 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
   });
 
   for (const pw of pastWeeks) {
-    const weekEnd = addDaysWall(new Date(pw.startDate), 6);
+    // End of Sunday, not Sunday 00:00 — the old bound silently dropped every
+    // Sunday long run from actualKm, and the value is only ever computed once.
+    const weekEnd = parseWall(`${wallDateString(addDaysWall(new Date(pw.startDate), 6))}T23:59`);
     const activities = await prisma.activity.findMany({
       where: {
         userId,
