@@ -8,29 +8,50 @@ const STRAVA_OAUTH = "https://www.strava.com/oauth";
 // Simple encryption for tokens at rest
 const ALGO = "aes-256-cbc";
 
-function getEncryptionKey(): Buffer {
-  // Separate from the session secret so rotating one doesn't silently make
-  // every stored Strava/intervals token unreadable. Falls back to the old
-  // derivation for deployments that predate TOKEN_ENCRYPTION_KEY.
-  const secret = process.env.TOKEN_ENCRYPTION_KEY || process.env.SESSION_SECRET!;
-  return crypto.createHash("sha256").update(secret).digest();
+/**
+ * Keys in order of preference. New tokens are always written with the first;
+ * reads try each in turn, so tokens written before TOKEN_ENCRYPTION_KEY was
+ * introduced (encrypted with SESSION_SECRET) stay readable and get migrated
+ * on first use — setting the new variable used to break every existing
+ * Strava connection with "bad decrypt".
+ */
+function encryptionKeys(): Buffer[] {
+  const secrets = [process.env.TOKEN_ENCRYPTION_KEY, process.env.SESSION_SECRET].filter(
+    (v, i, arr): v is string => !!v && arr.indexOf(v) === i
+  );
+  if (secrets.length === 0) throw new Error("No token encryption key configured");
+  return secrets.map((sec) => crypto.createHash("sha256").update(sec).digest());
 }
 
 export function encryptToken(token: string): string {
   const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(ALGO, getEncryptionKey(), iv);
+  const cipher = crypto.createCipheriv(ALGO, encryptionKeys()[0], iv);
   let encrypted = cipher.update(token, "utf8", "hex");
   encrypted += cipher.final("hex");
   return iv.toString("hex") + ":" + encrypted;
 }
 
-export function decryptToken(encrypted: string): string {
+/** Decrypts with whichever configured key fits; `legacy` = not the current key, so re-encrypt when convenient. */
+export function decryptTokenDetailed(encrypted: string): { value: string; legacy: boolean } {
   const [ivHex, data] = encrypted.split(":");
   const iv = Buffer.from(ivHex, "hex");
-  const decipher = crypto.createDecipheriv(ALGO, getEncryptionKey(), iv);
-  let decrypted = decipher.update(data, "hex", "utf8");
-  decrypted += decipher.final("utf8");
-  return decrypted;
+  const keys = encryptionKeys();
+  let lastErr: unknown = null;
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      const decipher = crypto.createDecipheriv(ALGO, keys[i], iv);
+      let decrypted = decipher.update(data, "hex", "utf8");
+      decrypted += decipher.final("utf8");
+      return { value: decrypted, legacy: i > 0 };
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("Token could not be decrypted with any configured key");
+}
+
+export function decryptToken(encrypted: string): string {
+  return decryptTokenDetailed(encrypted).value;
 }
 
 /**
@@ -45,8 +66,19 @@ export async function getValidToken(userId: string): Promise<string> {
     throw new Error("User has no Strava tokens");
   }
 
-  const accessToken = decryptToken(profile.stravaAccessToken);
-  const refreshToken = decryptToken(profile.stravaRefreshToken);
+  const access = decryptTokenDetailed(profile.stravaAccessToken);
+  const refresh = decryptTokenDetailed(profile.stravaRefreshToken);
+  const accessToken = access.value;
+  const refreshToken = refresh.value;
+  // Lazy key migration: rewrite tokens that were sealed with an older key.
+  if (access.legacy || refresh.legacy) {
+    await prisma.userProfile
+      .update({
+        where: { userId },
+        data: { stravaAccessToken: encryptToken(accessToken), stravaRefreshToken: encryptToken(refreshToken) },
+      })
+      .catch(() => {});
+  }
 
   // Check if token is expired (with 5 min buffer)
   if (profile.stravaTokenExpiresAt && profile.stravaTokenExpiresAt > new Date(Date.now() + 5 * 60 * 1000)) {

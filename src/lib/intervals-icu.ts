@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { encryptToken, decryptToken } from "@/lib/strava";
+import { encryptToken, decryptTokenDetailed } from "@/lib/strava";
 import { wallDateString, addDaysWall, parseWall, todayInTimezone } from "@/lib/schedule";
 import type { PlannedWorkout } from "@prisma/client";
 
@@ -211,7 +211,12 @@ export async function syncWorkoutsToIntervals(
       return { synced: false, error: "not_connected" };
     }
     const athleteId = profile.intervalsAthleteId;
-    const apiKey = decryptToken(profile.intervalsApiKey);
+    const apiKeyRead = decryptTokenDetailed(profile.intervalsApiKey);
+    const apiKey = apiKeyRead.value;
+    if (apiKeyRead.legacy) {
+      // Sealed with a pre-TOKEN_ENCRYPTION_KEY secret — rewrite with the current one.
+      await prisma.userProfile.update({ where: { userId }, data: { intervalsApiKey: encryptToken(apiKey) } }).catch(() => {});
+    }
 
     const activePlan = await prisma.plan.findFirst({
       where: { userId, status: "active" },
