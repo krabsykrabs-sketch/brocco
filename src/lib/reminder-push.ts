@@ -2,6 +2,8 @@ import { prisma } from "@/lib/db";
 import { getEventOccurrences, nowInTimezone, todayInTimezone, addDaysWall, parseWall, wallDateString } from "@/lib/schedule";
 import { resolveFeatures } from "@/lib/features";
 import { sendPushToUser, pushConfigured } from "@/lib/push";
+import { serverTranslator } from "@/lib/i18n-server";
+import { resolveLang } from "@/lib/i18n";
 
 /**
  * In-process reminder scheduler: every minute, scan upcoming event reminders
@@ -56,10 +58,11 @@ export async function tick(): Promise<void> {
 async function checkUserReminders(userId: string): Promise<void> {
   const profile = await prisma.userProfile.findUnique({
     where: { userId },
-    select: { timezone: true, features: true },
+    select: { timezone: true, features: true, language: true },
   });
   if (!profile) return;
   if (!resolveFeatures(profile.features).calendar) return;
+  const t = serverTranslator(resolveLang(profile.language));
 
   const tz = profile.timezone || "Europe/Berlin";
   const today = todayInTimezone(tz);
@@ -85,7 +88,7 @@ async function checkUserReminders(userId: string): Promise<void> {
       sentKeys.set(occ.occurrenceKey, occ.date); // mark before sending — better to miss once than spam
       const result = await sendPushToUser(userId, {
         title: `⏰ ${occ.title}`,
-        body: `at ${startTime} (in ${minsLeft} min)${occ.location ? ` · ${occ.location}` : ""}`,
+        body: `${t("push.reminderBody", { time: startTime, min: minsLeft })}${occ.location ? ` · ${occ.location}` : ""}`,
         url: "/today",
         tag: `reminder-${occ.occurrenceKey}`,
       });

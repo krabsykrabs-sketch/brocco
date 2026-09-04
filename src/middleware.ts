@@ -15,6 +15,8 @@ const sessionOptions = {
 
 const PUBLIC_PATHS = [
   "/login", "/signup", "/forgot-password", "/reset-password",
+  // Imprint & privacy must be readable without an account (and it is precached).
+  "/legal",
   "/api/auth/login", "/api/auth/signup", "/api/strava/webhook", "/api/calendar/ics",
   // Read on public pages by the provider; a redirect here fed HTML to r.json().
   "/api/features",

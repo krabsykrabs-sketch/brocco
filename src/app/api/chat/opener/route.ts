@@ -12,6 +12,8 @@ import { renderWeeklyGoalsLine } from "@/lib/weekly-goals";
 import { generateNumberChecked, extractKm } from "@/lib/number-guard";
 import { weekTrainingFigures } from "@/lib/week-training";
 import { summarizeStaleSessions, recentConversationSummaries, recentConversationTail, withDeadline } from "@/lib/conversation-memory";
+import { serverTranslator } from "@/lib/i18n-server";
+import { resolveLang, fmtNumber } from "@/lib/i18n";
 
 const anthropic = new Anthropic();
 
@@ -54,6 +56,10 @@ export async function POST(request: NextRequest) {
   await ensureFreshStravaData(userId);
 
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
+  const lang = resolveLang(profile?.language);
+  const t = serverTranslator(lang);
+  const fallbackOpener = () =>
+    t("fallback.opener", { km: fmtNumber(weekRunKm, lang, 1, 1), plannedKm: fmtNumber(plannedKm, lang, 0) });
   const tz = profile?.timezone || "Europe/Berlin";
   const todayStr = todayInTimezone(tz);
 
@@ -304,7 +310,7 @@ export async function POST(request: NextRequest) {
     );
 
     const openerText =
-      checked || `Week check-in: ${weekRunKm.toFixed(1)}km of ${plannedKm.toFixed(0)}km so far. What's on your mind?`;
+      checked || fallbackOpener();
 
     // The opener calls no tools, so a [STATUS:done] here can never be true.
     const grounded = groundStatusMarker(openerText, false);
@@ -321,7 +327,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ opener: grounded });
   } catch (err) {
     console.error("Opener generation error:", err);
-    const fallback = `Week check-in: ${weekRunKm.toFixed(1)}km of ${plannedKm.toFixed(0)}km planned so far. What's on your mind?`;
+    const fallback = fallbackOpener();
     await prisma.chatMessage.create({
       data: { sessionId, role: "assistant", content: [{ type: "text", text: fallback }], displayText: fallback },
     });

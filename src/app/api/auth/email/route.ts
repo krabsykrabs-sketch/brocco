@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/session";
 import { verifyPassword } from "@/lib/auth";
+import { requestTranslator, userTranslator } from "@/lib/i18n-server";
 
 /**
  * POST /api/auth/email — change the account email (password-confirmed).
@@ -9,20 +10,23 @@ import { verifyPassword } from "@/lib/auth";
  * this requires the current password even inside an authenticated session.
  */
 export async function POST(request: NextRequest) {
+  // Request language until we know who it is, then the profile's choice.
+  let t = requestTranslator(request);
   try {
     const session = await getSession();
     if (!session.userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    t = await userTranslator(session.userId);
 
     const { newEmail, currentPassword } = await request.json();
     const normalized = String(newEmail || "").toLowerCase().trim();
 
     if (!normalized || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
-      return NextResponse.json({ error: "Enter a valid email address" }, { status: 400 });
+      return NextResponse.json({ error: t("api.auth.validEmail") }, { status: 400 });
     }
     if (!currentPassword) {
-      return NextResponse.json({ error: "Current password is required" }, { status: 400 });
+      return NextResponse.json({ error: t("api.auth.currentPasswordRequired") }, { status: 400 });
     }
 
     const user = await prisma.user.findUnique({ where: { id: session.userId } });
@@ -30,7 +34,7 @@ export async function POST(request: NextRequest) {
 
     const valid = await verifyPassword(currentPassword, user.passwordHash);
     if (!valid) {
-      return NextResponse.json({ error: "Current password is incorrect" }, { status: 403 });
+      return NextResponse.json({ error: t("api.auth.currentPasswordIncorrect") }, { status: 403 });
     }
 
     if (normalized === user.email) {
@@ -39,7 +43,7 @@ export async function POST(request: NextRequest) {
 
     const taken = await prisma.user.findUnique({ where: { email: normalized } });
     if (taken) {
-      return NextResponse.json({ error: "That email is already in use" }, { status: 409 });
+      return NextResponse.json({ error: t("api.auth.emailInUse") }, { status: 409 });
     }
 
     const updated = await prisma.user.update({
@@ -55,6 +59,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, email: normalized });
   } catch {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: t("api.internalError") }, { status: 500 });
   }
 }

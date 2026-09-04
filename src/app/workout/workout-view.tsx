@@ -10,6 +10,7 @@ import {
   buildCustomInterval,
   estimateDurationMin,
   describeDefinition,
+  fillTemplate,
   type WorkoutDefinition,
 } from "@/lib/guided-workout";
 import { artPathFor } from "@/lib/exercise-art";
@@ -56,8 +57,8 @@ interface PreviewData {
   recentSessions?: RecentSession[];
 }
 
-function fmtSec(sec: number): string {
-  return sec >= 60 && sec % 60 === 0 ? `${sec / 60} min` : `${sec}s`;
+function fmtSec(sec: number, min: string): string {
+  return sec >= 60 && sec % 60 === 0 ? `${sec / 60} ${min}` : `${sec}s`;
 }
 
 function fmtSessionDate(iso: string, lang: Lang): string {
@@ -84,6 +85,7 @@ function WorkoutPreview({
 }) {
   const t = useT();
   const lang = useLang();
+  const min = t("common.min");
   const [rounds, setRounds] = useState<number[]>(data.definition.blocks.map((b) => b.rounds));
 
   // The definition actually played — the stepper tweaks live only here.
@@ -97,8 +99,8 @@ function WorkoutPreview({
   const scaled = data.definition.blocks.some((b, i) => (rounds[i] ?? b.rounds) !== b.rounds);
 
   const adjustMsg =
-    `${t("workout.adjustIntro")}: "${data.title}"${data.focus ? ` (focus: ${data.focus})` : ""}.\n\n` +
-    `${describeDefinition(data.definition)}\n\n` +
+    `${t("workout.adjustIntro")}: "${data.title}"${data.focus ? ` (${t("workout.focusLabel")}: ${data.focus})` : ""}.\n\n` +
+    `${describeDefinition(data.definition, lang)}\n\n` +
     t("workout.adjustPrompt");
 
   return (
@@ -110,9 +112,9 @@ function WorkoutPreview({
             <div className="min-w-0">
               <h2 className="text-lg font-extrabold text-ink">{data.title}</h2>
               <p className="text-xs text-moss font-semibold">
-                ~{estimateDurationMin(effectiveDef)} min
+                ~{estimateDurationMin(effectiveDef)} {min}
                 {data.focus ? ` · ${data.focus}` : ""}
-                {data.timesCompleted ? ` · done ${data.timesCompleted}×` : ""}
+                {data.timesCompleted ? ` · ${fillTemplate(t("workout.doneTimes"), { n: data.timesCompleted })}` : ""}
               </p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
@@ -135,16 +137,16 @@ function WorkoutPreview({
           {/* The session, laid out */}
           <div className="space-y-2 mt-3">
             {data.definition.warmupSec ? (
-              <p className="text-xs font-bold text-moss">🔥 {t("workout.warmUp")} · {fmtSec(data.definition.warmupSec)}</p>
+              <p className="text-xs font-bold text-moss">🔥 {t("workout.warmUp")} · {fmtSec(data.definition.warmupSec, min)}</p>
             ) : null}
 
             {data.definition.blocks.map((b, bi) => (
               <div key={bi} className="sticker px-3 py-2.5">
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <p className="text-xs font-extrabold text-ink">
-                    {b.label || `Block ${bi + 1}`}
+                    {b.label || `${t("workout.block")} ${bi + 1}`}
                     {b.restBetweenRoundsSec ? (
-                      <span className="text-sage font-bold"> · {fmtSec(b.restBetweenRoundsSec)} {t("workout.betweenRounds")}</span>
+                      <span className="text-sage font-bold"> · {fmtSec(b.restBetweenRoundsSec, min)} {t("workout.betweenRounds")}</span>
                     ) : null}
                   </p>
                   {/* Short on time? Rounds are the honest lever. */}
@@ -177,8 +179,8 @@ function WorkoutPreview({
                       )}
                       <p className="text-xs font-bold text-ink flex-1 min-w-0">{e.name}</p>
                       <p className="text-[10px] text-sage font-bold tabular-nums flex-shrink-0">
-                        {e.mode === "time" ? fmtSec(e.workSec!) : `${e.reps} reps`}
-                        {e.restSec ? ` · rest ${fmtSec(e.restSec)}` : ""}
+                        {e.mode === "time" ? fmtSec(e.workSec!, min) : `${e.reps} ${t("common.reps")}`}
+                        {e.restSec ? ` · ${t("common.rest")} ${fmtSec(e.restSec, min)}` : ""}
                       </p>
                     </div>
                   ))}
@@ -198,7 +200,7 @@ function WorkoutPreview({
             ))}
 
             {data.definition.cooldownSec ? (
-              <p className="text-xs font-bold text-moss">🧊 {t("workout.coolDown")} · {fmtSec(data.definition.cooldownSec)}</p>
+              <p className="text-xs font-bold text-moss">🧊 {t("workout.coolDown")} · {fmtSec(data.definition.cooldownSec, min)}</p>
             ) : null}
           </div>
 
@@ -210,7 +212,7 @@ function WorkoutPreview({
                 {data.recentSessions.map((s) => (
                   <p key={s.id} className="text-xs font-semibold tabular-nums">
                     <span className="text-moss">{fmtSessionDate(s.finishedAt, lang)}</span>
-                    <span className="text-sage"> · {s.durationMin} min · </span>
+                    <span className="text-sage"> · {s.durationMin} {min} · </span>
                     {s.completed ? (
                       <span className="text-leaf">{t("workout.completed")}</span>
                     ) : (
@@ -255,6 +257,7 @@ function WorkoutPreview({
 
 function CustomIntervalForm({ onStart }: { onStart: (def: WorkoutDefinition, title: string) => void }) {
   const t = useT();
+  const lang = useLang();
   const [work, setWork] = useState(40);
   const [rest, setRest] = useState(20);
   const [rounds, setRounds] = useState(10);
@@ -279,7 +282,7 @@ function CustomIntervalForm({ onStart }: { onStart: (def: WorkoutDefinition, tit
         </div>
       </div>
       <button
-        onClick={() => onStart(buildCustomInterval(work, rest, rounds), `Intervals ${work}/${rest} × ${rounds}`)}
+        onClick={() => onStart(buildCustomInterval(work, rest, rounds, lang), `${t("workout.intervals")} ${work}/${rest} × ${rounds}`)}
         className="btn-quiet w-full py-2.5 text-sm"
       >
         {t("common.start")}
@@ -317,11 +320,11 @@ function SavedWorkoutRow({
           {w.pinned && <span className="text-xs flex-shrink-0">📌</span>}
           <p className="text-sm font-bold text-ink truncate">{w.title}</p>
           {w.source === "plan" && (
-            <span className="text-[9px] uppercase font-extrabold text-moss bg-ghost px-1.5 py-0.5 rounded flex-shrink-0">plan</span>
+            <span className="text-[9px] uppercase font-extrabold text-moss bg-ghost px-1.5 py-0.5 rounded flex-shrink-0">{t("workout.planBadge")}</span>
           )}
         </div>
         <p className="text-xs text-moss font-semibold">
-          ~{w.durationMin} min{w.focus ? ` · ${w.focus}` : ""}{w.timesCompleted > 0 ? ` · done ${w.timesCompleted}×` : ""}
+          ~{w.durationMin} {t("common.min")}{w.focus ? ` · ${w.focus}` : ""}{w.timesCompleted > 0 ? ` · ${fillTemplate(t("workout.doneTimes"), { n: w.timesCompleted })}` : ""}
         </p>
       </button>
       <button onClick={onStart} className="btn-brocco px-3 py-1.5 text-xs flex-shrink-0">
@@ -333,6 +336,7 @@ function SavedWorkoutRow({
 
 function WorkoutViewInner() {
   const t = useT();
+  const lang = useLang();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [saved, setSaved] = useState<SavedWorkout[]>([]);
@@ -358,7 +362,7 @@ function WorkoutViewInner() {
     fetchSaved();
   }, [fetchSaved]);
 
-  const presets = useMemo(() => presetsForSport(primarySport), [primarySport]);
+  const presets = useMemo(() => presetsForSport(primarySport, lang), [primarySport, lang]);
 
   const loadSaved = useCallback(async (id: string): Promise<PreviewData | null> => {
     try {
@@ -501,7 +505,7 @@ function WorkoutViewInner() {
       <div className="mt-4 space-y-5 pb-8">
         {/* Ask Brocco */}
         <Link
-          href={`/chat?msg=${encodeURIComponent("Make me a workout for today")}`}
+          href={`/chat?msg=${encodeURIComponent(t("workout.askForToday"))}`}
           className="btn-brocco flex items-center gap-3 px-4 py-3"
         >
           <span className="text-xl">💬</span>
@@ -526,7 +530,7 @@ function WorkoutViewInner() {
                 <div className="flex items-center gap-2 mb-0.5">
                   <span>{p.emoji}</span>
                   <p className="text-sm font-bold text-ink">{p.title}</p>
-                  <span className="ml-auto text-[10px] text-sage font-bold tabular-nums">~{estimateDurationMin(p.definition)} min</span>
+                  <span className="ml-auto text-[10px] text-sage font-bold tabular-nums">~{estimateDurationMin(p.definition)} {t("common.min")}</span>
                 </div>
                 <p className="text-xs text-moss font-semibold">{p.description}</p>
               </button>

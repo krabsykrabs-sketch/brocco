@@ -17,6 +17,8 @@ import { generateNumberChecked } from "@/lib/number-guard";
 import { rateLimit } from "@/lib/rate-limit";
 import { weekTrainingFigures } from "@/lib/week-training";
 import { sportProfile, totalMinutes } from "@/lib/sport";
+import { serverTranslator, type ServerT } from "@/lib/i18n-server";
+import { resolveLang } from "@/lib/i18n";
 
 const anthropic = new Anthropic();
 
@@ -32,14 +34,15 @@ export async function GET(request: NextRequest) {
   const userId = session.userId;
 
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
-  if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  const t = serverTranslator(resolveLang(profile?.language));
+  if (!profile) return NextResponse.json({ error: t("api.profileNotFound") }, { status: 404 });
 
   const today = todayInTimezone(profile.timezone);
   const todayDate = parseWall(today);
   const force = new URL(request.url).searchParams.get("refresh") === "1";
   // A forced refresh is an Opus call the client can trigger at will — cap it.
   if (force && !rateLimit(`briefing-refresh:${userId}`, 10, 60 * 60 * 1000)) {
-    return NextResponse.json({ error: "Too many refreshes — the briefing is fresh enough." }, { status: 429 });
+    return NextResponse.json({ error: t("api.briefing.tooManyRefreshes") }, { status: 429 });
   }
 
   const [existing, latestActivity] = await Promise.all([
@@ -122,10 +125,10 @@ export async function GET(request: NextRequest) {
       return block && block.type === "text" ? block.text.trim() : "";
     });
 
-    content = checked || fallbackBriefing(agenda.events.length);
+    content = checked || fallbackBriefing(t, agenda.events.length);
   } catch (err) {
     console.error("Briefing generation error:", err);
-    content = fallbackBriefing(agenda.events.length);
+    content = fallbackBriefing(t, agenda.events.length);
   }
 
   await prisma.dailyBriefing.upsert({
@@ -137,8 +140,8 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ briefing: content, cached: false });
 }
 
-function fallbackBriefing(eventCount: number): string {
-  const parts: string[] = [];
-  parts.push(eventCount > 0 ? `${eventCount} thing${eventCount === 1 ? "" : "s"} on the calendar today` : "Nothing on the calendar today");
-  return parts.join(", ") + ".";
+function fallbackBriefing(t: ServerT, eventCount: number): string {
+  if (eventCount === 0) return t("fallback.briefing.none");
+  if (eventCount === 1) return t("fallback.briefing.one");
+  return t("fallback.briefing.many", { count: eventCount });
 }

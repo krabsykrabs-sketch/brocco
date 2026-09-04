@@ -20,11 +20,11 @@ function ResetPasswordForm() {
     e.preventDefault();
     setError("");
     if (password !== confirm) {
-      setError("Passwords don't match");
+      setError(t("auth.passwordsMismatch"));
       return;
     }
     if (password.length < 8) {
-      setError("Minimum 8 characters");
+      setError(t("auth.minChars"));
       return;
     }
     setLoading(true);
@@ -36,7 +36,7 @@ function ResetPasswordForm() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Reset failed");
+        setError(data.error || t("auth.resetFailed"));
         return;
       }
       setDone(true);
@@ -51,9 +51,9 @@ function ResetPasswordForm() {
   if (!token) {
     return (
       <div className="text-center">
-        <p className="bg-clay-soft border-2 border-clay text-clay rounded-xl px-3 py-2 text-sm font-bold mb-4">This reset link is incomplete.</p>
+        <p className="bg-clay-soft border-2 border-clay text-clay rounded-xl px-3 py-2 text-sm font-bold mb-4">{t("auth.resetLinkIncomplete")}</p>
         <a href="/forgot-password" className="text-leaf font-bold underline text-sm">
-          Request a new one
+          {t("auth.requestNewLink")}
         </a>
       </div>
     );
@@ -62,7 +62,7 @@ function ResetPasswordForm() {
   if (done) {
     return (
       <div className="bg-sprout border-2 border-ink rounded-xl p-4 text-sm text-ink font-bold text-center">
-        Password updated. Taking you to the login…
+        {t("auth.passwordUpdated")}
       </div>
     );
   }
@@ -71,7 +71,7 @@ function ResetPasswordForm() {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label htmlFor="password" className="block text-sm font-bold text-ink mb-1">
-          New password
+          {t("auth.newPassword")}
         </label>
         <input
           id="password"
@@ -81,12 +81,12 @@ function ResetPasswordForm() {
           required
           autoFocus
           className="field"
-          placeholder="Minimum 8 characters"
+          placeholder={t("auth.minChars")}
         />
       </div>
       <div>
         <label htmlFor="confirm" className="block text-sm font-bold text-ink mb-1">
-          Repeat new password
+          {t("auth.repeatNewPassword")}
         </label>
         <input
           id="confirm"
@@ -95,7 +95,7 @@ function ResetPasswordForm() {
           onChange={(e) => setConfirm(e.target.value)}
           required
           className="field"
-          placeholder="Same again"
+          placeholder={t("auth.sameAgain")}
         />
       </div>
 
@@ -106,7 +106,7 @@ function ResetPasswordForm() {
         disabled={loading}
         className="btn-brocco w-full py-2 px-4"
       >
-        {loading ? t("common.saving") : "Set new password"}
+        {loading ? t("common.saving") : t("auth.setNewPassword")}
       </button>
     </form>
   );
@@ -119,8 +119,8 @@ export default function ResetPasswordPage() {
       <div className="w-full max-w-sm sticker-lg p-6">
         <div className="text-center mb-8">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/brocco-runner.png" alt="Brocco, running" className="h-32 mx-auto mb-4" />
-          <h1 className="text-2xl font-extrabold text-ink">Choose a new password</h1>
+          <img src="/brand/brocco-runner.png" alt={t("auth.mascotAlt")} className="h-32 mx-auto mb-4" />
+          <h1 className="text-2xl font-extrabold text-ink">{t("auth.chooseNewPassword")}</h1>
         </div>
         <Suspense fallback={<div className="text-moss text-center">{t("common.loading")}</div>}>
           <ResetPasswordForm />

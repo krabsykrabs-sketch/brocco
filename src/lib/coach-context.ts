@@ -813,7 +813,7 @@ You see training AND life in one place — use it. Before adding events, and whe
   const lang = resolveLang(profile?.language);
   const languageBlock =
     lang === "en"
-      ? ""
+      ? `\nLANGUAGE — the athlete's app language is ENGLISH. Everything that becomes app content — workout titles, exercise names and form cues, plan and phase names, descriptions, notes you save, status lines — is written in English, even when a plan entry, a note or text the athlete pasted is in another language; the app's buttons are English and mixed-language content looks broken. If the athlete writes to you in another language you may answer the chat message itself in that language, but tool arguments stay English (they can switch the app language in Settings).\n`
       : `\nLANGUAGE — write EVERYTHING you show the user in ${LANGUAGE_FULL[lang]}: chat replies, status lines, briefings, workout titles, exercise names and form cues, plan and phase names, notes you save. The app's buttons are in that language too, so English output would look broken. Keep tool ARGUMENTS that are identifiers or enums (workout_type, activity_type, the create_workout \`art\` key, ISO dates) exactly as specified in English — only human-readable text is translated. Use the natural sports vocabulary of the language rather than word-for-word translations, and address the user informally (du / tú).\n`;
 
   const identity = `${identityLine}

@@ -5,12 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { InstallInstructions } from "@/app/pwa-banner";
 import { DesktopNavLinks } from "@/app/nav";
-import { FEATURES_CHANGED_EVENT, useT, useLang } from "@/app/features-provider";
+import { FEATURES_CHANGED_EVENT, useT, useLang, useFmt, type Fmt } from "@/app/features-provider";
 import { LANGUAGES, LANGUAGE_NAMES, detectLang, type Lang } from "@/lib/i18n";
 import { ALL_FEATURES, type Features } from "@/lib/features";
 import { EquipmentSection } from "./equipment-section";
 import { Suspense } from "react";
 
+type T = ReturnType<typeof useT>;
 
 /** "" is the running default (stored as null). Anything else Brocco saved from chat shows as its own option. */
 const PRIMARY_SPORTS = ["", "climbing", "cycling", "swimming", "triathlon", "hyrox"];
@@ -45,27 +46,55 @@ interface SyncData {
  * outcome — the common confusion is that "0 new" can mean either
  * "already up to date" or "nothing to push", which need opposite fixes.
  */
-function describeSync(d: SyncData): string {
+function describeSync(d: SyncData, t: T, fmt: Fmt): string {
   const changed = (d.created || 0) + (d.updated || 0) + (d.deleted || 0);
   if (changed > 0) {
-    return `Synced: ${d.created || 0} new, ${d.updated || 0} updated, ${d.deleted || 0} removed.`;
+    return t("settings.syncChanged")
+      .replace("{created}", String(d.created || 0))
+      .replace("{updated}", String(d.updated || 0))
+      .replace("{deleted}", String(d.deleted || 0));
   }
   // Nothing changed — say why.
   if (d.hasActivePlan === false) {
-    return "No active training plan yet — build one with Brocco, then its upcoming workouts sync here.";
+    return t("settings.syncNoPlan");
   }
-  if ((d.desiredCount || 0) > 0) {
-    return `Already up to date — all ${d.desiredCount} upcoming workout${d.desiredCount === 1 ? "" : "s"} are on your intervals.icu calendar. If they're not on your watch, open intervals.icu → your COROS/Garmin connection and turn on “Upload planned workouts”.`;
+  const desired = d.desiredCount || 0;
+  if (desired > 0) {
+    return fmt.plural(desired, t("settings.syncUpToDateOne"), t("settings.syncUpToDateMany")).replace("{n}", String(desired));
   }
-  if ((d.windowWorkouts || 0) === 0) {
-    return "No runs scheduled in the next 2 weeks, so there's nothing to push. Watch sync only sends the upcoming 14 days.";
+  const inWindow = d.windowWorkouts || 0;
+  if (inWindow === 0) {
+    return t("settings.syncNothingScheduled");
   }
   // Workouts exist in the window but none were syncable.
   const bits: string[] = [];
-  if (d.skippedType) bits.push(`${d.skippedType} aren't run/ride (strength & co. stay in the app)`);
-  if (d.skippedNoTarget) bits.push(`${d.skippedNoTarget} have no distance or pace target`);
+  if (d.skippedType) bits.push(t("settings.syncSkippedType").replace("{n}", String(d.skippedType)));
+  if (d.skippedNoTarget) bits.push(t("settings.syncSkippedNoTarget").replace("{n}", String(d.skippedNoTarget)));
   const why = bits.length ? ` — ${bits.join(", ")}` : "";
-  return `Found ${d.windowWorkouts} workout${d.windowWorkouts === 1 ? "" : "s"} in the next 2 weeks but none could go to your watch${why}.`;
+  return fmt.plural(inWindow, t("settings.syncNoneSyncableOne"), t("settings.syncNoneSyncableMany"))
+    .replace("{n}", String(inWindow))
+    .replace("{why}", why);
+}
+
+/**
+ * Renders **bold** and `code` spans from a dictionary string, so the setup
+ * steps translate as whole sentences instead of word-order-dependent fragments.
+ */
+function Rich({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.startsWith("**") ? (
+          <b key={i}>{p.slice(2, -2)}</b>
+        ) : p.startsWith("`") ? (
+          <code key={i} className="text-ink font-bold">{p.slice(1, -1)}</code>
+        ) : (
+          p
+        )
+      )}
+    </>
+  );
 }
 
 /**
@@ -75,6 +104,7 @@ function describeSync(d: SyncData): string {
  */
 function WatchSyncSection({ profile }: { profile: ProfileData }) {
   const t = useT();
+  const fmt = useFmt();
   const [connected, setConnected] = useState(profile.intervalsConnected);
   const [connectedId, setConnectedId] = useState(profile.intervalsAthleteId);
   const [athleteId, setAthleteId] = useState("");
@@ -94,20 +124,20 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setMessage(data.error || "Connection failed");
+        setMessage(data.error || t("settings.connectionFailed"));
         return;
       }
       const s = data.initialSync;
       setMessage(
-        `${t("settings.connected")}${data.athleteName ? ` as ${data.athleteName}` : ""}.` +
-          (s?.synced ? ` ${describeSync(s)}` : "")
+        `${t("settings.connected")}${data.athleteName ? ` ${t("settings.connectedAs").replace("{name}", data.athleteName)}` : ""}.` +
+          (s?.synced ? ` ${describeSync(s, t, fmt)}` : "")
       );
       setConnected(true);
       setConnectedId(athleteId.trim());
       setAthleteId("");
       setApiKey("");
     } catch {
-      setMessage("Connection failed — try again.");
+      setMessage(t("settings.connectionFailedRetry"));
     } finally {
       setBusy(false);
     }
@@ -119,9 +149,9 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
     try {
       const res = await fetch("/api/intervals/sync", { method: "POST" });
       const data = await res.json();
-      setMessage(res.ok ? describeSync(data) : data.error || "Sync failed");
+      setMessage(res.ok ? describeSync(data, t, fmt) : data.error || t("settings.syncFailed"));
     } catch {
-      setMessage("Sync failed — try again.");
+      setMessage(t("settings.syncFailedRetry"));
     } finally {
       setBusy(false);
     }
@@ -142,19 +172,17 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
     <section>
       <h2 className="text-lg font-extrabold mb-1">{t("settings.watchSync")}</h2>
       <p className="text-xs text-moss mb-3">
-        Your planned workouts on your COROS or Garmin — intervals, paces, and all — via a free intervals.icu account.
-        Only runs and rides go to the watch; strength, climbing and other sessions stay in the app.
+        {t("settings.watchSyncBlurb")}
       </p>
       <div className="sticker p-4 space-y-3">
         {connected ? (
           <>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-brocco border border-ink" />
-              <span className="text-sm text-ink font-bold">{t("settings.connected")} (intervals.icu athlete {connectedId})</span>
+              <span className="text-sm text-ink font-bold">{t("settings.connected")} ({t("settings.intervalsAthlete").replace("{id}", connectedId || "")})</span>
             </div>
             <p className="text-xs text-moss">
-              Upcoming workouts (next 2 weeks) sync automatically whenever your plan changes. Your watch picks them up
-              from intervals.icu — make sure your watch is connected there with &quot;Upload planned workouts&quot; on.
+              {t("settings.watchConnectedHint")}
             </p>
             <div className="flex gap-3">
               <button
@@ -162,7 +190,7 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
                 disabled={busy}
                 className="btn-quiet px-4 py-2 text-sm disabled:opacity-50"
               >
-                {busy ? "Working…" : t("settings.syncNow")}
+                {busy ? t("settings.working") : t("settings.syncNow")}
               </button>
               <button
                 onClick={handleDisconnect}
@@ -179,37 +207,37 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
               onClick={() => setShowHelp(!showHelp)}
               className="text-xs text-leaf font-bold underline underline-offset-2 hover:opacity-70"
             >
-              {showHelp ? "Hide setup steps" : "How do I set this up? (one-time, ~3 minutes)"}
+              {showHelp ? t("settings.hideSetupSteps") : t("settings.howToSetUp")}
             </button>
             {showHelp && (
               <ol className="text-xs text-moss space-y-1.5 list-decimal pl-4">
                 <li>
-                  Create a free account at{" "}
+                  {t("settings.setupStep1").split("{link}")[0]}
                   <a href="https://intervals.icu" target="_blank" rel="noreferrer" className="text-leaf font-bold underline">intervals.icu</a>
+                  {t("settings.setupStep1").split("{link}")[1]}
                 </li>
                 <li>
-                  In intervals.icu <b>Settings</b>, scroll to your watch brand (COROS / Garmin / …), connect it, and tick{" "}
-                  <b>&quot;Upload planned workouts&quot;</b>
+                  <Rich text={t("settings.setupStep2")} />
                 </li>
                 <li>
-                  Still in Settings, open <b>Developer Settings</b> and generate an <b>API key</b>
+                  <Rich text={t("settings.setupStep3")} />
                 </li>
                 <li>
-                  Your <b>Athlete ID</b> is shown right there (looks like <code className="text-ink font-bold">i1234567</code>)
+                  <Rich text={t("settings.setupStep4")} />
                 </li>
-                <li>Paste both below</li>
+                <li>{t("settings.setupStep5")}</li>
               </ol>
             )}
             <input
               value={athleteId}
               onChange={(e) => setAthleteId(e.target.value)}
-              placeholder="Athlete ID (e.g. i1234567)"
+              placeholder={t("settings.athleteIdPlaceholder")}
               className={inputCls}
             />
             <input
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="API key"
+              placeholder={t("settings.apiKeyPlaceholder")}
               type="password"
               className={inputCls}
             />
@@ -218,7 +246,7 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
               disabled={busy || !athleteId.trim() || !apiKey.trim()}
               className="btn-brocco px-4 py-2 text-sm"
             >
-              {busy ? "Checking…" : "Connect & sync"}
+              {busy ? t("settings.checking") : t("settings.connectAndSync")}
             </button>
           </>
         )}
@@ -234,6 +262,7 @@ function WatchSyncSection({ profile }: { profile: ProfileData }) {
  * user. Falls back to a text input on browsers without supportedValuesOf.
  */
 function TimezonePicker({ value, onChange }: { value: string; onChange: (tz: string) => void }) {
+  const t = useT();
   const [zones, setZones] = useState<string[] | null>(null);
   const [deviceTz, setDeviceTz] = useState<string | null>(null);
 
@@ -266,7 +295,7 @@ function TimezonePicker({ value, onChange }: { value: string; onChange: (tz: str
         <input
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="e.g. Europe/Berlin"
+          placeholder={t("settings.timezonePlaceholder")}
           className={inputCls}
         />
       )}
@@ -276,7 +305,7 @@ function TimezonePicker({ value, onChange }: { value: string; onChange: (tz: str
           onClick={() => onChange(deviceTz)}
           className="text-xs text-leaf font-bold underline underline-offset-2 hover:opacity-70"
         >
-          Use device timezone ({deviceTz})
+          {t("settings.useDeviceTimezone").replace("{tz}", deviceTz)}
         </button>
       )}
     </div>
@@ -295,6 +324,7 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
  */
 function NotificationSettings() {
   const t = useT();
+  const fmt = useFmt();
   const [status, setStatus] = useState<"loading" | "unsupported" | "unconfigured" | "denied" | "off" | "on">("loading");
   const [busy, setBusy] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
@@ -348,7 +378,7 @@ function NotificationSettings() {
       if (!res.ok) throw new Error();
       setStatus("on");
     } catch {
-      setTestResult("Couldn't enable notifications — try again.");
+      setTestResult(t("settings.enableFailed"));
     } finally {
       setBusy(false);
     }
@@ -370,7 +400,7 @@ function NotificationSettings() {
       }
       setStatus("off");
     } catch {
-      setTestResult("Couldn't disable — try again.");
+      setTestResult(t("settings.disableFailed"));
     } finally {
       setBusy(false);
     }
@@ -382,9 +412,9 @@ function NotificationSettings() {
     try {
       const res = await fetch("/api/push/test", { method: "POST" });
       const data = await res.json();
-      setTestResult(res.ok ? `Sent to ${data.sent} device${data.sent === 1 ? "" : "s"} — check your notifications.` : data.error || "Test failed");
+      setTestResult(res.ok ? fmt.plural(data.sent, t("settings.testSentOne"), t("settings.testSentMany")).replace("{n}", String(data.sent)) : data.error || t("settings.testFailed"));
     } catch {
-      setTestResult("Test failed");
+      setTestResult(t("settings.testFailed"));
     } finally {
       setBusy(false);
     }
@@ -394,21 +424,21 @@ function NotificationSettings() {
     <section>
       <h2 className="text-lg font-extrabold mb-1">{t("settings.notifications")}</h2>
       <p className="text-xs text-moss mb-3">
-        Event reminders on this device — even when the app is closed.
+        {t("settings.notificationsBlurb")}
       </p>
       <div className="sticker p-4 space-y-3">
-        {status === "loading" && <p className="text-sm text-moss">Checking…</p>}
+        {status === "loading" && <p className="text-sm text-moss">{t("settings.checking")}</p>}
         {status === "unsupported" && (
           <p className="text-sm text-moss">
-            This browser doesn&apos;t support push notifications. On iPhone, add brocco.run to your home screen first.
+            {t("settings.pushUnsupported")}
           </p>
         )}
         {status === "unconfigured" && (
-          <p className="text-sm text-moss">Push isn&apos;t configured on the server yet.</p>
+          <p className="text-sm text-moss">{t("settings.pushUnconfigured")}</p>
         )}
         {status === "denied" && (
           <p className="text-sm text-moss">
-            Notifications are blocked for brocco.run — allow them in your browser&apos;s site settings, then reload.
+            {t("settings.pushDenied")}
           </p>
         )}
         {status === "off" && (
@@ -417,14 +447,14 @@ function NotificationSettings() {
             disabled={busy}
             className="btn-brocco px-4 py-2 text-sm"
           >
-            {busy ? "Enabling..." : "Enable on this device"}
+            {busy ? t("settings.enabling") : t("settings.enableOnDevice")}
           </button>
         )}
         {status === "on" && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-brocco border border-ink" />
-              <span className="text-sm text-ink font-bold">Enabled on this device</span>
+              <span className="text-sm text-ink font-bold">{t("settings.enabledOnDevice")}</span>
             </div>
             <div className="flex gap-3">
               <button
@@ -432,14 +462,14 @@ function NotificationSettings() {
                 disabled={busy}
                 className="btn-quiet px-4 py-2 text-sm disabled:opacity-50"
               >
-                Send test notification
+                {t("settings.sendTestNotification")}
               </button>
               <button
                 onClick={disable}
                 disabled={busy}
                 className="px-4 py-2 text-sm text-moss font-bold hover:text-ink transition-colors"
               >
-                Disable
+                {t("settings.disable")}
               </button>
             </div>
           </div>
@@ -464,6 +494,7 @@ function SettingsContent() {
   const [savingLang, setSavingLang] = useState(false);
   const t = useT();
   const lang = useLang();
+  const fmt = useFmt();
   const [editGoalRace, setEditGoalRace] = useState("");
   const [editGoalTime, setEditGoalTime] = useState("");
   const [editGoalDate, setEditGoalDate] = useState("");
@@ -565,7 +596,7 @@ function SettingsContent() {
       });
       const data = await res.json();
       if (res.ok) {
-        setEmailResult({ ok: true, msg: "Email updated" });
+        setEmailResult({ ok: true, msg: t("settings.emailUpdated") });
         if (profile) setProfile({ ...profile, email: data.email });
         setTimeout(() => {
           setEmailEditOpen(false);
@@ -574,7 +605,7 @@ function SettingsContent() {
           setEmailResult(null);
         }, 1500);
       } else {
-        setEmailResult({ ok: false, msg: data.error || "Failed" });
+        setEmailResult({ ok: false, msg: data.error || t("settings.failed") });
       }
     } catch {
       setEmailResult({ ok: false, msg: t("common.somethingWrong") });
@@ -640,11 +671,11 @@ function SettingsContent() {
       const data = await res.json();
       setSyncResult(res.ok
         ? (data.newCount > 0
-          ? `${data.newCount} new ${data.newCount === 1 ? "activity" : "activities"} added (${data.totalChecked} checked)`
-          : `All up to date (${data.totalChecked} checked)`)
-        : (data.error || "Sync failed"));
+          ? fmt.plural(data.newCount, t("settings.stravaSyncNewOne"), t("settings.stravaSyncNewMany")).replace("{n}", String(data.newCount))
+          : t("settings.stravaSyncUpToDate")).replace("{checked}", String(data.totalChecked))
+        : (data.error || t("settings.syncFailed")));
     } catch {
-      setSyncResult("Sync failed");
+      setSyncResult(t("settings.syncFailed"));
     } finally {
       setSyncing(false);
     }
@@ -652,7 +683,7 @@ function SettingsContent() {
 
 
   async function handleStravaDisconnect() {
-    if (!confirm("Disconnect Strava? Your imported activities are kept — new ones just stop arriving.")) return;
+    if (!confirm(t("settings.stravaDisconnectConfirm"))) return;
     setSyncing(true);
     setSyncResult(null);
     try {
@@ -664,7 +695,7 @@ function SettingsContent() {
           : p
       );
     } catch {
-      setSyncResult("Couldn't disconnect — try again.");
+      setSyncResult(t("settings.disconnectFailed"));
     } finally {
       setSyncing(false);
     }
@@ -711,11 +742,11 @@ function SettingsContent() {
 
   async function handlePasswordChange() {
     if (newPw !== confirmPw) {
-      setPwResult({ ok: false, msg: "Passwords don't match" });
+      setPwResult({ ok: false, msg: t("settings.passwordsDontMatch") });
       return;
     }
     if (newPw.length < 8) {
-      setPwResult({ ok: false, msg: "Minimum 8 characters" });
+      setPwResult({ ok: false, msg: t("settings.minChars") });
       return;
     }
     setPwSaving(true);
@@ -728,12 +759,12 @@ function SettingsContent() {
       });
       const data = await res.json();
       if (res.ok) {
-        setPwResult({ ok: true, msg: "Password updated" });
+        setPwResult({ ok: true, msg: t("settings.passwordUpdated") });
         setCurrentPw("");
         setNewPw("");
         setConfirmPw("");
       } else {
-        setPwResult({ ok: false, msg: data.error || "Failed" });
+        setPwResult({ ok: false, msg: data.error || t("settings.failed") });
       }
     } catch {
       setPwResult({ ok: false, msg: t("common.somethingWrong") });
@@ -744,7 +775,7 @@ function SettingsContent() {
 
   async function handleDeleteAccount() {
     if (!deletePw) {
-      setDeleteError("Enter your password to confirm");
+      setDeleteError(t("settings.enterPasswordToConfirm"));
       return;
     }
     setDeleting(true);
@@ -759,7 +790,7 @@ function SettingsContent() {
         router.push("/login");
       } else {
         const data = await res.json();
-        setDeleteError(data.error || "Failed");
+        setDeleteError(data.error || t("settings.failed"));
       }
     } catch {
       setDeleteError(t("common.somethingWrong"));
@@ -783,12 +814,12 @@ function SettingsContent() {
       {/* Strava status banner */}
       {stravaStatus === "connected" && (
         <div className="bg-sprout border-2 border-ink rounded-lg p-3 text-sm text-ink font-bold">
-          Strava connected successfully.
+          {t("settings.stravaConnectedBanner")}
         </div>
       )}
       {stravaStatus === "denied" && (
         <div className="bg-[#faeed8] border-2 border-sun rounded-lg p-3 text-sm text-ink font-bold">
-          Strava authorization was denied.
+          {t("settings.stravaDeniedBanner")}
         </div>
       )}
 
@@ -813,7 +844,7 @@ function SettingsContent() {
                   onClick={() => setEmailEditOpen(true)}
                   className="text-xs text-leaf font-bold underline underline-offset-2 hover:opacity-70"
                 >
-                  Change
+                  {t("settings.change")}
                 </button>
               </div>
             ) : (
@@ -822,7 +853,7 @@ function SettingsContent() {
                   type="email"
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
-                  placeholder="new@email.com"
+                  placeholder={t("settings.newEmailPlaceholder")}
                   autoFocus
                   className="field"
                 />
@@ -830,11 +861,11 @@ function SettingsContent() {
                   type="password"
                   value={emailPw}
                   onChange={(e) => setEmailPw(e.target.value)}
-                  placeholder="Current password (to confirm)"
+                  placeholder={t("settings.currentPasswordConfirm")}
                   className="field"
                 />
                 <p className="text-[11px] text-moss">
-                  This is your login and where password-reset links go — make sure it&apos;s an inbox you can read.
+                  {t("settings.emailNote")}
                 </p>
                 {emailResult && (
                   <p className={`text-xs font-bold ${emailResult.ok ? "text-leaf" : "text-clay"}`}>{emailResult.msg}</p>
@@ -851,7 +882,7 @@ function SettingsContent() {
                     disabled={emailSaving || !newEmail.trim() || !emailPw}
                     className="btn-brocco px-3 py-1.5 text-xs"
                   >
-                    {emailSaving ? t("common.saving") : "Save email"}
+                    {emailSaving ? t("common.saving") : t("settings.saveEmail")}
                   </button>
                 </div>
               </div>
@@ -900,7 +931,7 @@ function SettingsContent() {
               <input
                 value={editGoalRace}
                 onChange={(e) => setEditGoalRace(e.target.value)}
-                placeholder="e.g. Valencia Marathon"
+                placeholder={t("settings.goalRacePlaceholder")}
                 className="field"
               />
             </div>
@@ -909,7 +940,7 @@ function SettingsContent() {
               <input
                 value={editGoalTime}
                 onChange={(e) => setEditGoalTime(e.target.value)}
-                placeholder="e.g. Sub 3:00"
+                placeholder={t("settings.goalTimePlaceholder")}
                 className="field"
               />
             </div>
@@ -924,7 +955,7 @@ function SettingsContent() {
             />
           </div>
           <div>
-            <label className="label-xs block mb-1">{t("settings.maxHr")} (bpm)</label>
+            <label className="label-xs block mb-1">{t("settings.maxHr")} {t("settings.maxHrUnit")}</label>
             <input
               type="number"
               inputMode="numeric"
@@ -932,11 +963,11 @@ function SettingsContent() {
               max={230}
               value={editHrMax}
               onChange={(e) => setEditHrMax(e.target.value)}
-              placeholder="e.g. 188"
+              placeholder={t("settings.maxHrPlaceholder")}
               className="field"
             />
             <p className="text-[11px] text-sage mt-1">
-              Used to compute heart rate zones for intensity analysis. If left blank, Brocco estimates it from your highest recorded heart rate.
+              {t("settings.maxHrHint")}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -945,7 +976,7 @@ function SettingsContent() {
               disabled={profileSaving}
               className="btn-brocco px-4 py-2 text-sm"
             >
-              {profileSaving ? t("common.saving") : "Save changes"}
+              {profileSaving ? t("common.saving") : t("settings.saveChanges")}
             </button>
             {profileSaved && (
               <span className="text-sm text-leaf font-bold">{t("common.saved")}</span>
@@ -963,12 +994,11 @@ function SettingsContent() {
       <section>
         <h2 className="text-lg font-extrabold mb-1">{t("settings.features")}</h2>
         <p className="text-xs text-moss mb-3">
-          Switch off what you don&apos;t use — navigation, the Today screen, and Brocco adapt.
-          With everything off you get the classic running-coach experience. Your data is kept, just hidden.
+          {t("settings.featuresBlurb")}
         </p>
         <div className="sticker divide-y-2 divide-shade/40">
           {([
-            ["calendar", t("nav.calendar"), "Events, birthdays, and reminders"],
+            ["calendar", t("nav.calendar"), t("settings.calendarFeatureDesc")],
             ["kitchen", t("nav.kitchen"), t("more.kitchenDesc")],
           ] as Array<[keyof Features, string, string]>).map(([key, label, desc]) => (
             <div key={key} className="flex items-center gap-3 px-4 py-3">
@@ -979,7 +1009,7 @@ function SettingsContent() {
               <button
                 role="switch"
                 aria-checked={featureFlags[key]}
-                aria-label={`${label} ${featureFlags[key] ? "enabled" : "disabled"}`}
+                aria-label={`${label} ${featureFlags[key] ? t("settings.enabled") : t("settings.disabled")}`}
                 onClick={() => handleToggleFeature(key)}
                 className={`relative w-11 h-6 rounded-full border-2 border-ink transition-colors flex-shrink-0 ${
                   featureFlags[key] ? "bg-brocco" : "bg-ghost"
@@ -1001,7 +1031,7 @@ function SettingsContent() {
         <section>
           <h2 className="text-lg font-extrabold mb-1">{t("settings.calendarFeed")}</h2>
           <p className="text-xs text-moss mb-3">
-            Subscribe from Google or Apple Calendar to see your brocco events and workouts there (read-only).
+            {t("settings.calendarFeedBlurb")}
           </p>
           <div className="sticker p-4 space-y-3">
             {icsUrl ? (
@@ -1017,20 +1047,20 @@ function SettingsContent() {
                     onClick={handleIcsCopy}
                     className="btn-quiet px-3 py-2 text-xs flex-shrink-0"
                   >
-                    {icsCopied ? "Copied ✓" : "Copy"}
+                    {icsCopied ? t("settings.copied") : t("settings.copy")}
                   </button>
                 </div>
                 <p className="text-[11px] text-sage">
-                  Google Calendar: Other calendars → + → From URL. Apple Calendar: File → New Calendar Subscription.
-                  Anyone with this link can read your calendar —{" "}
+                  {t("settings.calendarFeedHowTo")}{" "}
+                  {t("settings.feedLeakBefore")}{" "}
                   <button
                     onClick={() => handleIcsToken(true)}
                     disabled={icsBusy}
                     className="text-moss hover:text-ink underline underline-offset-2 disabled:opacity-50"
                   >
-                    regenerate it
+                    {t("settings.regenerateIt")}
                   </button>{" "}
-                  if it ever leaks (the old link stops working).
+                  {t("settings.feedLeakAfter")}
                 </p>
               </>
             ) : (
@@ -1039,7 +1069,7 @@ function SettingsContent() {
                 disabled={icsBusy}
                 className="btn-quiet px-4 py-2 text-sm disabled:opacity-50"
               >
-                {icsBusy ? "Creating..." : "Create subscribe link"}
+                {icsBusy ? t("settings.creating") : t("settings.createSubscribeLink")}
               </button>
             )}
           </div>
@@ -1058,7 +1088,7 @@ function SettingsContent() {
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full border border-ink ${profile.stravaNeedsReconnect ? "bg-clay" : "bg-brocco"}`} />
                 <span className="text-sm text-ink font-bold">
-                  {t("settings.connected")} (Athlete {profile.stravaAthleteId})
+                  {t("settings.connected")} ({t("settings.stravaAthlete").replace("{id}", profile.stravaAthleteId || "")})
                 </span>
               </div>
               {/* Sync health — was completely invisible before: a dead token
@@ -1079,10 +1109,10 @@ function SettingsContent() {
                 <p className="text-xs text-sage font-semibold">
                   {t("settings.lastSynced")}:{" "}
                   {profile.stravaLastSyncAt
-                    ? new Date(profile.stravaLastSyncAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+                    ? fmt.date(profile.stravaLastSyncAt, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
                     : t("settings.never")}
                   {profile.stravaLastSyncError ? (
-                    <span className="text-clay font-bold"> · last attempt failed: {profile.stravaLastSyncError}</span>
+                    <span className="text-clay font-bold"> · {t("settings.lastAttemptFailed")}: {profile.stravaLastSyncError}</span>
                   ) : null}
                 </p>
               )}
@@ -1136,21 +1166,21 @@ function SettingsContent() {
             type="password"
             value={currentPw}
             onChange={(e) => setCurrentPw(e.target.value)}
-            placeholder="Current password"
+            placeholder={t("settings.currentPassword")}
             className="field"
           />
           <input
             type="password"
             value={newPw}
             onChange={(e) => setNewPw(e.target.value)}
-            placeholder="New password (min. 8 chars)"
+            placeholder={t("settings.newPasswordPlaceholder")}
             className="field"
           />
           <input
             type="password"
             value={confirmPw}
             onChange={(e) => setConfirmPw(e.target.value)}
-            placeholder="Confirm new password"
+            placeholder={t("settings.confirmNewPassword")}
             className="field"
           />
           <div className="flex items-center gap-3">
@@ -1159,7 +1189,7 @@ function SettingsContent() {
               disabled={pwSaving || !currentPw || !newPw || !confirmPw}
               className="btn-quiet px-4 py-2 text-sm disabled:opacity-50"
             >
-              {pwSaving ? "Updating..." : "Update Password"}
+              {pwSaving ? t("settings.updating") : t("settings.updatePassword")}
             </button>
             {pwResult && (
               <span className={`text-sm font-bold ${pwResult.ok ? "text-leaf" : "text-clay"}`}>
@@ -1192,13 +1222,13 @@ function SettingsContent() {
             ) : (
               <div className="space-y-3">
                 <p className="text-sm text-clay">
-                  This will permanently delete all your data including activities, plans, and chat history. This cannot be undone.
+                  {t("settings.deleteWarning")}
                 </p>
                 <input
                   type="password"
                   value={deletePw}
                   onChange={(e) => setDeletePw(e.target.value)}
-                  placeholder="Enter your password to confirm"
+                  placeholder={t("settings.enterPasswordToConfirm")}
                   className="field border-clay!"
                 />
                 {deleteError && (
@@ -1210,7 +1240,7 @@ function SettingsContent() {
                     disabled={deleting || !deletePw}
                     className="btn-danger px-4 py-2 text-sm disabled:opacity-50"
                   >
-                    {deleting ? "Deleting..." : "Delete my account"}
+                    {deleting ? t("settings.deleting") : t("settings.deleteMyAccount")}
                   </button>
                   <button
                     onClick={() => { setShowDelete(false); setDeletePw(""); setDeleteError(""); }}
@@ -1229,7 +1259,7 @@ function SettingsContent() {
       <section>
         <h2 className="text-lg font-extrabold mb-3">{t("settings.installApp")}</h2>
         <div className="sticker p-4">
-          <p className="text-sm text-moss mb-3">Add brocco.run to your home screen for the best experience — it works like a regular app.</p>
+          <p className="text-sm text-moss mb-3">{t("settings.installBlurb")}</p>
           <InstallInstructions />
         </div>
       </section>

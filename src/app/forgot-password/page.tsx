@@ -38,17 +38,14 @@ export default function ForgotPasswordPage() {
       <div className="w-full max-w-sm sticker-lg p-6">
         <div className="text-center mb-8">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/brocco-runner.png" alt="Brocco, running" className="h-32 mx-auto mb-4" />
+          <img src="/brand/brocco-runner.png" alt={t("auth.mascotAlt")} className="h-32 mx-auto mb-4" />
           <h1 className="text-2xl font-extrabold text-ink">{t("auth.resetPassword")}</h1>
-          <p className="text-moss text-sm mt-1">
-            Enter your account email and we&apos;ll send you a reset link.
-          </p>
+          <p className="text-moss text-sm mt-1">{t("auth.forgotIntro")}</p>
         </div>
 
         {sent ? (
           <div className="bg-sprout border-2 border-ink rounded-xl p-4 text-sm text-ink font-bold text-center">
-            If that address has an account, a reset link is on its way. Check your inbox
-            (and the spam folder).
+            {t("auth.forgotSent")}
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -64,7 +61,7 @@ export default function ForgotPasswordPage() {
                 required
                 autoFocus
                 className="field"
-                placeholder="you@example.com"
+                placeholder={t("auth.emailPlaceholder")}
               />
             </div>
 
@@ -75,14 +72,14 @@ export default function ForgotPasswordPage() {
               disabled={loading}
               className="btn-brocco w-full py-2 px-4"
             >
-              {loading ? "Sending..." : "Send reset link"}
+              {loading ? t("auth.sending") : t("auth.sendResetLink")}
             </button>
           </form>
         )}
 
         <p className="text-center text-moss text-sm mt-6">
           <a href="/login" className="text-leaf font-bold underline">
-            Back to login
+            {t("auth.backToLogin")}
           </a>
         </p>
       </div>

@@ -11,7 +11,8 @@
     "db:push": "npx prisma db push",
     "db:seed": "npx tsx prisma/seed.ts",
     "db:studio": "npx prisma studio",
-    "prisma:generate": "npx prisma generate"
+    "prisma:generate": "npx prisma generate",
+    "check:i18n": "tsx scripts/check-i18n.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { syncRecentActivities, recordSyncOutcome } from "@/lib/strava";
 import { analyzeEligibleActivities } from "@/lib/activity-analysis";
+import { userTranslator } from "@/lib/i18n-server";
 
 // How stale the last sync may be before a chat interaction triggers a new
 // incremental sync. 15 minutes keeps API usage trivial (max ~4 calls/hour
@@ -49,7 +50,11 @@ export async function ensureFreshStravaData(userId: string): Promise<{ newCount:
       return { newCount };
     } catch (err) {
       console.error("[strava-fresh] sync failed:", err);
-      await recordSyncOutcome(userId, `Sync failed: ${err instanceof Error ? err.message : "unknown error"}`);
+      const t = await userTranslator(userId);
+      await recordSyncOutcome(
+        userId,
+        t("api.strava.autoSyncFailed", { reason: err instanceof Error ? err.message : t("api.strava.unknownError") })
+      );
       // Release the claim so the next interaction can retry immediately
       await prisma.userProfile
         .updateMany({

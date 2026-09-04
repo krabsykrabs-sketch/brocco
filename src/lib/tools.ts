@@ -9,6 +9,8 @@ import {
 } from "@/lib/apply-plan";
 import { normalizeUpdates } from "@/lib/apply-plan";
 import { normalizeEquipment } from "@/lib/equipment";
+import { serverTranslator, userLang, type ServerT } from "@/lib/i18n-server";
+import { fmtDate, fmtNumber, type Lang } from "@/lib/i18n";
 import { syncWorkoutsInBackground } from "@/lib/intervals-icu";
 import {
   reconcileWeek,
@@ -504,7 +506,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
     description:
       'Create a guided S&C (strength & conditioning) session the user can play in the workout timer (big countdown, voice cues). Use when the user asks for a workout to DO now or to save for later ("make me a 20-minute core workout", "something for my hips, no equipment"). Design for runners: bodyweight by default, 10-30 min, left/right sides as separate entries, short form cues in notes. Prefer mode "time" (30-45s work) for flow; "reps" only where counting matters. Respect active injuries from the health context. ILLUSTRATED EXERCISES: these have a diagram the athlete sees mid-workout, so prefer them verbatim whenever one fits what you want — ' +
       ILLUSTRATED_LABELS.join(', ') +
-      '. Left/right variants keep the name and append " (left)"/" (right)". Use a different exercise only when none of these expresses the movement. After creating, tell the user it\'s ready in the Workouts screen.',
+      '. Left/right variants keep the name and append " (left)"/" (right)". Use a different exercise only when none of these expresses the movement. LANGUAGE: write title, focus, block labels, exercise names and notes in the athlete\'s PROFILE language — the one named in your LANGUAGE instruction, or English when there is none — even if the athlete typed this message in another language; the "art" key always stays English. After creating, tell the user it\'s ready in the Workouts screen.',
     input_schema: {
       type: "object" as const,
       properties: {
@@ -616,6 +618,16 @@ interface ToolResult {
   };
 }
 
+/**
+ * Notifications are app chrome (chips in the chat), so they follow the
+ * profile language like the buttons do. Tool `data` and `error` go to the
+ * model and stay English. The lang rides along for number/date formatting.
+ */
+async function notifyT(userId: string): Promise<{ t: ServerT; lang: Lang }> {
+  const lang = await userLang(userId);
+  return { t: serverTranslator(lang), lang };
+}
+
 export async function handleToolCall(
   toolName: string,
   input: Record<string, unknown>,
@@ -673,9 +685,10 @@ async function handleLogHealth(
     },
   });
 
-  const sevLabel = input.severity ? `, ${input.severity}` : "";
-  const bpLabel = input.body_part ? ` ${input.body_part}` : "";
-  const msg = `Logged:${bpLabel} ${input.description}${sevLabel}`;
+  const { t } = await notifyT(userId);
+  const severity = entry.severity ? t(`notify.severity.${entry.severity}`) : "";
+  const detail = `${input.body_part ? `${input.body_part} ` : ""}${input.description}${severity ? `, ${severity}` : ""}`;
+  const msg = t("notify.logged", { detail });
 
   return {
     success: true,
@@ -750,6 +763,7 @@ async function handleLogActivity(
     },
   });
 
+  const { t, lang } = await notifyT(userId);
   return {
     success: true,
     data: {
@@ -759,7 +773,9 @@ async function handleLogActivity(
     },
     notification: {
       type: "activity_logged",
-      message: `Logged: ${description}${distanceKm ? ` (${distanceKm}km)` : ""}`,
+      message: distanceKm
+        ? t("notify.activityLoggedKm", { description, km: fmtNumber(distanceKm, lang, 2, 0) })
+        : t("notify.activityLogged", { description }),
       data: { id: activity.id },
     },
   };
@@ -1266,6 +1282,7 @@ async function handleAdjustPlan(
 
   syncWorkoutsInBackground(userId); // push adjusted targets to the watch calendar
 
+  const { t } = await notifyT(userId);
   return {
     success: true,
     data: { adjustments: results, appliedCount, failedCount: failed.length },
@@ -1273,9 +1290,11 @@ async function handleAdjustPlan(
       type: failed.length > 0 ? "plan_adjusted_partial" : "plan_adjusted",
       message:
         failed.length > 0
-          ? `Partly applied — ${failed.length} of ${results.length} change(s) failed: ${failed
-              .map((f) => f.error)
-              .join(" ")}`
+          ? t("notify.partlyApplied", {
+              failed: failed.length,
+              total: results.length,
+              errors: failed.map((f) => f.error).join(" "),
+            })
           : summary,
       data: { results },
     },
@@ -1395,6 +1414,7 @@ async function handleModifyPlan(
 
   syncWorkoutsInBackground(userId); // reflect structural changes on the watch calendar
 
+  const { t } = await notifyT(userId);
   return {
     success: true,
     data: { modifications: results, summary, appliedCount, failedCount: failed.length },
@@ -1402,10 +1422,14 @@ async function handleModifyPlan(
       type: failed.length > 0 ? "plan_modified_partial" : "plan_modified",
       message:
         failed.length > 0
-          ? `Partly applied — ${failed.length} of ${results.length} change(s) failed: ${failed
-              .map((f) => f.error)
-              .join(" ")}`
-          : summary,
+          ? t("notify.partlyApplied", {
+              failed: failed.length,
+              total: results.length,
+              errors: failed.map((f) => f.error).join(" "),
+            })
+          : input.summary
+            ? summary
+            : t("notify.planChangesApplied"),
     },
   };
 }
@@ -1498,7 +1522,7 @@ async function handleGeneratePlan(
     },
     notification: {
       type: "plan_created",
-      message: `Plan created: ${result.planName}`,
+      message: (await notifyT(userId)).t("notify.planCreated", { name: result.planName }),
     },
   };
 }
@@ -1539,12 +1563,16 @@ async function handleAddWeeklyTasks(
 
   await prisma.weeklyTask.createMany({ data: taskData });
 
+  const { t } = await notifyT(userId);
   return {
     success: true,
     data: { tasksCreated: taskData.length },
     notification: {
       type: "tasks_added",
-      message: `Added ${taskData.length} weekly task${taskData.length > 1 ? "s" : ""} to your plan`,
+      message:
+        taskData.length === 1
+          ? t("notify.tasksAdded.one")
+          : t("notify.tasksAdded.many", { count: taskData.length }),
     },
   };
 }
@@ -1553,7 +1581,6 @@ async function handleAddWeeklyTasks(
 
 import {
   parseWall,
-  formatDateShort,
   formatTimeShort,
   getAgenda,
   renderAgendaText,
@@ -1561,8 +1588,9 @@ import {
   wallDateString,
   addDaysWall,
 } from "@/lib/schedule";
-import { validateWorkoutDefinition, estimateDurationMin } from "@/lib/guided-workout";
-import { validateRecipeInput, recipeMatches, normalizeStaples } from "@/lib/recipes";
+import { validateWorkoutDefinition, describeWorkoutValidation, estimateDurationMin } from "@/lib/guided-workout";
+import { userTranslator } from "@/lib/i18n-server";
+import { validateRecipeInput, describeRecipeValidation, recipeMatches, normalizeStaples } from "@/lib/recipes";
 import type { EventCategory, RecurrenceFreq } from "@prisma/client";
 
 const EVENT_CATEGORIES = ["work", "family", "training", "social", "health", "birthday", "other"];
@@ -1587,10 +1615,15 @@ function parseStartInput(start: string, allDayFlag?: boolean): { startAt: Date; 
   return { startAt, allDay };
 }
 
-function eventToast(title: string, startAt: Date, allDay: boolean): string {
+/** "Mon, 7 Sep" / "Mo., 7. Sept." — wall dates, in the user's language. */
+function eventDateShort(dateStr: string, lang: Lang): string {
+  return fmtDate(dateStr, lang, { weekday: "short", day: "numeric", month: "short" });
+}
+
+function eventToast(title: string, startAt: Date, allDay: boolean, lang: Lang): string {
   const dateStr = startAt.toISOString().slice(0, 10);
   const time = allDay ? "" : ` ${formatTimeShort(startAt.toISOString().slice(0, 16))}`;
-  return `${title} — ${formatDateShort(dateStr)}${time}`;
+  return `${title} — ${eventDateShort(dateStr, lang)}${time}`;
 }
 
 async function handleManageEvent(
@@ -1598,6 +1631,7 @@ async function handleManageEvent(
   userId: string
 ): Promise<ToolResult> {
   const action = input.action as string;
+  const { t, lang } = await notifyT(userId);
   const rec = (input.recurrence || {}) as { freq?: string; interval?: number; until?: string; count?: number };
   const recurrenceFreq = (RECURRENCE_FREQS.includes(rec.freq || "") ? rec.freq : "none") as RecurrenceFreq;
 
@@ -1636,7 +1670,7 @@ async function handleManageEvent(
       data: { event_id: event.id, title: event.title, start: event.startAt.toISOString().slice(0, 16) },
       notification: {
         type: "event_created",
-        message: eventToast(event.title, event.startAt, event.allDay),
+        message: eventToast(event.title, event.startAt, event.allDay, lang),
         data: { id: event.id, domain: "calendar" },
       },
     };
@@ -1684,7 +1718,7 @@ async function handleManageEvent(
       data: { event_id: updated.id, title: updated.title, start: updated.startAt.toISOString().slice(0, 16) },
       notification: {
         type: "event_updated",
-        message: eventToast(updated.title, updated.startAt, updated.allDay),
+        message: eventToast(updated.title, updated.startAt, updated.allDay, lang),
         data: { id: updated.id, domain: "calendar" },
       },
     };
@@ -1707,7 +1741,7 @@ async function handleManageEvent(
         data: { event_id: event.id, removed_occurrence: dateStr },
         notification: {
           type: "event_deleted",
-          message: `${event.title} removed on ${formatDateShort(dateStr)}`,
+          message: t("notify.eventRemovedOn", { title: event.title, date: eventDateShort(dateStr, lang) }),
           data: { id: event.id, domain: "calendar" },
         },
       };
@@ -1719,7 +1753,7 @@ async function handleManageEvent(
       data: { event_id: event.id, deleted: true },
       notification: {
         type: "event_deleted",
-        message: `${event.title} deleted`,
+        message: t("notify.eventDeleted", { title: event.title }),
         data: { id: event.id, domain: "calendar" },
       },
     };
@@ -1759,26 +1793,30 @@ async function handleCreateWorkout(
   if (!title || title.length > 80) return { success: false, error: "title is required (max 80 chars)" };
 
   const validated = validateWorkoutDefinition(input.definition);
-  if (!validated.ok) return { success: false, error: `Invalid definition: ${validated.error}` };
+  if (!validated.ok) return { success: false, error: `Invalid definition: ${describeWorkoutValidation(validated)}` };
 
   const durationMin = estimateDurationMin(validated.def);
-  const workout = await prisma.guidedWorkout.create({
-    data: {
-      userId,
-      title,
-      focus: input.focus ? String(input.focus).slice(0, 60) : null,
-      durationMin,
-      definition: validated.def as object,
-      source: "brocco",
-    },
-  });
+  const [workout, t] = await Promise.all([
+    prisma.guidedWorkout.create({
+      data: {
+        userId,
+        title,
+        focus: input.focus ? String(input.focus).slice(0, 60) : null,
+        durationMin,
+        definition: validated.def as object,
+        source: "brocco",
+      },
+    }),
+    // The toast is app chrome, so it follows the profile language like the buttons.
+    userTranslator(userId),
+  ]);
 
   return {
     success: true,
     data: { workout_id: workout.id, title, duration_min: durationMin, start_url: `/workout?start=${workout.id}` },
     notification: {
       type: "workout_created",
-      message: `Workout ready: ${title} (~${durationMin} min)`,
+      message: t("workout.readyToast", { title, min: durationMin }),
       data: { id: workout.id, domain: "workout" },
     },
   };
@@ -1791,6 +1829,7 @@ async function handleManageRecipe(
   userId: string
 ): Promise<ToolResult> {
   const action = input.action as string;
+  const { t } = await notifyT(userId);
 
   if (action === "search") {
     const query = String(input.query || "").trim().toLowerCase();
@@ -1849,7 +1888,7 @@ async function handleManageRecipe(
       timeMin: input.time_min,
       notes: input.notes,
     });
-    if (!validated.ok) return { success: false, error: validated.error };
+    if (!validated.ok) return { success: false, error: describeRecipeValidation(validated) };
     const recipe = await prisma.recipe.create({
       data: {
         userId,
@@ -1866,7 +1905,7 @@ async function handleManageRecipe(
     return {
       success: true,
       data: { recipe_id: recipe.id, title: recipe.title },
-      notification: { type: "recipe_saved", message: `Recipe saved: ${recipe.title}`, data: { id: recipe.id, domain: "kitchen" } },
+      notification: { type: "recipe_saved", message: t("notify.recipeSaved", { title: recipe.title }), data: { id: recipe.id, domain: "kitchen" } },
     };
   }
 
@@ -1877,7 +1916,7 @@ async function handleManageRecipe(
     return {
       success: true,
       data: { recipe_id: recipe.id, times_cooked: recipe.timesCooked + 1 },
-      notification: { type: "recipe_cooked", message: `Enjoy! Logged: ${recipe.title}`, data: { id: recipe.id, domain: "kitchen" } },
+      notification: { type: "recipe_cooked", message: t("notify.recipeCooked", { title: recipe.title }), data: { id: recipe.id, domain: "kitchen" } },
     };
   }
 
@@ -1888,7 +1927,7 @@ async function handleManageRecipe(
     return {
       success: true,
       data: { recipe_id: recipe.id, deleted: true },
-      notification: { type: "recipe_deleted", message: `Recipe deleted: ${recipe.title}`, data: { id: recipe.id, domain: "kitchen" } },
+      notification: { type: "recipe_deleted", message: t("notify.recipeDeleted", { title: recipe.title }), data: { id: recipe.id, domain: "kitchen" } },
     };
   }
 
@@ -1921,8 +1960,8 @@ async function handleManageRecipe(
           type: "staples_updated",
           message:
             action === "staples_add"
-              ? `Pantry staples added: ${changes.join(", ")}`
-              : `Pantry staples removed: ${changes.join(", ")}`,
+              ? t("notify.staplesAdded", { items: changes.join(", ") })
+              : t("notify.staplesRemoved", { items: changes.join(", ") }),
           data: { domain: "kitchen" },
         },
       };
@@ -1952,6 +1991,25 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
     }
   }
   return result;
+}
+
+const PROFILE_FIELDS = [
+  "name",
+  "years_running",
+  "weekly_km_baseline",
+  "goal_race",
+  "goal_race_date",
+  "goal_time",
+  "timezone",
+  "primary_sport",
+] as const;
+
+/** The `saved_fields` identifiers the model sees, as words for the chip. */
+function profileFieldLabel(field: string, t: ServerT): string {
+  const equipment = field.match(/^equipment \((\d+)\)$/);
+  if (equipment) return t("notify.field.equipment", { count: Number(equipment[1]) });
+  const known = PROFILE_FIELDS.find((f) => f === field);
+  return known ? t(`notify.field.${known}`) : field;
 }
 
 async function handleSaveProfile(
@@ -2036,12 +2094,13 @@ async function handleSaveProfile(
     data: updateData,
   });
 
+  const { t } = await notifyT(userId);
   return {
     success: true,
     data: { saved_fields: savedFields },
     notification: {
       type: "profile_updated",
-      message: `Profile updated: ${savedFields.join(", ")}`,
+      message: t("notify.profileUpdated", { fields: savedFields.map((f) => profileFieldLabel(f, t)).join(", ") }),
     },
   };
 }
@@ -2053,6 +2112,7 @@ async function handleManageWeeklyGoals(
   userId: string
 ): Promise<ToolResult> {
   const action = String(input.action || "");
+  const { t } = await notifyT(userId);
   const profile = await prisma.userProfile.findUnique({
     where: { userId },
     select: { timezone: true },
@@ -2093,7 +2153,10 @@ async function handleManageWeeklyGoals(
       data: { goal: mine, weekStart: wallDateString(weekStart) },
       notification: {
         type: "goal_set",
-        message: `Weekly goal: ${label} ${target}× this week${mine && mine.done > 0 ? ` (${mine.done} already done)` : ""}`,
+        message:
+          mine && mine.done > 0
+            ? t("notify.goalSetDone", { label, target, done: mine.done })
+            : t("notify.goalSet", { label, target }),
       },
     };
   }
@@ -2108,7 +2171,7 @@ async function handleManageWeeklyGoals(
     return {
       success: true,
       data: { removed: label },
-      notification: { type: "goal_removed", message: `Removed weekly goal: ${label}` },
+      notification: { type: "goal_removed", message: t("notify.goalRemoved", { label }) },
     };
   }
 
@@ -2123,7 +2186,7 @@ async function handleManageWeeklyGoals(
       data: { activityId, goalId },
       notification: {
         type: "goal_set",
-        message: goalId ? "Session attributed to the right goal" : "Session no longer counts towards a goal",
+        message: goalId ? t("notify.goalAttributed") : t("notify.goalDetached"),
       },
     };
   }

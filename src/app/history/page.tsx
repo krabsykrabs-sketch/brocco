@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { DesktopNavLinks } from "@/app/nav";
-import { useT } from "@/app/features-provider";
+import { useT, useFmt } from "@/app/features-provider";
+import type { DictKey } from "@/lib/dict";
 
 interface Activity {
   id: string;
@@ -22,23 +23,18 @@ interface Activity {
   startDateLocal: string;
 }
 
-function formatDuration(mins: number): string {
+function formatDuration(mins: number, t: (key: DictKey) => string): string {
   const h = Math.floor(mins / 60);
   const m = Math.round(mins % 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
-}
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  });
+  const hu = t("history.hoursShort");
+  const mu = t("history.minutesShort");
+  return h > 0 ? `${h}${hu} ${m}${mu}` : `${m}${mu}`;
 }
 
 function ActivityCard({ activity }: { activity: Activity }) {
   const t = useT();
+  const fmt = useFmt();
+  const formatDate = (iso: string) => fmt.date(iso, { weekday: "short", day: "numeric", month: "short" });
   return (
     <Link href={`/activity/${activity.id}`} className="sticker sticker-press block p-4">
       <div className="flex items-start justify-between mb-2">
@@ -47,7 +43,7 @@ function ActivityCard({ activity }: { activity: Activity }) {
           <p className="text-sm text-moss font-semibold">
             {formatDate(activity.startDateLocal)} &middot; {activity.activityType}
             {activity.source === "manual" && (
-              <span className="ml-1 text-xs text-sage">(manual)</span>
+              <span className="ml-1 text-xs text-sage">{t("history.manual")}</span>
             )}
           </p>
         </div>
@@ -61,33 +57,33 @@ function ActivityCard({ activity }: { activity: Activity }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
         {activity.distanceKm && (
           <div>
-            <p className="label-xs">Distance</p>
+            <p className="label-xs">{t("history.distance")}</p>
             <p className="text-sm font-bold text-ink">
-              {parseFloat(activity.distanceKm).toFixed(1)} {t("common.km")}
+              {fmt.number(parseFloat(activity.distanceKm), 1)} {t("common.km")}
             </p>
           </div>
         )}
         <div>
-          <p className="label-xs">Duration</p>
+          <p className="label-xs">{t("history.duration")}</p>
           <p className="text-sm font-bold text-ink">
-            {formatDuration(parseFloat(activity.durationMin))}
+            {formatDuration(parseFloat(activity.durationMin), t)}
           </p>
         </div>
         {activity.avgPacePerKm && (
           <div>
-            <p className="label-xs">Pace</p>
+            <p className="label-xs">{t("history.pace")}</p>
             <p className="text-sm font-bold text-ink">{activity.avgPacePerKm}</p>
           </div>
         )}
         {activity.avgHeartRate && (
           <div>
-            <p className="label-xs">Avg HR</p>
-            <p className="text-sm font-bold text-ink">{activity.avgHeartRate} bpm</p>
+            <p className="label-xs">{t("history.avgHr")}</p>
+            <p className="text-sm font-bold text-ink">{activity.avgHeartRate} {t("history.bpm")}</p>
           </div>
         )}
         {activity.elevationGainM && parseFloat(activity.elevationGainM) > 0 && (
           <div>
-            <p className="label-xs">Elevation</p>
+            <p className="label-xs">{t("history.elevation")}</p>
             <p className="text-sm font-bold text-ink">
               {Math.round(parseFloat(activity.elevationGainM))} m
             </p>
@@ -129,6 +125,8 @@ const ZONE_COLORS = ["#99a17e", "#9ccb2e", "#e0b23c", "#e8813c", "#d9534c"];
  * analyses. Collapsed into a compact card at the top of History.
  */
 function TrendsSection() {
+  const t = useT();
+  const fmt = useFmt();
   const [paceCurve, setPaceCurve] = useState<PaceCurveEntry[]>([]);
   const [weeks, setWeeks] = useState<WeekZoneMix[]>([]);
   const [sessionWeeks, setSessionWeeks] = useState<WeekSessionMix[]>([]);
@@ -153,16 +151,24 @@ function TrendsSection() {
   const maxMin = Math.max(...weeks.map((w) => w.zoneMin.reduce((a, b) => a + b, 0)), 1);
   const maxSessionMin = Math.max(...sessionWeeks.map((w) => w.minutes), 1);
   const KIND_COLORS: Record<string, string> = { climb: "#6db3e8", strength: "#e0b23c", run: "#9ccb2e", ride: "#e8813c", other: "#99a17e" };
+  const KIND_LABELS: Record<string, string> = {
+    climb: t("history.kindClimb"), strength: t("history.kindStrength"), run: t("history.kindRun"), ride: t("history.kindRide"), other: t("history.kindOther"),
+  };
+  // Week labels come from the API in English ("Jul 14"); weekStart is a plain
+  // yyyy-MM-dd so the label is rebuilt here in the app language.
+  const weekLabel = (weekStart: string) => fmt.date(weekStart, { day: "numeric", month: "short" });
+  const weekDay = (weekStart: string) => fmt.date(weekStart, { day: "numeric" });
+  const EFFORT_LABELS: Record<number, string> = { 1000: "1k", 1609: t("history.oneMile"), 5000: "5k", 10000: "10k" };
   const kindsPresent = (["climb", "strength", "run", "ride", "other"] as const).filter((k) => sessionWeeks.some((w) => w.byKind[k] > 0));
 
   return (
     <div className="mb-6 space-y-4">
       {hasSessions && (
         <div className="sticker p-4">
-          <p className="label-xs mb-3">Sessions per week · minutes by sport</p>
+          <p className="label-xs mb-3">{t("history.sessionsPerWeek")}</p>
           <div className="flex items-end gap-1.5 h-20">
             {sessionWeeks.map((w) => (
-              <div key={w.weekStart} className="flex-1 flex flex-col justify-end h-full" title={`${w.label}: ${w.sessions} session${w.sessions === 1 ? "" : "s"}, ${w.minutes} min`}>
+              <div key={w.weekStart} className="flex-1 flex flex-col justify-end h-full" title={`${weekLabel(w.weekStart)}: ${w.sessions} ${fmt.plural(w.sessions, t("history.sessionOne"), t("history.sessionMany"))}, ${w.minutes} ${t("common.min")}`}>
                 <div className="w-full flex flex-col-reverse rounded-[4px] overflow-hidden" style={{ height: `${(w.minutes / maxSessionMin) * 100}%` }}>
                   {kindsPresent.map((k) =>
                     w.byKind[k] > 0 ? (
@@ -180,21 +186,21 @@ function TrendsSection() {
           </div>
           <p className="text-[10px] text-sage font-semibold mt-1.5">
             {kindsPresent.map((k) => (
-              <span key={k} className="mr-2"><span className="inline-block w-2 h-2 rounded-sm mr-1 align-middle" style={{ backgroundColor: KIND_COLORS[k] }} />{k}</span>
+              <span key={k} className="mr-2"><span className="inline-block w-2 h-2 rounded-sm mr-1 align-middle" style={{ backgroundColor: KIND_COLORS[k] }} />{KIND_LABELS[k]}</span>
             ))}
-            · number = sessions that week
+            · {t("history.numberIsSessions")}
           </p>
         </div>
       )}
       {paceCurve.length > 0 && (
         <div className="sticker p-4">
-          <p className="label-xs mb-3">Best efforts · last 90 days</p>
+          <p className="label-xs mb-3">{t("history.bestEfforts90")}</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {paceCurve.map((e) => {
               const improved = e.prevBestTimeSec != null && e.bestTimeSec < e.prevBestTimeSec;
               return (
                 <div key={e.distanceM}>
-                  <p className="label-xs">{e.label}</p>
+                  <p className="label-xs">{EFFORT_LABELS[e.distanceM] || e.label}</p>
                   <p className="text-base font-extrabold text-ink font-mono">{fmtSecs(e.bestTimeSec)}</p>
                   <p className="text-[10px] text-moss font-semibold">
                     {fmtSecs(e.paceSecPerKm)}/km
@@ -208,18 +214,18 @@ function TrendsSection() {
               );
             })}
           </div>
-          <p className="text-[10px] text-sage font-semibold mt-2">vs. the 90 days before — ▼ faster, ▲ slower</p>
+          <p className="text-[10px] text-sage font-semibold mt-2">{t("history.vsPrev90")}</p>
         </div>
       )}
 
       {hasZones && (
         <div className="sticker p-4">
-          <p className="label-xs mb-3">Weekly intensity mix (Z1–Z5)</p>
+          <p className="label-xs mb-3">{t("history.weeklyIntensity")}</p>
           <div className="flex items-end gap-1.5 h-20">
             {weeks.map((w) => {
               const total = w.zoneMin.reduce((a, b) => a + b, 0);
               return (
-                <div key={w.weekStart} className="flex-1 flex flex-col justify-end h-full" title={`${w.label}: ${w.runKm}km${w.hardPct != null ? `, ${w.hardPct}% hard` : ""}`}>
+                <div key={w.weekStart} className="flex-1 flex flex-col justify-end h-full" title={`${weekLabel(w.weekStart)}: ${fmt.number(w.runKm, 1, 0)}${t("common.km")}${w.hardPct != null ? `, ${w.hardPct}% ${t("history.hard")}` : ""}`}>
                   <div className="w-full flex flex-col-reverse rounded-[4px] overflow-hidden" style={{ height: `${(total / maxMin) * 100}%` }}>
                     {w.zoneMin.map((min, zi) =>
                       min > 0 ? (
@@ -233,11 +239,11 @@ function TrendsSection() {
           </div>
           <div className="flex gap-1.5 mt-1">
             {weeks.map((w) => (
-              <p key={w.weekStart} className="flex-1 text-center text-[9px] text-sage font-bold">{w.label.split(" ")[1]}</p>
+              <p key={w.weekStart} className="flex-1 text-center text-[9px] text-sage font-bold">{weekDay(w.weekStart)}</p>
             ))}
           </div>
           <p className="text-[10px] text-sage font-semibold mt-1.5">
-            Hard share (Z4+Z5): {weeks.filter((w) => w.hardPct != null).map((w) => `${w.hardPct}%`).join(" · ") || "–"}
+            {t("history.hardShare")}: {weeks.filter((w) => w.hardPct != null).map((w) => `${w.hardPct}%`).join(" · ") || "–"}
           </p>
         </div>
       )}
@@ -247,6 +253,7 @@ function TrendsSection() {
 
 export default function HistoryPage() {
   const t = useT();
+  const fmt = useFmt();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -286,13 +293,13 @@ export default function HistoryPage() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6 rounded-full border-2 border-ink" />
           <span className="font-extrabold text-sm text-ink">{t("history.title")}</span>
-          <span className="text-xs text-sage font-bold ml-auto">{total} activities</span>
+          <span className="text-xs text-sage font-bold ml-auto">{total} {fmt.plural(total, t("history.activityOne"), t("history.activityMany"))}</span>
         </div>
         {/* Desktop */}
         <div className="hidden md:flex items-center justify-between py-3">
           <div>
-            <h1 className="text-2xl font-extrabold text-ink">Activity History</h1>
-            <p className="text-sm text-moss font-semibold">{total} {total === 1 ? "activity" : "activities"}</p>
+            <h1 className="text-2xl font-extrabold text-ink">{t("history.activityHistory")}</h1>
+            <p className="text-sm text-moss font-semibold">{total} {fmt.plural(total, t("history.activityOne"), t("history.activityMany"))}</p>
           </div>
           <DesktopNavLinks />
         </div>
@@ -309,8 +316,8 @@ export default function HistoryPage() {
           <option value="">{t("history.all")}</option>
           <option value="Run">{t("history.runs")}</option>
           <option value="Ride">{t("history.rides")}</option>
-          <option value="Hike">Hike & Walk</option>
-          <option value="Swim">Swim</option>
+          <option value="Hike">{t("history.hikeWalk")}</option>
+          <option value="Swim">{t("history.swim")}</option>
           <option value="RockClimbing">{t("history.climbs")}</option>
           <option value="WeightTraining">{t("history.strength")}</option>
         </select>
@@ -322,11 +329,11 @@ export default function HistoryPage() {
         <div className="text-center py-12">
           <p className="text-moss font-semibold mb-2">{t("history.noActivities")}</p>
           <p className="text-sage text-sm font-semibold">
-            Connect Strava in{" "}
+            {t("history.connectStravaPrefix")}{" "}
             <Link href="/settings" className="text-leaf font-bold underline">
               {t("nav.settings")}
             </Link>{" "}
-            to import your activities.
+            {t("history.connectStravaSuffix")}
           </p>
         </div>
       ) : (

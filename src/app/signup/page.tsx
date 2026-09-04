@@ -31,7 +31,7 @@ function SignupForm() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Signup failed");
+        setError(data.error || t("auth.signupFailed"));
         return;
       }
 
@@ -57,7 +57,7 @@ function SignupForm() {
           onChange={(e) => setAccessCode(e.target.value)}
           required
           className="field"
-          placeholder="The code you got from your inviter"
+          placeholder={t("auth.accessCodePlaceholder")}
         />
       </div>
 
@@ -72,7 +72,7 @@ function SignupForm() {
           onChange={(e) => setName(e.target.value)}
           required
           className="field"
-          placeholder="Your name"
+          placeholder={t("auth.namePlaceholder")}
         />
       </div>
 
@@ -87,7 +87,7 @@ function SignupForm() {
           onChange={(e) => setEmail(e.target.value)}
           required
           className="field"
-          placeholder="you@example.com"
+          placeholder={t("auth.emailPlaceholder")}
         />
       </div>
 
@@ -103,7 +103,7 @@ function SignupForm() {
           required
           minLength={8}
           className="field"
-          placeholder="At least 8 characters"
+          placeholder={t("auth.newPasswordPlaceholder")}
         />
       </div>
 
@@ -116,7 +116,7 @@ function SignupForm() {
         disabled={loading}
         className="btn-brocco w-full py-2 px-4"
       >
-        {loading ? "Creating account..." : t("auth.signup")}
+        {loading ? t("auth.creatingAccount") : t("auth.signup")}
       </button>
     </form>
   );
@@ -129,9 +129,9 @@ export default function SignupPage() {
       <div className="w-full max-w-sm sticker-lg p-6">
         <div className="text-center mb-8">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/brocco-runner.png" alt="Brocco, running" className="h-32 mx-auto mb-4" />
-          <h1 className="text-2xl font-extrabold text-ink">Join brocco.run</h1>
-          <p className="text-moss text-sm mt-1">You need an invite code to sign up.</p>
+          <img src="/brand/brocco-runner.png" alt={t("auth.mascotAlt")} className="h-32 mx-auto mb-4" />
+          <h1 className="text-2xl font-extrabold text-ink">{t("auth.joinTitle")}</h1>
+          <p className="text-moss text-sm mt-1">{t("auth.inviteNeeded")}</p>
         </div>
 
         <Suspense fallback={<div className="text-moss text-center">{t("common.loading")}</div>}>
@@ -139,7 +139,7 @@ export default function SignupPage() {
         </Suspense>
 
         <p className="text-center text-moss text-sm mt-6">
-          Already have an account?{" "}
+          {t("auth.alreadyHaveAccount")}{" "}
           <a href="/login" className="text-leaf font-bold underline">
             {t("auth.login")}
           </a>

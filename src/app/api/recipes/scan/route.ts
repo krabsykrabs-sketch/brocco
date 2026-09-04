@@ -3,8 +3,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
-import { validateRecipeInput, serializeRecipe } from "@/lib/recipes";
+import { validateRecipeInput, serializeRecipe, describeRecipeValidation } from "@/lib/recipes";
 import { UTILITY_MODEL } from "@/lib/models";
+import { userTranslator } from "@/lib/i18n-server";
 
 const anthropic = new Anthropic();
 
@@ -24,14 +25,15 @@ export async function POST(request: NextRequest) {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const t = await userTranslator(session.userId);
   if (!rateLimit(`recipe-scan:${session.userId}`, 20, 60 * 60 * 1000)) {
-    return NextResponse.json({ error: "Scan limit reached — try again in an hour." }, { status: 429 });
+    return NextResponse.json({ error: t("api.scan.limit") }, { status: 429 });
   }
 
   const body = await request.json().catch(() => ({}));
   const images = Array.isArray(body.images) ? body.images.slice(0, MAX_IMAGES) : [];
   if (images.length === 0) {
-    return NextResponse.json({ error: "At least one image is required" }, { status: 400 });
+    return NextResponse.json({ error: t("api.scan.imageRequired") }, { status: 400 });
   }
 
   const imageBlocks: Anthropic.ImageBlockParam[] = [];
@@ -39,10 +41,10 @@ export async function POST(request: NextRequest) {
     const mediaType = ALLOWED_TYPES.includes(img?.mediaType) ? img.mediaType : null;
     const data = typeof img?.data === "string" ? img.data.replace(/^data:[^,]+,/, "") : "";
     if (!mediaType || !data) {
-      return NextResponse.json({ error: "Each image needs base64 data and a mediaType (jpeg/png/webp)" }, { status: 400 });
+      return NextResponse.json({ error: t("api.scan.imageInvalid") }, { status: 400 });
     }
     if (data.length > MAX_IMAGE_B64) {
-      return NextResponse.json({ error: "Image too large — max ~3.5MB each" }, { status: 413 });
+      return NextResponse.json({ error: t("api.scan.imageTooLarge") }, { status: 413 });
     }
     imageBlocks.push({ type: "image", source: { type: "base64", media_type: mediaType, data } });
   }
@@ -79,15 +81,15 @@ Rules: KEEP THE RECIPE'S ORIGINAL LANGUAGE — do not translate. One ingredient 
 
     if (!parsed || parsed.found === false) {
       return NextResponse.json(
-        { error: parsed?.reason ? `No recipe found: ${parsed.reason}` : "Couldn't read a recipe from that photo — try a sharper shot." },
+        { error: parsed?.reason ? t("api.scan.noRecipeReason", { reason: String(parsed.reason) }) : t("api.scan.noRecipe") },
         { status: 422 }
       );
     }
 
     const validated = validateRecipeInput(parsed);
     if (!validated.ok) {
-      console.error("[recipe-scan] extraction failed validation:", validated.error);
-      return NextResponse.json({ error: "Couldn't read a complete recipe — try a sharper photo." }, { status: 422 });
+      console.error("[recipe-scan] extraction failed validation:", describeRecipeValidation(validated));
+      return NextResponse.json({ error: t("api.scan.incomplete") }, { status: 422 });
     }
 
     const recipe = await prisma.recipe.create({
@@ -107,6 +109,6 @@ Rules: KEEP THE RECIPE'S ORIGINAL LANGUAGE — do not translate. One ingredient 
     return NextResponse.json({ recipe: serializeRecipe(recipe) }, { status: 201 });
   } catch (err) {
     console.error("[recipe-scan] error:", err);
-    return NextResponse.json({ error: "Scan failed — try again." }, { status: 502 });
+    return NextResponse.json({ error: t("api.scan.failed") }, { status: 502 });
   }
 }

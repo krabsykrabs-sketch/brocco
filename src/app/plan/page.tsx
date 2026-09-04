@@ -140,7 +140,7 @@ function ArcHeader({
             {weeksLeft <= 0
               ? `${t("plan.lastWeekOf")} ${phase.name}`
               : `${t("plan.phaseEndsIn")} ${weeksLeft} ${weeksLeft === 1 ? t("unit.week") : t("unit.weeks")}`}
-            {nextPhase ? <span className="text-leaf"> → {nextPhase.name}</span> : <span className="text-leaf"> → race</span>}
+            {nextPhase ? <span className="text-leaf"> → {nextPhase.name}</span> : <span className="text-leaf"> → {t("plan.race")}</span>}
           </p>
         </>
       )}
@@ -326,7 +326,7 @@ function BlockCard({
                     <div
                       className="w-full rounded-sm bg-shade relative overflow-hidden"
                       style={{ height: `${Math.max((target / peak) * 100, 4)}%` }}
-                      title={`${t("common.week")} ${w.weekNumber}: ${target.toFixed(0)} ${sessionsBars ? t("common.sessions") : t("common.km")} target`}
+                      title={t("plan.barTooltip").replace("{n}", String(w.weekNumber)).replace("{v}", `${target.toFixed(0)} ${sessionsBars ? t("common.sessions") : t("common.km")}`)}
                     >
                       {fill > 0 && <div className="absolute inset-x-0 bottom-0 bg-brocco" style={{ height: `${fill}%` }} />}
                     </div>
@@ -363,7 +363,7 @@ function BlockCard({
                   <div className={`h-full ${isCurrent ? "bg-brocco" : "bg-sprout"}`} style={{ width: `${(done / len) * 100}%` }} />
                 </div>
                 <span className="text-[10px] text-sage font-bold tabular-nums w-16 flex-shrink-0 text-right">
-                  {isCurrent ? `${done} ${t("plan.weekOf")} ${len}` : `W${phase.startWeek}–${phase.endWeek}`}
+                  {isCurrent ? `${done} ${t("plan.weekOf")} ${len}` : `${t("plan.weekAbbr")}${phase.startWeek}–${phase.endWeek}`}
                 </span>
               </button>
               {open && phase.description && (
@@ -379,7 +379,7 @@ function BlockCard({
           <span>📅</span><span>{t("plan.seeSessions")}</span>
         </Link>
         <Link
-          href={`/chat?msg=${encodeURIComponent("Explain my training plan to me — what's the thinking behind the phases and the weekly volumes, and how should I approach the block?")}`}
+          href={`/chat?msg=${encodeURIComponent(t("plan.msgExplain"))}`}
           className="btn-quiet flex items-center justify-center gap-2 flex-1 py-2 text-xs"
         >
           <span>🥦</span><span>{t("plan.explainPlan")}</span>
@@ -423,7 +423,7 @@ function WeekListCard({
               >
                 <span className="flex items-center gap-2">
                   <span className={`text-xs font-extrabold w-9 flex-shrink-0 tabular-nums ${isCurrent ? "text-ink" : "text-moss"}`}>
-                    W{w.weekNumber}
+                    {t("plan.weekAbbr")}{w.weekNumber}
                   </span>
                   <span className="text-[10px] text-sage font-bold w-14 flex-shrink-0">{formatDay(w.startDate, lang)}</span>
                   <span className="text-[10px] text-sage font-semibold flex-1 truncate tracking-[0.2em] uppercase">
@@ -510,7 +510,7 @@ function PlanPageContent() {
 
   function handleNewPlan() {
     setStartingPlan(true);
-    router.push(`/chat?msg=${encodeURIComponent("I'd like to build a new training plan")}`);
+    router.push(`/chat?msg=${encodeURIComponent(t("plan.msgNewPlan"))}`);
   }
 
   async function handleToggleTask(id: string, status: string) {
@@ -521,7 +521,7 @@ function PlanPageContent() {
 
   const newPlanButton = (
     <button onClick={handleNewPlan} disabled={startingPlan} className="text-xs text-leaf font-bold hover:opacity-70 transition-opacity flex-shrink-0 disabled:opacity-50">
-      {startingPlan ? "..." : "+ New plan"}
+      {startingPlan ? "..." : t("plan.newPlan")}
     </button>
   );
 
@@ -537,9 +537,9 @@ function PlanPageContent() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/brand/brocco-runner.png" alt="" className="h-32 mx-auto mb-4" />
           <p className="text-ink text-lg font-extrabold">{t("plan.noPlan")}</p>
-          <p className="text-moss text-sm mt-2 mb-4 font-semibold">Let Brocco build you a personalized plan.</p>
+          <p className="text-moss text-sm mt-2 mb-4 font-semibold">{t("plan.noPlanSub")}</p>
           <button onClick={handleNewPlan} disabled={startingPlan} className="btn-brocco px-6 py-2.5">
-            {startingPlan ? "Starting..." : t("today.buildPlan")}
+            {startingPlan ? t("plan.starting") : t("today.buildPlan")}
           </button>
         </div>
       </main>
@@ -624,12 +624,12 @@ function PlanPageContent() {
         ) : (
           <section className="sticker px-4 py-3">
             <p className="text-sm font-bold text-ink">
-              {notStarted ? "This block hasn't started yet" : "This block is finished"}
+              {notStarted ? t("plan.notStarted") : t("plan.finished")}
             </p>
             <p className="text-xs text-moss font-semibold mt-0.5">
               {notStarted
-                ? `Week 1 begins ${formatDay(weekList[0]?.startDate || plan.startDate, lang)}.`
-                : "Ask Brocco for the next one when you're ready."}
+                ? t("plan.week1Begins").replace("{date}", formatDay(weekList[0]?.startDate || plan.startDate, lang))
+                : t("plan.askNext")}
             </p>
           </section>
         )}

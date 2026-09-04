@@ -9,11 +9,13 @@ import { ReminderWatcher } from "./reminder-watcher";
 import { FeaturesProvider } from "./features-provider";
 import { BootSplash } from "./boot-splash";
 import ToastHost from "./toast-host";
+import { cache } from "react";
 import { getIronSession } from "iron-session";
 import { cookies } from "next/headers";
 import { sessionOptions, type SessionData } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { DEFAULT_LANG, resolveLang, type Lang } from "@/lib/i18n";
+import { translator } from "@/lib/dict";
 
 const nunito = Nunito({
   variable: "--font-nunito",
@@ -25,16 +27,20 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "brocco.run — Run like a broccoli",
-  description: "Your personal AI running coach",
-  manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "Brocco",
-  },
-};
+/** Tab title and description in the user's language; the rest is static. */
+export async function generateMetadata(): Promise<Metadata> {
+  const t = translator(await htmlLang());
+  return {
+    title: t("shell.metaTitle"),
+    description: t("shell.metaDescription"),
+    manifest: "/manifest.json",
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "default",
+      title: "Brocco",
+    },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: "#faf6ea",
@@ -49,7 +55,9 @@ export const viewport: Viewport = {
  * anyone without a stored choice get the default; the client provider still
  * picks up the browser guess for the strings themselves.
  */
-async function htmlLang(): Promise<Lang> {
+// `cache` dedupes the lookup between generateMetadata and the layout body
+// within one request.
+const htmlLang = cache(async function htmlLang(): Promise<Lang> {
   try {
     // Cookie only — getSession() would add the session-epoch lookup, and this
     // runs on every page render just to pick a language.
@@ -63,7 +71,7 @@ async function htmlLang(): Promise<Lang> {
   } catch {
     return DEFAULT_LANG;
   }
-}
+});
 
 export default async function RootLayout({
   children,

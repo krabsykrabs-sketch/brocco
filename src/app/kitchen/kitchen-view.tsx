@@ -56,6 +56,7 @@ function RecipeSheet({
   onChanged: () => void;
 }) {
   const t = useT();
+  const lang = useLang();
   const [editing, setEditing] = useState(false);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -86,10 +87,10 @@ function RecipeSheet({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        emitToast({ text: data.error || "Couldn't save — check the fields.", kind: "error" });
+        emitToast({ text: data.error || t("recipe.saveFailed"), kind: "error" });
         return;
       }
-      emitToast({ text: `Saved: ${title.trim()}`, kind: "success" });
+      emitToast({ text: t("recipe.saved").replace("{title}", title.trim()), kind: "success" });
       onChanged();
       onClose();
     } finally {
@@ -106,7 +107,7 @@ function RecipeSheet({
   async function handleDelete() {
     const res = await fetch(`/api/recipes/${recipe.id}`, { method: "DELETE" });
     if (!res.ok) {
-      emitToast({ text: "Couldn't delete — try again.", kind: "error" });
+      emitToast({ text: t("workout.couldntDelete"), kind: "error" });
       return;
     }
     onChanged();
@@ -116,10 +117,10 @@ function RecipeSheet({
       tags: recipe.tags, servings: recipe.servings, timeMin: recipe.timeMin, notes: recipe.notes, source: recipe.source,
     };
     emitToast({
-      text: `Deleted: ${recipe.title}`,
+      text: t("recipe.deleted").replace("{title}", recipe.title),
       kind: "info",
       action: {
-        label: "Undo",
+        label: t("common.undo"),
         run: async () => {
           await fetch("/api/recipes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(snapshot) });
           onChanged();
@@ -136,7 +137,7 @@ function RecipeSheet({
       body: JSON.stringify({ cooked: true }),
     });
     if (res.ok) {
-      emitToast({ text: `Enjoy! 🥦 Logged: ${recipe.title}`, kind: "success" });
+      emitToast({ text: t("recipe.cookedToast").replace("{title}", recipe.title), kind: "success" });
       onChanged();
       onClose();
     }
@@ -148,7 +149,7 @@ function RecipeSheet({
       <div className="relative w-full md:max-w-lg bg-paper border-2 border-ink rounded-t-2xl md:rounded-2xl md:shadow-[4px_4px_0_var(--color-shade)] max-h-[92vh] flex flex-col safe-bottom">
         <div className="flex items-center justify-between px-4 pt-4 pb-2 flex-shrink-0">
           <h2 className="text-sm font-extrabold text-ink">
-            {isNewScan ? "📸 Scanned — check it over" : editing ? "Edit recipe" : ""}
+            {isNewScan ? t("recipe.scannedCheck") : editing ? t("recipe.edit") : ""}
           </h2>
           {!isNewScan && (
             <button onClick={onClose} className="text-moss hover:text-ink text-xl leading-none" aria-label={t("common.close")}>&times;</button>
@@ -158,32 +159,32 @@ function RecipeSheet({
         <div className="px-4 pb-4 overflow-y-auto">
           {editing || isNewScan ? (
             <div className="space-y-2.5">
-              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" className={inputCls} />
+              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("recipe.title")} className={inputCls} />
               <div className="grid grid-cols-2 gap-2">
-                <input type="number" value={servings} onChange={(e) => setServings(e.target.value)} placeholder="Servings" className={inputCls} />
-                <input type="number" value={timeMin} onChange={(e) => setTimeMin(e.target.value)} placeholder="Time (min)" className={inputCls} />
+                <input type="number" value={servings} onChange={(e) => setServings(e.target.value)} placeholder={t("recipe.servings")} className={inputCls} />
+                <input type="number" value={timeMin} onChange={(e) => setTimeMin(e.target.value)} placeholder={t("recipe.timeMin")} className={inputCls} />
               </div>
-              <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="Tags, comma-separated" className={inputCls} />
+              <input value={tags} onChange={(e) => setTags(e.target.value)} placeholder={t("recipe.tagsHint")} className={inputCls} />
               <div>
-                <label className="label-xs block mb-1">Ingredients — one per line</label>
+                <label className="label-xs block mb-1">{t("recipe.ingredientsPerLine")}</label>
                 <textarea value={ingredients} onChange={(e) => setIngredients(e.target.value)} rows={6} className={inputCls} />
               </div>
               <div>
-                <label className="label-xs block mb-1">Steps — one per line</label>
+                <label className="label-xs block mb-1">{t("recipe.stepsPerLine")}</label>
                 <textarea value={steps} onChange={(e) => setSteps(e.target.value)} rows={8} className={inputCls} />
               </div>
               <div className="flex gap-2 pt-1">
                 {isNewScan ? (
-                  <button onClick={handleDiscardScan} className="btn-quiet px-4 py-2.5 text-sm">Discard</button>
+                  <button onClick={handleDiscardScan} className="btn-quiet px-4 py-2.5 text-sm">{t("recipe.discard")}</button>
                 ) : (
-                  <button onClick={() => setEditing(false)} className="btn-quiet px-4 py-2.5 text-sm">Cancel</button>
+                  <button onClick={() => setEditing(false)} className="btn-quiet px-4 py-2.5 text-sm">{t("common.cancel")}</button>
                 )}
                 <button
                   onClick={handleSaveEdit}
                   disabled={saving || !title.trim()}
                   className="btn-brocco flex-1 py-2.5 text-sm"
                 >
-                  {saving ? "Saving…" : isNewScan ? "Looks right — save" : "Save"}
+                  {saving ? t("common.saving") : isNewScan ? t("recipe.looksRight") : t("common.save")}
                 </button>
               </div>
             </div>
@@ -192,9 +193,9 @@ function RecipeSheet({
               <h1 className="text-lg font-extrabold text-ink mb-1">{recipe.title}</h1>
               <p className="text-xs text-moss font-semibold mb-3">
                 {[
-                  recipe.servings ? `${recipe.servings} servings` : null,
-                  recipe.timeMin ? `${recipe.timeMin} min` : null,
-                  recipe.timesCooked > 0 ? `cooked ${recipe.timesCooked}×` : null,
+                  recipe.servings ? `${recipe.servings} ${plural(lang, recipe.servings, t("recipe.serving"), t("recipe.servingsUnit"))}` : null,
+                  recipe.timeMin ? `${recipe.timeMin} ${t("common.min")}` : null,
+                  recipe.timesCooked > 0 ? t("recipe.cookedTimes").replace("{n}", String(recipe.timesCooked)) : null,
                 ].filter(Boolean).join(" · ")}
                 {recipe.tags.length > 0 && (
                   <span className="ml-2">
@@ -205,7 +206,7 @@ function RecipeSheet({
                 )}
               </p>
 
-              <h3 className="label-xs mb-1.5">Ingredients</h3>
+              <h3 className="label-xs mb-1.5">{t("recipe.ingredients")}</h3>
               <div className="space-y-1 mb-4">
                 {recipe.ingredients.map((ing, i) => (
                   <button
@@ -223,7 +224,7 @@ function RecipeSheet({
                 ))}
               </div>
 
-              <h3 className="label-xs mb-1.5">Steps</h3>
+              <h3 className="label-xs mb-1.5">{t("recipe.steps")}</h3>
               <ol className="space-y-2.5 mb-4">
                 {recipe.steps.map((step, i) => (
                   <li key={i} className="flex gap-2.5">
@@ -240,10 +241,10 @@ function RecipeSheet({
               <div className="space-y-2 pt-1">
                 <div className="flex gap-2">
                   <button onClick={handleCooked} className="btn-brocco flex-1 py-2.5 text-sm">
-                    I cooked this 🥦
+                    {t("recipe.iCookedThis")}
                   </button>
-                  <button onClick={() => setEditing(true)} className="btn-quiet px-4 py-2.5 text-sm">Edit</button>
-                  <button onClick={handleDelete} className="btn-danger px-4 py-2.5 text-sm">Delete</button>
+                  <button onClick={() => setEditing(true)} className="btn-quiet px-4 py-2.5 text-sm">{t("common.edit")}</button>
+                  <button onClick={handleDelete} className="btn-danger px-4 py-2.5 text-sm">{t("common.delete")}</button>
                 </div>
               </div>
             </>
@@ -263,6 +264,7 @@ const MAX_PAGES = 4;
  * (manage_recipe staples_add/staples_remove).
  */
 function StaplesSection() {
+  const t = useT();
   const [staples, setStaples] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [loaded, setLoaded] = useState(false);
@@ -289,7 +291,7 @@ function StaplesSection() {
       setStaples(d.staples || next);
     } catch {
       setStaples(prev);
-      emitToast({ text: "Couldn't save staples — try again.", kind: "error" });
+      emitToast({ text: t("kitchen.staplesSaveFailed"), kind: "error" });
     }
   }
 
@@ -303,9 +305,9 @@ function StaplesSection() {
 
   return (
     <div className="sticker px-4 py-3">
-      <p className="text-sm font-bold text-ink">🧂 Always in stock</p>
+      <p className="text-sm font-bold text-ink">{t("kitchen.alwaysInStock")}</p>
       <p className="text-[11px] text-moss font-semibold mt-0.5 mb-2">
-        Brocco assumes these in every recipe idea — no need to list them each time.
+        {t("kitchen.staplesHint")}
       </p>
       {loaded && staples.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-2">
@@ -317,7 +319,7 @@ function StaplesSection() {
               {s}
               <button
                 onClick={() => save(staples.filter((x) => x !== s))}
-                aria-label={`Remove ${s}`}
+                aria-label={t("kitchen.remove").replace("{item}", s)}
                 className="w-4 h-4 flex items-center justify-center rounded-full text-moss hover:text-clay"
               >
                 ×
@@ -331,7 +333,7 @@ function StaplesSection() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") addFromInput(); }}
-          placeholder="curry paste, chickpeas…"
+          placeholder={t("kitchen.staplesPlaceholder")}
           className="field flex-1"
         />
         <button
@@ -339,7 +341,7 @@ function StaplesSection() {
           disabled={!input.trim()}
           className="btn-quiet px-3 text-xs disabled:opacity-40"
         >
-          Add
+          {t("kitchen.add")}
         </button>
       </div>
     </div>
@@ -395,7 +397,7 @@ export default function KitchenView() {
       const next = [...prev];
       for (const file of picked) {
         if (next.length >= MAX_PAGES) {
-          emitToast({ text: `Max ${MAX_PAGES} pages per recipe.`, kind: "info" });
+          emitToast({ text: t("kitchen.maxPages").replace("{n}", String(MAX_PAGES)), kind: "info" });
           break;
         }
         next.push({ file, url: URL.createObjectURL(file) });
@@ -431,14 +433,14 @@ export default function KitchenView() {
       });
       const data = await res.json();
       if (!res.ok) {
-        emitToast({ text: data.error || "Scan failed — try again.", kind: "error" });
+        emitToast({ text: data.error || t("kitchen.scanFailed"), kind: "error" });
         return; // keep the staged pages so a retry doesn't mean re-photographing
       }
       clearPages();
       fetchRecipes();
       setOpen({ recipe: data.recipe, isNewScan: true });
     } catch {
-      emitToast({ text: "Couldn't read those photos — try again.", kind: "error" });
+      emitToast({ text: t("kitchen.photosFailed"), kind: "error" });
     } finally {
       setScanning(false);
     }
@@ -457,16 +459,16 @@ export default function KitchenView() {
             className="sticker sticker-press flex flex-col items-center gap-1 disabled:opacity-60 px-4 py-4"
           >
             <span className="text-2xl">📸</span>
-            <span className="text-sm font-bold text-ink">Scan a recipe</span>
-            <span className="text-[10px] text-moss font-semibold">Photo a cookbook page — multi-page works too</span>
+            <span className="text-sm font-bold text-ink">{t("kitchen.scanRecipe")}</span>
+            <span className="text-[10px] text-moss font-semibold">{t("kitchen.scanRecipeSub")}</span>
           </button>
           <Link
             href="/kitchen/chat"
             className="btn-brocco flex flex-col items-center gap-1 px-4 py-4"
           >
             <span className="text-2xl">🥦</span>
-            <span className="text-sm font-extrabold">Cook with Brocco</span>
-            <span className="text-[10px] text-leaf font-bold">Tell Brocco your ingredients, pick a recipe</span>
+            <span className="text-sm font-extrabold">{t("kitchen.cookWithBrocco")}</span>
+            <span className="text-[10px] text-leaf font-bold">{t("kitchen.cookWithBroccoSub")}</span>
           </Link>
         </div>
         <input
@@ -477,7 +479,7 @@ export default function KitchenView() {
           multiple
           onChange={(e) => addFiles(e.target.files)}
           className="hidden"
-          aria-label="Scan recipe photos"
+          aria-label={t("kitchen.scanPhotos")}
         />
         <input
           ref={uploadRef}
@@ -486,7 +488,7 @@ export default function KitchenView() {
           multiple
           onChange={(e) => addFiles(e.target.files)}
           className="hidden"
-          aria-label="Upload recipe images"
+          aria-label={t("kitchen.uploadImages")}
         />
 
         {pages.length < MAX_PAGES && (
@@ -495,7 +497,7 @@ export default function KitchenView() {
             disabled={scanning}
             className="w-full text-xs font-bold text-moss underline underline-offset-4 decoration-shade py-1 disabled:opacity-60"
           >
-            or upload images from your device
+            {t("kitchen.orUpload")}
           </button>
         )}
 
@@ -503,18 +505,18 @@ export default function KitchenView() {
         {pages.length > 0 && (
           <div className="sticker bg-sprout p-3" data-testid="scan-tray">
             <p className="text-xs font-bold text-ink mb-2">
-              📄 Recipe pages ({pages.length}/{MAX_PAGES})
+              {t("kitchen.recipePages").replace("{n}", String(pages.length)).replace("{max}", String(MAX_PAGES))}
             </p>
             <div className="flex gap-2 mb-3 overflow-x-auto">
               {pages.map((p, i) => (
                 <div key={p.url} className="relative flex-shrink-0">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={p.url} alt={`Page ${i + 1}`} className="w-16 h-20 object-cover rounded-lg border-2 border-ink" />
+                  <img src={p.url} alt={t("kitchen.pageN").replace("{n}", String(i + 1))} className="w-16 h-20 object-cover rounded-lg border-2 border-ink" />
                   <span className="absolute bottom-0.5 left-0.5 px-1 bg-ink/80 rounded text-[9px] text-cream font-bold">{i + 1}</span>
                   <button
                     onClick={() => removePage(i)}
                     disabled={scanning}
-                    aria-label={`Remove page ${i + 1}`}
+                    aria-label={t("kitchen.removePage").replace("{n}", String(i + 1))}
                     className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-card border-2 border-ink rounded-full text-ink hover:text-clay text-xs leading-none"
                   >
                     ×
@@ -525,9 +527,9 @@ export default function KitchenView() {
                 <button
                   onClick={() => fileRef.current?.click()}
                   disabled={scanning}
-                  className="flex-shrink-0 w-16 h-20 border-2 border-dashed border-ink/40 hover:border-ink rounded-lg text-moss hover:text-ink text-xs font-bold transition-colors"
+                  className="flex-shrink-0 w-16 h-20 border-2 border-dashed border-ink/40 hover:border-ink rounded-lg text-moss hover:text-ink text-xs font-bold transition-colors whitespace-pre-line"
                 >
-                  + Add<br />page
+                  {t("kitchen.addPage")}
                 </button>
               )}
             </div>
@@ -537,14 +539,14 @@ export default function KitchenView() {
                 disabled={scanning}
                 className="btn-quiet px-4 py-2 text-sm disabled:opacity-40"
               >
-                Cancel
+                {t("common.cancel")}
               </button>
               <button
                 onClick={scanPages}
                 disabled={scanning}
                 className="btn-brocco flex-1 py-2 text-sm"
               >
-                {scanning ? "Reading pages…" : `Scan recipe (${pages.length} ${plural(lang, pages.length, t("unit.page"), t("unit.pages"))})`}
+                {scanning ? t("kitchen.readingPages") : `${t("kitchen.scanButton")} (${pages.length} ${plural(lang, pages.length, t("unit.page"), t("unit.pages"))})`}
               </button>
             </div>
           </div>
@@ -557,19 +559,19 @@ export default function KitchenView() {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search recipes, ingredients, tags…"
+          placeholder={t("kitchen.searchPlaceholder")}
           className="field"
         />
 
         {/* Library */}
         {loading ? (
-          <p className="text-center text-sm text-moss font-semibold py-8">Loading…</p>
+          <p className="text-center text-sm text-moss font-semibold py-8">{t("common.loading")}</p>
         ) : recipes.length === 0 ? (
           <div className="text-center py-10">
             <p className="text-3xl mb-2">🍳</p>
-            <p className="text-sm text-ink font-bold">{query ? "No recipes match." : "Your recipe library is empty."}</p>
+            <p className="text-sm text-ink font-bold">{query ? t("kitchen.noMatch") : t("kitchen.empty")}</p>
             {!query && (
-              <p className="text-xs text-moss font-semibold mt-1">Photograph a recipe from a cookbook, or ask Brocco to save one from chat.</p>
+              <p className="text-xs text-moss font-semibold mt-1">{t("kitchen.emptyHint")}</p>
             )}
           </div>
         ) : (
@@ -586,8 +588,12 @@ export default function KitchenView() {
                   {r.timesCooked > 0 && <span className="text-[10px] text-sage font-bold flex-shrink-0 tabular-nums">{r.timesCooked}×</span>}
                 </div>
                 <p className="text-xs text-moss font-semibold truncate mt-0.5">
-                  {[r.timeMin ? `${r.timeMin} min` : null, r.servings ? `${r.servings} servings` : null, ...r.tags.slice(0, 3)]
-                    .filter(Boolean).join(" · ") || `${r.ingredients.length} ingredients`}
+                  {[
+                    r.timeMin ? `${r.timeMin} ${t("common.min")}` : null,
+                    r.servings ? `${r.servings} ${plural(lang, r.servings, t("recipe.serving"), t("recipe.servingsUnit"))}` : null,
+                    ...r.tags.slice(0, 3),
+                  ].filter(Boolean).join(" · ") ||
+                    `${r.ingredients.length} ${plural(lang, r.ingredients.length, t("recipe.ingredient"), t("recipe.ingredientsUnit"))}`}
                 </p>
               </button>
             ))}

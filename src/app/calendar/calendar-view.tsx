@@ -2,6 +2,7 @@
 
 import { useT, useLang } from "@/app/features-provider";
 import { fmtDate, fmtNumber, weekdayInitials, type Lang } from "@/lib/i18n";
+import type { DictKey } from "@/lib/dict";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
@@ -30,6 +31,7 @@ interface ActivityItem {
   distanceKm: number | null; durationMin: number | null; avgPacePerKm: string | null; source: string;
 }
 type ViewMode = "day" | "week" | "month";
+const VIEW_KEY: Record<ViewMode, DictKey> = { day: "calendar.day", week: "calendar.week", month: "calendar.month" };
 /** Position in the swipe track: -1 = the page before the anchor, +1 = after it. */
 type PageOffset = -1 | 0 | 1;
 
@@ -87,40 +89,57 @@ function reconcileDay(workouts: WorkoutItem[], activities: ActivityItem[], today
  * Duration-only sessions — rides, S&C — used to fall through to the bare
  * "training plan" label, hiding the one number that defines them.
  */
-export function plannedDetail(w: WorkoutItem): string {
+export function plannedDetail(w: WorkoutItem, t: T): string {
   return (
     [
       w.targetDistanceKm ? `${w.targetDistanceKm} km` : null,
       w.targetPace,
-      w.targetDurationMin ? `${Math.round(w.targetDurationMin)} min` : null,
+      w.targetDurationMin ? `${Math.round(w.targetDurationMin)} ${t("common.min")}` : null,
     ]
       .filter(Boolean)
-      .join(" · ") || "training plan"
+      .join(" · ") || t("calendar.trainingPlan")
   );
 }
 
 /** The prescription in one line: how far, how long, how fast. */
-function targetLine(w: WorkoutItem): string {
+function targetLine(w: WorkoutItem, t: T): string {
   const amount = [
     w.targetDistanceKm ? `${w.targetDistanceKm} km` : null,
-    w.targetDurationMin ? `${Math.round(w.targetDurationMin)} min` : null,
+    w.targetDurationMin ? `${Math.round(w.targetDurationMin)} ${t("common.min")}` : null,
   ].filter(Boolean).join(" · ");
   if (amount && w.targetPace) return `${amount} @ ${w.targetPace}`;
-  return amount || w.targetPace || "no target set — run it by feel";
+  return amount || w.targetPace || t("calendar.noTarget");
 }
 
-const WORKOUT_TYPE_LABEL: Record<string, string> = {
-  easy: "easy run", long: "long run", tempo: "tempo run", interval: "interval session",
-  race_pace: "race-pace session", recovery: "recovery run", rest: "rest day",
-  cross_training: "cross-training session", strength: "strength session", race: "race",
-  climbing: "climbing session",
+/** `useT()`'s return type — the helpers below take it rather than calling hooks. */
+type T = (key: DictKey) => string;
+
+const WORKOUT_TYPE_KEY: Record<string, DictKey> = {
+  easy: "calendar.workoutType.easy", long: "calendar.workoutType.long", tempo: "calendar.workoutType.tempo",
+  interval: "calendar.workoutType.interval", race_pace: "calendar.workoutType.race_pace",
+  recovery: "calendar.workoutType.recovery", rest: "calendar.workoutType.rest",
+  cross_training: "calendar.workoutType.cross_training", strength: "calendar.workoutType.strength",
+  race: "calendar.workoutType.race", climbing: "calendar.workoutType.climbing",
 };
 
-function activityDetail(a: ActivityItem, lang: Lang): string {
+/** "easy run", "Tempolauf", … — falls back to the raw type for anything unmapped. */
+function workoutTypeLabel(type: string, t: T): string {
+  const key = WORKOUT_TYPE_KEY[type];
+  return key ? t(key) : type.replace("_", " ");
+}
+
+/** Category chips in the event editor, translated at render time. */
+const CATEGORY_KEY: Record<string, DictKey> = {
+  work: "event.category.work", family: "event.category.family", training: "event.category.training",
+  social: "event.category.social", health: "event.category.health", birthday: "event.category.birthday",
+  other: "event.category.other",
+};
+
+function activityDetail(a: ActivityItem, lang: Lang, t: T): string {
   if (a.distanceKm) {
     return `${fmtNumber(a.distanceKm, lang, 1)} km${a.avgPacePerKm ? ` · ${a.avgPacePerKm.replace("/km", "")}` : ""}`;
   }
-  if (a.durationMin) return `${Math.round(a.durationMin)} min`;
+  if (a.durationMin) return `${Math.round(a.durationMin)} ${t("common.min")}`;
   return "";
 }
 
@@ -298,6 +317,7 @@ function SwipePager({
 // --- Event rows ---
 
 function EventChip({ event, onTap }: { event: EventOccurrence; onTap: () => void }) {
+  const t = useT();
   const meta = categoryMeta(event.category);
   const isLastDay = event.end?.slice(0, 10) === event.date;
   return (
@@ -311,10 +331,10 @@ function EventChip({ event, onTap }: { event: EventOccurrence; onTap: () => void
         <p className="text-[10px] text-moss font-semibold truncate tabular-nums">
           {event.continuation
             ? isLastDay && !event.allDay
-              ? `until ${event.end!.slice(11, 16)}`
-              : "continues"
+              ? `${t("calendar.until")} ${event.end!.slice(11, 16)}`
+              : t("calendar.continues")
             : event.allDay
-            ? "all day"
+            ? t("calendar.allDay")
             : `${event.start.slice(11, 16)}${event.end ? `–${event.end.slice(11, 16)}` : ""}`}
           {event.location ? ` · ${event.location}` : ""}
         </p>
@@ -339,14 +359,14 @@ function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matche
           {workout.title}
         </p>
         <p className="text-[10px] text-moss font-semibold truncate tabular-nums">
-          {plannedDetail(workout)}
+          {plannedDetail(workout, t)}
         </p>
       </div>
       {state === "done" ? (
         <div className="px-2.5 py-1.5 bg-sprout min-w-0">
           <p className="label-xs text-leaf!">{t("calendar.doneLabel")}</p>
-          <p className="text-xs font-extrabold text-ink truncate tabular-nums">{matched ? activityDetail(matched, lang) || matched.name : "completed"}</p>
-          {matched && <p className="text-[10px] text-leaf font-bold truncate">{matched.source === "strava" ? "strava" : "logged"}</p>}
+          <p className="text-xs font-extrabold text-ink truncate tabular-nums">{matched ? activityDetail(matched, lang, t) || matched.name : t("calendar.completed")}</p>
+          {matched && <p className="text-[10px] text-leaf font-bold truncate">{matched.source === "strava" ? "strava" : t("calendar.logged")}</p>}
         </div>
       ) : state === "missed" ? (
         <div className="px-2.5 py-1.5 bg-clay-soft min-w-0">
@@ -361,7 +381,7 @@ function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matche
       ) : (
         <div className="px-2.5 py-1.5 bg-ghost min-w-0">
           <p className="label-xs">{t("calendar.actual")}</p>
-          <p className="text-xs font-bold text-ghost-ink truncate">{state === "today" ? "— today" : "—"}</p>
+          <p className="text-xs font-bold text-ghost-ink truncate">{state === "today" ? t("calendar.todayPlaceholder") : "—"}</p>
         </div>
       )}
     </Link>
@@ -376,13 +396,13 @@ function ActivityChip({ activity }: { activity: ActivityItem }) {
     <Link href={`/activity/${activity.activityId}`} className="sticker sticker-press grid grid-cols-2 overflow-hidden">
       <div className="px-2.5 py-1.5 border-r-2 border-dashed border-shade bg-ghost min-w-0">
         <p className="label-xs">{t("calendar.unplanned")}</p>
-        <p className="text-xs font-bold text-ghost-ink truncate">— spontaneous</p>
+        <p className="text-xs font-bold text-ghost-ink truncate">{t("calendar.spontaneous")}</p>
       </div>
       <div className="px-2.5 py-1.5 bg-sprout min-w-0">
         <p className="label-xs text-leaf!">{t("calendar.doneLabel")}</p>
         <p className="text-xs font-extrabold text-ink truncate">{activity.name}</p>
         <p className="text-[10px] text-leaf font-bold truncate tabular-nums">
-          {[activityDetail(activity, lang), activity.source === "strava" ? "strava" : "logged"].filter(Boolean).join(" · ")}
+          {[activityDetail(activity, lang, t), activity.source === "strava" ? "strava" : t("calendar.logged")].filter(Boolean).join(" · ")}
         </p>
       </div>
     </Link>
@@ -391,37 +411,41 @@ function ActivityChip({ activity }: { activity: ActivityItem }) {
 
 // --- Day view: the full brief for one session ---
 
-const STEP_KIND_LABEL: Record<string, string> = {
-  warmup: "Warm-up", steady: "Steady", work: "Work", recovery: "Recovery", cooldown: "Cool-down",
+const STEP_KIND_KEY: Record<string, DictKey> = {
+  warmup: "workout.warmUp", steady: "calendar.step.steady", work: "calendar.step.work",
+  recovery: "calendar.step.recovery", cooldown: "workout.coolDown",
 };
 
-function stepAmount(s: DetailStep, lang: Lang): string {
+function stepAmount(s: DetailStep, lang: Lang, t: T): string {
   const amount =
     s.distanceKm != null
       ? s.distanceKm >= 1 ? `${fmtNumber(s.distanceKm, lang, 2, 0)} km` : `${Math.round(s.distanceKm * 1000)} m`
-      : s.durationMin != null ? `${Math.round(s.durationMin)} min`
+      : s.durationMin != null ? `${Math.round(s.durationMin)} ${t("common.min")}`
       : "";
   return [amount, s.pace].filter(Boolean).join(" @ ") || "—";
 }
 
 function StepRow({ step, nested }: { step: DetailStep; nested?: boolean }) {
+  const t = useT();
   const lang = useLang();
+  const kindKey = STEP_KIND_KEY[step.kind];
   return (
     <div className="flex items-baseline gap-3 py-1">
       <span className={`text-xs font-bold flex-shrink-0 ${nested ? "text-moss" : "text-ink"}`}>
-        {step.label || STEP_KIND_LABEL[step.kind] || step.kind}
+        {step.label || (kindKey ? t(kindKey) : step.kind)}
       </span>
       <span className="flex-1 border-b border-dotted border-shade" />
-      <span className="text-xs font-semibold text-moss tabular-nums text-right">{stepAmount(step, lang)}</span>
+      <span className="text-xs font-semibold text-moss tabular-nums text-right">{stepAmount(step, lang, t)}</span>
     </div>
   );
 }
 
 /** Warm-up / N × (work, recovery) / cool-down, as the watch will guide it. */
 function StepList({ steps }: { steps: DetailStep[] }) {
+  const t = useT();
   return (
     <div>
-      <p className="label-xs">The session</p>
+      <p className="label-xs">{t("calendar.theSession")}</p>
       <div className="mt-1 border-2 border-shade rounded-xl px-2.5 py-1 bg-paper">
         {steps.map((s, i) =>
           s.kind === "repeat" && s.steps?.length ? (
@@ -441,13 +465,13 @@ function StepList({ steps }: { steps: DetailStep[] }) {
 }
 
 /** "2 Aug · 10 km · 5:34/km · HR 148" */
-function comparableLine(c: NonNullable<WorkoutDetail["comparable"]>, lang: Lang): string {
+function comparableLine(c: NonNullable<WorkoutDetail["comparable"]>, lang: Lang, t: T): string {
   return [
     fmt(c.date, lang, { day: "numeric", month: "short" }),
     c.distanceKm ? `${fmtNumber(c.distanceKm, lang, 1)} km` : null,
-    c.durationMin && !c.distanceKm ? `${Math.round(c.durationMin)} min` : null,
+    c.durationMin && !c.distanceKm ? `${Math.round(c.durationMin)} ${t("common.min")}` : null,
     c.avgPacePerKm,
-    c.avgHeartRate ? `HR ${c.avgHeartRate}` : null,
+    c.avgHeartRate ? `${t("calendar.hr")} ${c.avgHeartRate}` : null,
   ].filter(Boolean).join(" · ");
 }
 
@@ -489,29 +513,29 @@ function WorkoutDetailCard({
           <h2 className="text-base font-extrabold text-ink leading-tight">{workout.title}</h2>
           <p className="label-xs mt-0.5">
             {fmt(workout.date, lang, { weekday: "short", day: "numeric", month: "short" })} ·{" "}
-            {WORKOUT_TYPE_LABEL[workout.workoutType] || workout.workoutType.replace("_", " ")}
+            {workoutTypeLabel(workout.workoutType, t)}
           </p>
         </div>
       </div>
 
       <div className="px-3 py-2.5 space-y-3">
         <div>
-          <p className="label-xs">Target</p>
-          <p className="text-sm font-extrabold text-ink tabular-nums">{targetLine(workout)}</p>
+          <p className="label-xs">{t("calendar.target")}</p>
+          <p className="text-sm font-extrabold text-ink tabular-nums">{targetLine(workout, t)}</p>
         </div>
 
         {steps.length > 0 && <StepList steps={steps} />}
 
         {(description || adjustment) && (
           <div>
-            <p className="label-xs">Why this session</p>
+            <p className="label-xs">{t("calendar.whyThisSession")}</p>
             {description && (
               <p className="text-sm text-ink leading-snug whitespace-pre-wrap">{description}</p>
             )}
             {adjustment && (
               <div className="mt-1.5 border-2 border-ink rounded-xl bg-sun/25 px-2.5 py-1.5">
                 <p className="text-[10px] font-extrabold uppercase tracking-wide text-ink">
-                  Changed {fmtDate(adjustment.createdAt, lang, { day: "numeric", month: "short" })}
+                  {t("calendar.changed").replace("{date}", fmtDate(adjustment.createdAt, lang, { day: "numeric", month: "short" }))}
                 </p>
                 <p className="text-xs text-ink font-semibold leading-snug">{adjustment.reason}</p>
               </div>
@@ -520,23 +544,28 @@ function WorkoutDetailCard({
         )}
 
         {detail === undefined ? (
-          <p className="text-xs text-sage font-semibold">Loading the rest of this session…</p>
+          <p className="text-xs text-sage font-semibold">{t("calendar.loadingDetail")}</p>
         ) : detail === null ? (
-          <p className="text-xs text-clay font-semibold">Couldn&apos;t load the rest of this session.</p>
+          <p className="text-xs text-clay font-semibold">{t("calendar.detailFailed")}</p>
         ) : comparable ? (
           <div>
             <p className="label-xs">
-              Last {comparable.sameSessionType ? WORKOUT_TYPE_LABEL[workout.workoutType] || "similar session" : "similar session"}
+              {t("calendar.lastOf").replace(
+                "{type}",
+                comparable.sameSessionType && WORKOUT_TYPE_KEY[workout.workoutType]
+                  ? workoutTypeLabel(workout.workoutType, t)
+                  : t("calendar.similarSession"),
+              )}
             </p>
             <Link href={`/activity/${comparable.activityId}`} className="mt-1 block sticker sticker-press px-2.5 py-1.5">
-              <p className="text-sm font-bold text-ink tabular-nums">{comparableLine(comparable, lang)}</p>
+              <p className="text-sm font-bold text-ink tabular-nums">{comparableLine(comparable, lang, t)}</p>
               <p className="text-[10px] text-moss font-semibold truncate">{comparable.name}</p>
             </Link>
           </div>
         ) : (
           <div>
-            <p className="label-xs">Last similar session</p>
-            <p className="text-xs text-sage font-semibold">Nothing comparable in the last six months.</p>
+            <p className="label-xs">{t("calendar.lastSimilar")}</p>
+            <p className="text-xs text-sage font-semibold">{t("calendar.nothingComparable")}</p>
           </div>
         )}
       </div>
@@ -545,21 +574,21 @@ function WorkoutDetailCard({
         matched ? (
           <Link href={`/activity/${matched.activityId}`} className="block bg-sprout border-t-2 border-ink px-3 py-2 sticker-press">
             <p className="label-xs text-leaf!">{t("calendar.doneLabel")}</p>
-            <p className="text-sm font-extrabold text-ink tabular-nums">{activityDetail(matched, lang) || matched.name}</p>
+            <p className="text-sm font-extrabold text-ink tabular-nums">{activityDetail(matched, lang, t) || matched.name}</p>
             <p className="text-[10px] text-leaf font-bold">
-              {matched.source === "strava" ? "strava" : "logged"} · tap for the full activity
+              {matched.source === "strava" ? "strava" : t("calendar.logged")} · {t("calendar.tapForActivity")}
             </p>
           </Link>
         ) : (
           <div className="bg-sprout border-t-2 border-ink px-3 py-2">
             <p className="label-xs text-leaf!">{t("calendar.doneLabel")}</p>
-            <p className="text-sm font-extrabold text-ink">marked complete</p>
+            <p className="text-sm font-extrabold text-ink">{t("calendar.markedComplete")}</p>
           </div>
         )
       ) : state === "missed" ? (
         <div className="bg-clay-soft border-t-2 border-ink px-3 py-2">
           <p className="label-xs text-clay!">{t("calendar.missed")}</p>
-          <p className="text-xs font-bold text-clay">Nothing matching was logged this day.</p>
+          <p className="text-xs font-bold text-clay">{t("calendar.nothingMatching")}</p>
         </div>
       ) : state === "unconfirmed" || (state === "today" && !isAutoDetectable(workout.activityType, stravaConnected)) ? (
         // The app can't see this sport happen — ask, don't accuse.
@@ -573,7 +602,7 @@ function WorkoutDetailCard({
       ) : (
         <Link href={`/calendar?view=day&date=${workout.date}`} className="block bg-ghost border-t-2 border-ink px-3 py-2 sticker-press">
           <p className="text-xs font-bold text-moss">
-            {state === "today" ? "Not logged yet — open in the plan →" : "Open in the plan →"}
+            {state === "today" ? t("calendar.notLoggedOpenPlan") : t("calendar.openInPlan")}
           </p>
         </Link>
       )}
@@ -619,13 +648,13 @@ function DayView({
 
       {rows.length === 0 && (
         <p className="text-xs text-sage font-semibold py-1">
-          {date < today ? "Nothing was planned for this day." : "Nothing planned for this day."}
+          {date < today ? t("calendar.nothingWasPlanned") : t("calendar.nothingPlanned")}
         </p>
       )}
 
       {extras.length > 0 && (
         <div className="space-y-1.5">
-          <p className="label-xs">{rows.length > 0 ? "Also done" : "Done anyway"}</p>
+          <p className="label-xs">{rows.length > 0 ? t("calendar.alsoDone") : t("calendar.doneAnyway")}</p>
           {extras.map((a) => <ActivityChip key={a.activityId} activity={a} />)}
         </div>
       )}
@@ -659,6 +688,7 @@ function EventFormModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const t = useT();
   const [form, setForm] = useState(initial);
   const [saving, setSaving] = useState(false);
   const set = (patch: Partial<EventFormData>) => setForm((f) => ({ ...f, ...patch }));
@@ -704,41 +734,41 @@ function EventFormModal({
       <div className="absolute inset-0 bg-ink/40" onClick={onClose} />
       <div className="relative w-full md:max-w-md bg-paper border-2 border-ink rounded-t-2xl md:rounded-2xl md:shadow-[4px_4px_0_var(--color-shade)] p-4 max-h-[90vh] overflow-y-auto safe-bottom">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-extrabold text-ink">{form.id ? "Edit event" : "New event"}</h2>
-          <button onClick={onClose} className="text-moss hover:text-ink text-xl leading-none">&times;</button>
+          <h2 className="text-sm font-extrabold text-ink">{form.id ? t("event.edit") : t("calendar.newEvent")}</h2>
+          <button onClick={onClose} aria-label={t("common.close")} className="text-moss hover:text-ink text-xl leading-none">&times;</button>
         </div>
 
         <div className="space-y-2.5">
-          <input autoFocus value={form.title} onChange={(e) => set({ title: e.target.value })} placeholder="Title" className={inputCls} />
+          <input autoFocus value={form.title} onChange={(e) => set({ title: e.target.value })} placeholder={t("event.title")} className={inputCls} />
 
           <div className="flex gap-2">
             <input type="date" value={form.date} onChange={(e) => set({ date: e.target.value })} className={inputCls} />
             <label className="flex items-center gap-1.5 text-xs text-ink font-bold flex-shrink-0 px-1">
               <input type="checkbox" checked={form.allDay} onChange={(e) => set({ allDay: e.target.checked })} className="accent-[#9ccb2e]" />
-              All-day
+              {t("event.allDay")}
             </label>
           </div>
 
           {!form.allDay && (
             <div className="flex gap-2 items-center">
               <input type="time" value={form.time} onChange={(e) => set({ time: e.target.value })} className={inputCls} />
-              <span className="text-moss text-xs font-bold">to</span>
+              <span className="text-moss text-xs font-bold">{t("event.to")}</span>
               <input type="time" value={form.endTime} onChange={(e) => set({ endTime: e.target.value })} className={inputCls} />
             </div>
           )}
 
           <div className="flex gap-2 items-center">
-            <span className="text-xs text-moss font-bold flex-shrink-0 w-14">Ends on</span>
+            <span className="text-xs text-moss font-bold flex-shrink-0 w-14">{t("event.endsOn")}</span>
             <input
               type="date"
               value={form.endDate}
               min={form.date}
               onChange={(e) => set({ endDate: e.target.value })}
               className={inputCls}
-              title="Leave empty for a single-day event"
+              title={t("event.endsOnHint")}
             />
             {form.endDate && form.endDate !== form.date && (
-              <button onClick={() => set({ endDate: "" })} className="text-xs text-moss font-bold hover:text-ink flex-shrink-0">clear</button>
+              <button onClick={() => set({ endDate: "" })} className="text-xs text-moss font-bold hover:text-ink flex-shrink-0">{t("event.clear")}</button>
             )}
           </div>
 
@@ -752,36 +782,36 @@ function EventFormModal({
                 }`}
                 style={form.category === key ? { backgroundColor: meta.color } : {}}
               >
-                {meta.label}
+                {CATEGORY_KEY[key] ? t(CATEGORY_KEY[key]) : meta.label}
               </button>
             ))}
           </div>
 
-          <input value={form.location} onChange={(e) => set({ location: e.target.value })} placeholder="Location (optional)" className={inputCls} />
-          <textarea value={form.notes} onChange={(e) => set({ notes: e.target.value })} placeholder="Notes (optional)" rows={2} className={inputCls} />
+          <input value={form.location} onChange={(e) => set({ location: e.target.value })} placeholder={t("event.location")} className={inputCls} />
+          <textarea value={form.notes} onChange={(e) => set({ notes: e.target.value })} placeholder={t("event.notes")} rows={2} className={inputCls} />
 
           <div className="flex gap-2 items-center">
             <select value={form.recurrence} onChange={(e) => set({ recurrence: e.target.value })} className={inputCls}>
-              <option value="none">Does not repeat</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="yearly">Yearly</option>
+              <option value="none">{t("event.noRepeat")}</option>
+              <option value="daily">{t("event.daily")}</option>
+              <option value="weekly">{t("event.weekly")}</option>
+              <option value="monthly">{t("event.monthly")}</option>
+              <option value="yearly">{t("event.yearly")}</option>
             </select>
             {form.recurrence !== "none" && (
               <input
                 type="date" value={form.recurrenceUntil} onChange={(e) => set({ recurrenceUntil: e.target.value })}
-                className={inputCls} title="Repeat until (optional)"
+                className={inputCls} title={t("event.repeatUntil")}
               />
             )}
           </div>
 
           <select value={form.reminderMinutes} onChange={(e) => set({ reminderMinutes: e.target.value })} className={inputCls}>
-            <option value="">No reminder</option>
-            <option value="0">At start</option>
-            <option value="15">15 min before</option>
-            <option value="60">1 hour before</option>
-            <option value="1440">1 day before</option>
+            <option value="">{t("event.noReminder")}</option>
+            <option value="0">{t("event.atStart")}</option>
+            <option value="15">{t("event.min15Before")}</option>
+            <option value="60">{t("event.hourBefore")}</option>
+            <option value="1440">{t("event.dayBefore")}</option>
           </select>
 
           <button
@@ -789,7 +819,7 @@ function EventFormModal({
             disabled={saving || !form.title.trim()}
             className="btn-brocco w-full py-2.5 text-sm"
           >
-            {saving ? "Saving..." : form.id ? "Save changes" : "Add event"}
+            {saving ? t("common.saving") : form.id ? t("event.saveChanges") : t("event.add")}
           </button>
         </div>
       </div>
@@ -810,6 +840,7 @@ function EventDetailSheet({
   onEdit: (form: EventFormData) => void;
   onChanged: () => void;
 }) {
+  const t = useT();
   const lang = useLang();
   const [busy, setBusy] = useState(false);
   const meta = categoryMeta(occurrence.category);
@@ -860,22 +891,22 @@ function EventDetailSheet({
             <p className="text-xs text-moss font-semibold mt-0.5">
               {fmt(occurrence.date, lang, { weekday: "long", day: "numeric", month: "long" })}
               {!occurrence.allDay && ` · ${occurrence.start.slice(11, 16)}${occurrence.end ? `–${occurrence.end.slice(11, 16)}` : ""}`}
-              {occurrence.recurring && " · repeats"}
+              {occurrence.recurring && ` · ${t("calendar.repeats")}`}
             </p>
             {occurrence.location && <p className="text-xs text-moss font-semibold mt-1">📍 {occurrence.location}</p>}
             {occurrence.notes && <p className="text-xs text-ink mt-2 whitespace-pre-wrap">{occurrence.notes}</p>}
           </div>
-          <button onClick={onClose} className="text-moss hover:text-ink text-xl leading-none">&times;</button>
+          <button onClick={onClose} aria-label={t("common.close")} className="text-moss hover:text-ink text-xl leading-none">&times;</button>
         </div>
         <div className="flex gap-2">
-          <button onClick={loadForEdit} disabled={busy} className="btn-quiet flex-1 py-2 text-sm disabled:opacity-50">Edit</button>
+          <button onClick={loadForEdit} disabled={busy} className="btn-quiet flex-1 py-2 text-sm disabled:opacity-50">{t("common.edit")}</button>
           {occurrence.recurring ? (
             <>
-              <button onClick={() => handleDelete("occurrence")} disabled={busy} className="btn-danger flex-1 py-2 text-sm disabled:opacity-50">Delete this</button>
-              <button onClick={() => handleDelete("series")} disabled={busy} className="btn-danger flex-1 py-2 text-sm disabled:opacity-50">Delete all</button>
+              <button onClick={() => handleDelete("occurrence")} disabled={busy} className="btn-danger flex-1 py-2 text-sm disabled:opacity-50">{t("calendar.deleteThis")}</button>
+              <button onClick={() => handleDelete("series")} disabled={busy} className="btn-danger flex-1 py-2 text-sm disabled:opacity-50">{t("calendar.deleteAll")}</button>
             </>
           ) : (
-            <button onClick={() => handleDelete("series")} disabled={busy} className="btn-danger flex-1 py-2 text-sm disabled:opacity-50">Delete</button>
+            <button onClick={() => handleDelete("series")} disabled={busy} className="btn-danger flex-1 py-2 text-sm disabled:opacity-50">{t("common.delete")}</button>
           )}
         </div>
       </div>
@@ -1097,7 +1128,7 @@ export default function CalendarView() {
                 // No running km this week (climbing and other sessions-based
                 // plans) — sessions are the headline instead.
                 <p className="text-moss">
-                  💪 {doneSessions}<span className="text-sage"> / {plannedSessions} sessions</span>
+                  💪 {doneSessions}<span className="text-sage"> / {plannedSessions} {t("common.sessions")}</span>
                 </p>
               )}
               {(plannedKm > 0 || runKm > 0) && plannedSessions > 0 && (
@@ -1147,7 +1178,7 @@ export default function CalendarView() {
               onClick={() => setView(v)}
               className={`px-3 py-1 text-xs rounded-lg capitalize transition-colors font-bold ${view === v ? "bg-brocco text-ink" : "text-sage hover:text-ink"}`}
             >
-              {v}
+              {t(VIEW_KEY[v])}
             </button>
           ))}
         </div>
@@ -1177,7 +1208,7 @@ export default function CalendarView() {
       {/* Add-event FAB (left of the mic) */}
       <button
         onClick={() => setFormOpen(emptyForm(view === "day" ? anchor : today))}
-        aria-label="Add event"
+        aria-label={t("event.add")}
         className="fixed z-[60] w-12 h-12 rounded-full bg-card border-2 border-ink shadow-[3px_3px_0_var(--color-shade)] hover:bg-ghost active:translate-x-[2px] active:translate-y-[2px] active:shadow-none flex items-center justify-center transition-all"
         style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 4.75rem)", right: "calc(1rem + 4.25rem)" }}
       >
@@ -1227,11 +1258,12 @@ function MonthDot({ mark }: { mark: MonthMark }) {
 }
 
 function MonthLegend() {
+  const t = useT();
   const entries: { mark: MonthMark; label: string }[] = [
-    { mark: { title: "", color: "#9ccb2e", shape: "done" }, label: "Done" },
-    { mark: { title: "", color: "#b25b33", shape: "missed" }, label: "Missed" },
-    { mark: { title: "", color: "#4a90d6", shape: "planned" }, label: "Planned — colour by session type" },
-    { mark: { title: "", color: "#a86fd1", shape: "event" }, label: "Event — colour by category" },
+    { mark: { title: "", color: "#9ccb2e", shape: "done" }, label: t("calendar.legendDone") },
+    { mark: { title: "", color: "#b25b33", shape: "missed" }, label: t("calendar.legendMissed") },
+    { mark: { title: "", color: "#4a90d6", shape: "planned" }, label: t("calendar.legendPlanned") },
+    { mark: { title: "", color: "#a86fd1", shape: "event" }, label: t("calendar.legendEvent") },
   ];
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-3 pt-3 border-t border-shade">
@@ -1263,6 +1295,7 @@ function MonthGrid({
   stravaConnected?: boolean;
   onDayTap: (date: string) => void;
 }) {
+  const t = useT();
   const lang = useLang();
   const days: string[] = [];
   let d = rangeStart;
@@ -1329,7 +1362,7 @@ function MonthGrid({
                     </div>
                   ))}
                   {items.length > 2 && (
-                    <p className="text-[9px] text-sage font-bold text-left pl-2">+{items.length - 2} more</p>
+                    <p className="text-[9px] text-sage font-bold text-left pl-2">{t("calendar.moreItems").replace("{n}", String(items.length - 2))}</p>
                   )}
                 </div>
               </button>

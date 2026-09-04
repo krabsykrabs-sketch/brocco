@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { validateRecipeInput, serializeRecipe } from "@/lib/recipes";
+import { userTranslator } from "@/lib/i18n-server";
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -42,7 +43,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     timeMin: body.timeMin !== undefined ? body.timeMin : recipe.timeMin,
     notes: body.notes !== undefined ? body.notes : recipe.notes,
   });
-  if (!validated.ok) return NextResponse.json({ error: validated.error }, { status: 400 });
+  if (!validated.ok) {
+    const t = await userTranslator(session.userId);
+    return NextResponse.json({ error: t(`api.validation.recipe.${validated.code}`, validated.vars) }, { status: 400 });
+  }
 
   const updated = await prisma.recipe.update({
     where: { id: recipe.id },

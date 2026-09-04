@@ -3,14 +3,16 @@ import { prisma } from "@/lib/db";
 import { verifyPassword } from "@/lib/auth";
 import { getSession } from "@/lib/session";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { requestTranslator } from "@/lib/i18n-server";
 
 export async function POST(request: NextRequest) {
+  const t = requestTranslator(request);
   try {
     const { email, password } = await request.json();
 
     if (!email || !password) {
       return NextResponse.json(
-        { error: "Email and password are required" },
+        { error: t("api.auth.emailPasswordRequired") },
         { status: 400 }
       );
     }
@@ -27,7 +29,7 @@ export async function POST(request: NextRequest) {
       !rateLimit(`login-email:${email.toLowerCase()}`, 25, 60 * 60 * 1000)
     ) {
       return NextResponse.json(
-        { error: "Too many attempts. Try again in a few minutes." },
+        { error: t("api.auth.tooManyAttemptsMinutes") },
         { status: 429 }
       );
     }
@@ -38,7 +40,7 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json(
-        { error: "Invalid email or password" },
+        { error: t("api.auth.invalidCredentials") },
         { status: 401 }
       );
     }
@@ -46,7 +48,7 @@ export async function POST(request: NextRequest) {
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
       return NextResponse.json(
-        { error: "Invalid email or password" },
+        { error: t("api.auth.invalidCredentials") },
         { status: 401 }
       );
     }
@@ -60,7 +62,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, userId: user.id });
   } catch {
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: t("api.internalError") },
       { status: 500 }
     );
   }

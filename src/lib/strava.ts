@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import crypto from "crypto";
 import type { Activity } from "@prisma/client";
+import { userTranslator } from "@/lib/i18n-server";
 
 const STRAVA_API = "https://www.strava.com/api/v3";
 const STRAVA_OAUTH = "https://www.strava.com/oauth";
@@ -103,12 +104,13 @@ export async function getValidToken(userId: string): Promise<string> {
     // connection broken so the UI can prompt a reconnect instead of runs
     // just silently stopping. 429/5xx are transient: record but don't flag.
     if (res.status === 400 || res.status === 401) {
+      const t = await userTranslator(userId);
       await prisma.userProfile
         .update({
           where: { userId },
           data: {
             stravaNeedsReconnect: true,
-            stravaLastSyncError: `Strava access revoked or expired (${res.status}) — reconnect needed`,
+            stravaLastSyncError: t("api.strava.revoked", { status: res.status }),
           },
         })
         .catch(() => {});

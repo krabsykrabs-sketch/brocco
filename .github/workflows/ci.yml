@@ -47,6 +47,9 @@ jobs:
         run: npx eslint src
         continue-on-error: true
 
+      - name: Translations complete (every key in en/de/es)
+        run: npx tsx scripts/check-i18n.ts
+
       - name: Recurrence fixture tests
         run: npx tsx scripts/dev-check-recurrence.ts
 

@@ -2,17 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { verifyPassword } from "@/lib/auth";
+import { requestTranslator, userTranslator } from "@/lib/i18n-server";
 
 export async function POST(request: NextRequest) {
+  // Request language until we know who it is, then the profile's choice.
+  let t = requestTranslator(request);
   try {
     const session = await getSession();
     if (!session.userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    t = await userTranslator(session.userId);
 
     const { password } = await request.json();
     if (!password) {
-      return NextResponse.json({ error: "Password required for confirmation" }, { status: 400 });
+      return NextResponse.json({ error: t("api.auth.passwordConfirmRequired") }, { status: 400 });
     }
 
     const user = await prisma.user.findUnique({
@@ -21,12 +25,12 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
+      return NextResponse.json({ error: t("api.userNotFound") }, { status: 404 });
     }
 
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
-      return NextResponse.json({ error: "Incorrect password" }, { status: 403 });
+      return NextResponse.json({ error: t("api.auth.incorrectPassword") }, { status: 403 });
     }
 
     // Delete user — cascades to all related tables (profile, plans, activities, chat, health, etc.)
@@ -39,6 +43,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: t("api.internalError") }, { status: 500 });
   }
 }

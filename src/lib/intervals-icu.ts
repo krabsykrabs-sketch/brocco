@@ -93,26 +93,30 @@ async function api(
   return { ok: res.ok, status: res.status, data };
 }
 
-/** Verify credentials by fetching the athlete profile. */
+export type ConnectionError = "rejected_key" | "bad_status" | "unreachable";
+
+/**
+ * Verify credentials by fetching the athlete profile. Returns an error CODE
+ * (plus the HTTP status for "bad_status") — the route turns it into a
+ * sentence in the user's language, see src/lib/dict/server.ts.
+ */
 export async function testConnection(
   athleteId: string,
   apiKey: string
-): Promise<{ ok: boolean; name?: string; error?: string }> {
+): Promise<{ ok: boolean; name?: string; error?: ConnectionError; status?: number }> {
   try {
     const res = await api(apiKey, "GET", `/athlete/${athleteId}`);
     if (!res.ok) {
       return {
         ok: false,
-        error:
-          res.status === 401 || res.status === 403
-            ? "intervals.icu rejected the API key — copy it again from intervals.icu Settings → Developer"
-            : `intervals.icu returned ${res.status} — check the athlete ID (the number in your intervals.icu profile URL, e.g. i1234567 or just 1234567)`,
+        error: res.status === 401 || res.status === 403 ? "rejected_key" : "bad_status",
+        status: res.status,
       };
     }
     const name = (res.data as { name?: string } | null)?.name;
     return { ok: true, name };
   } catch {
-    return { ok: false, error: "Couldn't reach intervals.icu — try again" };
+    return { ok: false, error: "unreachable" };
   }
 }
 

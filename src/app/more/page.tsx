@@ -51,7 +51,7 @@ export default async function MorePage() {
           </Link>
         ))}
         <div className="pt-4 text-center">
-          <Link href="/legal" className="text-xs text-sage hover:text-moss">Imprint & Privacy</Link>
+          <Link href="/legal" className="text-xs text-sage hover:text-moss">{t("more.legalLink")}</Link>
         </div>
       </div>
     </main>

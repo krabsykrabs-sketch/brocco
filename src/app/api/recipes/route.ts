@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { validateRecipeInput, serializeRecipe, recipeMatches } from "@/lib/recipes";
+import { userTranslator } from "@/lib/i18n-server";
 
 /** GET /api/recipes?q=search — the user's recipe library. */
 export async function GET(request: NextRequest) {
@@ -30,7 +31,10 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
   const validated = validateRecipeInput(body);
-  if (!validated.ok) return NextResponse.json({ error: validated.error }, { status: 400 });
+  if (!validated.ok) {
+    const t = await userTranslator(session.userId);
+    return NextResponse.json({ error: t(`api.validation.recipe.${validated.code}`, validated.vars) }, { status: 400 });
+  }
 
   const source = ["photo", "chat", "manual"].includes(body.source) ? body.source : "manual";
   const recipe = await prisma.recipe.create({

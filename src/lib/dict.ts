@@ -1,4 +1,10 @@
 import type { Lang } from "@/lib/i18n";
+import * as history from "@/lib/dict/history";
+import * as settings from "@/lib/dict/settings";
+import * as auth from "@/lib/dict/auth";
+import * as workout from "@/lib/dict/workout";
+import * as screens from "@/lib/dict/screens";
+import * as server from "@/lib/dict/server";
 
 /**
  * UI strings, keyed by area. English is the source of truth; a missing key in
@@ -8,7 +14,7 @@ import type { Lang } from "@/lib/i18n";
  * that arrives already written in the user's language, see coach-context.
  */
 
-export const EN = {
+const BASE_EN = {
   // Navigation
   "nav.today": "Today",
   "nav.calendar": "Calendar",
@@ -272,9 +278,7 @@ export const EN = {
   "auth.loggingIn": "Logging in…",
 } as const;
 
-export type DictKey = keyof typeof EN;
-
-const DE: Partial<Record<DictKey, string>> = {
+const BASE_DE = {
   "nav.today": "Heute",
   "nav.calendar": "Kalender",
   "nav.chat": "Chat",
@@ -523,7 +527,7 @@ const DE: Partial<Record<DictKey, string>> = {
   "auth.loggingIn": "Anmeldung…",
 };
 
-const ES: Partial<Record<DictKey, string>> = {
+const BASE_ES = {
   "nav.today": "Hoy",
   "nav.calendar": "Calendario",
   "nav.chat": "Chat",
@@ -772,7 +776,14 @@ const ES: Partial<Record<DictKey, string>> = {
   "auth.loggingIn": "Iniciando sesión…",
 };
 
-const DICTS: Record<Lang, Partial<Record<DictKey, string>>> = { en: EN, de: DE, es: ES };
+// One merged map per language. Areas live in src/lib/dict/*.ts so several
+// people (or agents) can extend the dictionary without editing one file.
+export const EN = { ...BASE_EN, ...history.en, ...settings.en, ...auth.en, ...workout.en, ...screens.en, ...server.en };
+export type DictKey = keyof typeof EN;
+const DE: Partial<Record<DictKey, string>> = { ...BASE_DE, ...history.de, ...settings.de, ...auth.de, ...workout.de, ...screens.de, ...server.de };
+const ES: Partial<Record<DictKey, string>> = { ...BASE_ES, ...history.es, ...settings.es, ...auth.es, ...workout.es, ...screens.es, ...server.es };
+
+export const DICTS: Record<Lang, Partial<Record<DictKey, string>>> = { en: EN, de: DE, es: ES };
 
 /** Translator for a language. Missing keys fall back to English. */
 export function translator(lang: Lang) {

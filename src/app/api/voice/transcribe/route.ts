@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
+import { userTranslator } from "@/lib/i18n-server";
 
 // A dictated chat message is seconds to a couple of minutes of audio; 25MB is
 // also Groq's own per-file limit. Anything bigger is not a voice note.
@@ -12,13 +13,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const t = await userTranslator(session.userId);
   if (!rateLimit(`transcribe:${session.userId}`, 60, 60 * 60 * 1000)) {
-    return NextResponse.json({ error: "Too many transcriptions — take a breath." }, { status: 429 });
+    return NextResponse.json({ error: t("api.voice.tooMany") }, { status: 429 });
   }
 
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ error: "Voice transcription not configured" }, { status: 500 });
+    return NextResponse.json({ error: t("api.voice.notConfigured") }, { status: 500 });
   }
 
   try {
@@ -26,10 +28,10 @@ export async function POST(request: NextRequest) {
     const audioFile = formData.get("audio") as File | null;
 
     if (!audioFile) {
-      return NextResponse.json({ error: "No audio file provided" }, { status: 400 });
+      return NextResponse.json({ error: t("api.voice.noAudio") }, { status: 400 });
     }
     if (audioFile.size > MAX_AUDIO_BYTES) {
-      return NextResponse.json({ error: "Recording too large" }, { status: 413 });
+      return NextResponse.json({ error: t("api.voice.tooLarge") }, { status: 413 });
     }
 
     // Forward to Groq Whisper API
@@ -49,13 +51,13 @@ export async function POST(request: NextRequest) {
     if (!res.ok) {
       const errorText = await res.text();
       console.error("Groq Whisper error:", res.status, errorText);
-      return NextResponse.json({ error: "Transcription failed" }, { status: 502 });
+      return NextResponse.json({ error: t("api.voice.failed") }, { status: 502 });
     }
 
     const data = await res.json();
     return NextResponse.json({ text: data.text || "" });
   } catch (err) {
     console.error("Transcription error:", err);
-    return NextResponse.json({ error: "Transcription failed" }, { status: 500 });
+    return NextResponse.json({ error: t("api.voice.failed") }, { status: 500 });
   }
 }

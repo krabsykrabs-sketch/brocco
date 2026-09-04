@@ -6,7 +6,8 @@ import { useParams } from "next/navigation";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 import type { StravaLap } from "@/lib/strava";
 import { getWorkoutTypeColor } from "@/lib/categories";
-import { useFmt } from "@/app/features-provider";
+import { useT, useFmt } from "@/app/features-provider";
+import type { DictKey } from "@/lib/dict";
 
 interface Split {
   distance: number;
@@ -53,10 +54,12 @@ interface ActivityDetail {
   matchedWorkout: MatchedWorkout | null;
 }
 
-function formatDuration(mins: number): string {
+function formatDuration(mins: number, t: (key: DictKey) => string): string {
   const h = Math.floor(mins / 60);
   const m = Math.round(mins % 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  const hu = t("history.hoursShort");
+  const mu = t("history.minutesShort");
+  return h > 0 ? `${h}${hu} ${m}${mu}` : `${m}${mu}`;
 }
 
 function formatPace(seconds: number): string {
@@ -80,6 +83,7 @@ function Stat({ label, value }: { label: string; value: string | number }) {
  * than the run's median pace are highlighted as work reps.
  */
 function LapsTable({ laps }: { laps: StravaLap[] }) {
+  const t = useT();
   const fmt = useFmt();
   const paces = laps.map((l) => l.paceSecPerKm).filter((p): p is number => p != null).sort((a, b) => a - b);
   const median = paces.length > 0 ? paces[Math.floor(paces.length / 2)] : null;
@@ -92,12 +96,12 @@ function LapsTable({ laps }: { laps: StravaLap[] }) {
       <table className="w-full text-xs">
         <thead>
           <tr className="text-sage border-b-2 border-shade">
-            <th className="text-left py-1.5 pr-3 font-bold">Lap</th>
-            <th className="text-right py-1.5 px-3 font-bold">Dist</th>
-            <th className="text-right py-1.5 px-3 font-bold">Time</th>
-            <th className="text-right py-1.5 px-3 font-bold">Pace</th>
-            {hasHr && <th className="text-right py-1.5 px-3 font-bold">HR</th>}
-            {hasWatts && <th className="text-right py-1.5 pl-3 font-bold">Power</th>}
+            <th className="text-left py-1.5 pr-3 font-bold">{t("activity.lap")}</th>
+            <th className="text-right py-1.5 px-3 font-bold">{t("activity.dist")}</th>
+            <th className="text-right py-1.5 px-3 font-bold">{t("activity.time")}</th>
+            <th className="text-right py-1.5 px-3 font-bold">{t("activity.pace")}</th>
+            {hasHr && <th className="text-right py-1.5 px-3 font-bold">{t("activity.hr")}</th>}
+            {hasWatts && <th className="text-right py-1.5 pl-3 font-bold">{t("activity.power")}</th>}
           </tr>
         </thead>
         <tbody>
@@ -126,14 +130,15 @@ function LapsTable({ laps }: { laps: StravaLap[] }) {
 }
 
 function BestEffortChips({ efforts }: { efforts: NonNullable<ActivityAnalysis["bestEfforts"]> }) {
+  const t = useT();
   const fmtTime = (sec: number) =>
     sec >= 3600
       ? `${Math.floor(sec / 3600)}:${String(Math.floor((sec % 3600) / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`
       : `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
-  const labels: Record<number, string> = { 1000: "1k", 1609: "1 mile", 5000: "5k", 10000: "10k" };
+  const labels: Record<number, string> = { 1000: "1k", 1609: t("history.oneMile"), 5000: "5k", 10000: "10k" };
   return (
     <div>
-      <p className="label-xs mb-2">Best efforts in this run</p>
+      <p className="label-xs mb-2">{t("activity.bestEffortsInRun")}</p>
       <div className="flex flex-wrap gap-2">
         {efforts.map((e) => (
           <div key={e.distanceM} className="bg-ghost border-2 border-ink rounded-lg px-2.5 py-1.5">
@@ -148,15 +153,16 @@ function BestEffortChips({ efforts }: { efforts: NonNullable<ActivityAnalysis["b
 }
 
 function SplitsTable({ splits }: { splits: Split[] }) {
+  const t = useT();
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
           <tr className="text-sage border-b-2 border-shade">
-            <th className="text-left py-1.5 pr-3 font-bold">KM</th>
-            <th className="text-right py-1.5 px-3 font-bold">Pace</th>
-            <th className="text-right py-1.5 px-3 font-bold">HR</th>
-            <th className="text-right py-1.5 pl-3 font-bold">Time</th>
+            <th className="text-left py-1.5 pr-3 font-bold">{t("activity.kmHeader")}</th>
+            <th className="text-right py-1.5 px-3 font-bold">{t("activity.pace")}</th>
+            <th className="text-right py-1.5 px-3 font-bold">{t("activity.hr")}</th>
+            <th className="text-right py-1.5 pl-3 font-bold">{t("activity.time")}</th>
           </tr>
         </thead>
         <tbody>
@@ -189,29 +195,30 @@ function SplitsTable({ splits }: { splits: Split[] }) {
   );
 }
 
-const ZONE_META: Array<{ key: keyof NonNullable<ActivityAnalysis["zones"]>; label: string; color: string }> = [
-  { key: "z1Pct", label: "Z1 · Very light", color: "#99a17e" },
-  { key: "z2Pct", label: "Z2 · Easy", color: "#9ccb2e" },
-  { key: "z3Pct", label: "Z3 · Moderate", color: "#e0b23c" },
-  { key: "z4Pct", label: "Z4 · Hard", color: "#e8813c" },
-  { key: "z5Pct", label: "Z5 · Max", color: "#d9534c" },
+const ZONE_META: Array<{ key: keyof NonNullable<ActivityAnalysis["zones"]>; label: DictKey; color: string }> = [
+  { key: "z1Pct", label: "activity.z1", color: "#99a17e" },
+  { key: "z2Pct", label: "activity.z2", color: "#9ccb2e" },
+  { key: "z3Pct", label: "activity.z3", color: "#e0b23c" },
+  { key: "z4Pct", label: "activity.z4", color: "#e8813c" },
+  { key: "z5Pct", label: "activity.z5", color: "#d9534c" },
 ];
 
 function ZoneBar({ zones }: { zones: NonNullable<ActivityAnalysis["zones"]> }) {
+  const t = useT();
   return (
     <div>
       <div className="flex h-3 rounded-full overflow-hidden bg-ghost border-2 border-ink">
         {ZONE_META.map((z) => {
           const pct = zones[z.key];
           if (pct <= 0) return null;
-          return <div key={z.key} style={{ width: `${pct}%`, backgroundColor: z.color }} title={`${z.label}: ${pct}%`} />;
+          return <div key={z.key} style={{ width: `${pct}%`, backgroundColor: z.color }} title={`${t(z.label)}: ${pct}%`} />;
         })}
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
         {ZONE_META.map((z) => (
           <div key={z.key} className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full border border-ink/50" style={{ backgroundColor: z.color }} />
-            <span className="text-[11px] text-moss font-semibold">{z.label} {zones[z.key]}%</span>
+            <span className="text-[11px] text-moss font-semibold">{t(z.label)} {zones[z.key]}%</span>
           </div>
         ))}
       </div>
@@ -219,12 +226,13 @@ function ZoneBar({ zones }: { zones: NonNullable<ActivityAnalysis["zones"]> }) {
   );
 }
 
-const EFFORT_BADGE: Record<string, { label: string; className: string }> = {
-  harder_than_planned: { label: "Harder than planned", className: "bg-[#faeed8] border-2 border-sun text-ink" },
-  easier_than_planned: { label: "Easier than planned", className: "bg-[#e3eefa] border-2 border-ink text-ink" },
+const EFFORT_BADGE: Record<string, { label: DictKey; className: string }> = {
+  harder_than_planned: { label: "activity.harderThanPlanned", className: "bg-[#faeed8] border-2 border-sun text-ink" },
+  easier_than_planned: { label: "activity.easierThanPlanned", className: "bg-[#e3eefa] border-2 border-ink text-ink" },
 };
 
 function EffortSegmentsTable({ segments }: { segments: ActivityAnalysis["effortSegments"] }) {
+  const t = useT();
   const fmt = useFmt();
   if (segments.length === 0) return null;
   return (
@@ -232,11 +240,11 @@ function EffortSegmentsTable({ segments }: { segments: ActivityAnalysis["effortS
       <table className="w-full text-xs">
         <thead>
           <tr className="text-sage border-b-2 border-shade">
-            <th className="text-left py-1.5 pr-3 font-bold">Rep</th>
-            <th className="text-right py-1.5 px-3 font-bold">Dist</th>
-            <th className="text-right py-1.5 px-3 font-bold">Pace</th>
-            <th className="text-right py-1.5 px-3 font-bold">HR</th>
-            <th className="text-right py-1.5 pl-3 font-bold">Recovery</th>
+            <th className="text-left py-1.5 pr-3 font-bold">{t("activity.rep")}</th>
+            <th className="text-right py-1.5 px-3 font-bold">{t("activity.dist")}</th>
+            <th className="text-right py-1.5 px-3 font-bold">{t("activity.pace")}</th>
+            <th className="text-right py-1.5 px-3 font-bold">{t("activity.hr")}</th>
+            <th className="text-right py-1.5 pl-3 font-bold">{t("activity.recovery")}</th>
           </tr>
         </thead>
         <tbody>
@@ -247,7 +255,7 @@ function EffortSegmentsTable({ segments }: { segments: ActivityAnalysis["effortS
               <td className="py-1.5 px-3 text-right font-mono">{s.paceSecPerKm ? formatPace(s.paceSecPerKm) : "-"}</td>
               <td className="py-1.5 px-3 text-right">{s.avgHr ?? "-"}</td>
               <td className="py-1.5 pl-3 text-right text-moss">
-                {s.recovery ? `${Math.round(s.recovery.durationSec / 60)}m${s.recovery.avgHr ? ` · HR ${s.recovery.avgHr}` : ""}` : "-"}
+                {s.recovery ? `${Math.round(s.recovery.durationSec / 60)}${t("history.minutesShort")}${s.recovery.avgHr ? ` · ${t("activity.hr")} ${s.recovery.avgHr}` : ""}` : "-"}
               </td>
             </tr>
           ))}
@@ -266,6 +274,7 @@ function IntensitySection({
   analysis: ActivityAnalysis | null;
   onAnalyzed: (a: ActivityAnalysis) => void;
 }) {
+  const t = useT();
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -278,10 +287,10 @@ function IntensitySection({
       if (res.ok) {
         onAnalyzed(data.analysis);
       } else {
-        setError(data.error || "Analysis failed");
+        setError(data.error || t("activity.analysisFailed"));
       }
     } catch {
-      setError("Analysis failed");
+      setError(t("activity.analysisFailed"));
     } finally {
       setAnalyzing(false);
     }
@@ -292,13 +301,13 @@ function IntensitySection({
   return (
     <section className="mb-6">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="label-xs">Intensity</h2>
+        <h2 className="label-xs">{t("activity.intensity")}</h2>
         <button
           onClick={handleAnalyze}
           disabled={analyzing}
           className="text-xs text-moss font-bold hover:text-leaf disabled:opacity-50 transition-colors"
         >
-          {analyzing ? "Analyzing..." : analysis ? "Re-analyze" : "Analyze this run"}
+          {analyzing ? t("activity.analyzing") : analysis ? t("activity.reanalyze") : t("activity.analyzeRun")}
         </button>
       </div>
 
@@ -306,7 +315,7 @@ function IntensitySection({
 
       {!analysis && !analyzing && !error && (
         <p className="text-xs text-moss font-semibold">
-          No intensity analysis yet — pulls second-by-second heart rate and pace from Strava to break down effort by zone.
+          {t("activity.noAnalysis")}
         </p>
       )}
 
@@ -314,7 +323,7 @@ function IntensitySection({
         <div className="sticker p-4 space-y-4">
           {badge && (
             <span className={`inline-flex items-center gap-1.5 text-xs font-bold rounded-lg px-2.5 py-1 ${badge.className}`}>
-              {badge.label}
+              {t(badge.label)}
             </span>
           )}
 
@@ -323,13 +332,13 @@ function IntensitySection({
           <div className="grid grid-cols-2 gap-4">
             {analysis.decouplingPct != null && (
               <Stat
-                label="Cardiac drift"
+                label={t("activity.cardiacDrift")}
                 value={`${analysis.decouplingPct > 0 ? "+" : ""}${analysis.decouplingPct}%`}
               />
             )}
             {analysis.paceFade && (
               <Stat
-                label={analysis.paceFade.negativeSplit ? "Negative split" : "Pace fade"}
+                label={analysis.paceFade.negativeSplit ? t("activity.negativeSplit") : t("activity.paceFade")}
                 value={`${analysis.paceFade.fadePct > 0 ? "+" : ""}${analysis.paceFade.fadePct}%`}
               />
             )}
@@ -338,7 +347,7 @@ function IntensitySection({
           {analysis.effortSegments.length > 0 && (
             <div>
               <p className="label-xs mb-2">
-                {analysis.effortSegments.length > 1 ? "Effort reps" : "Hard effort block"}
+                {analysis.effortSegments.length > 1 ? t("activity.effortReps") : t("activity.hardEffortBlock")}
               </p>
               <EffortSegmentsTable segments={analysis.effortSegments} />
             </div>
@@ -354,6 +363,7 @@ function IntensitySection({
 }
 
 export default function ActivityDetailPage() {
+  const t = useT();
   const fmt = useFmt();
   const params = useParams();
   const id = params.id as string;
@@ -375,7 +385,7 @@ export default function ActivityDetailPage() {
   if (loading) {
     return (
       <main className="min-h-screen max-w-2xl mx-auto px-4 py-6">
-        <div className="text-moss text-center py-12 font-semibold">Loading...</div>
+        <div className="text-moss text-center py-12 font-semibold">{t("common.loading")}</div>
       </main>
     );
   }
@@ -384,9 +394,9 @@ export default function ActivityDetailPage() {
     return (
       <main className="min-h-screen max-w-2xl mx-auto px-4 py-6">
         <div className="text-center py-12">
-          <p className="text-moss font-semibold mb-4">Activity not found.</p>
+          <p className="text-moss font-semibold mb-4">{t("activity.notFound")}</p>
           <Link href="/history" className="text-leaf font-bold hover:underline text-sm">
-            Back to history
+            {t("activity.backToHistory")}
           </Link>
         </div>
       </main>
@@ -411,7 +421,7 @@ export default function ActivityDetailPage() {
           href="/history"
           className="text-sm text-moss font-bold hover:text-ink transition-colors"
         >
-          &larr; History
+          &larr; {t("history.title")}
         </Link>
         {activity.stravaId && (
           <a
@@ -420,7 +430,7 @@ export default function ActivityDetailPage() {
             rel="noopener noreferrer"
             className="text-sm text-[#FC4C02] font-bold hover:underline"
           >
-            View on Strava
+            {t("activity.viewOnStrava")}
           </a>
         )}
       </div>
@@ -429,9 +439,9 @@ export default function ActivityDetailPage() {
       <div className="mb-6">
         <h1 className="text-xl font-extrabold text-ink">{activity.name}</h1>
         <p className="text-sm text-moss font-semibold mt-1">
-          {dateStr} at {timeStr} &middot; {activity.activityType}
+          {t("activity.dateAtTime").replace("{date}", dateStr).replace("{time}", timeStr)} &middot; {activity.activityType}
           {activity.source === "manual" && (
-            <span className="ml-1 text-sage">(manual)</span>
+            <span className="ml-1 text-sage">{t("history.manual")}</span>
           )}
         </p>
       </div>
@@ -445,19 +455,19 @@ export default function ActivityDetailPage() {
               style={{ backgroundColor: getWorkoutTypeColor(mw.workoutType) }}
             />
             <span className="text-sm font-bold text-ink">
-              Matched: {mw.title}
+              {t("activity.matched")} {mw.title}
             </span>
           </div>
           <p className="text-sm text-ink font-semibold">
-            <span className="text-leaf font-bold">Planned:</span>{" "}
-            {mw.targetDistanceKm && `${mw.targetDistanceKm}km`}
+            <span className="text-leaf font-bold">{t("activity.planned")}</span>{" "}
+            {mw.targetDistanceKm && `${fmt.number(mw.targetDistanceKm, 1, 0)}${t("common.km")}`}
             {mw.targetDistanceKm && mw.targetPace && " "}
             {mw.workoutType} {mw.targetPace && `@ ${mw.targetPace}`}
             {" → "}
-            <span className="text-leaf font-bold">Actual:</span>{" "}
-            {activity.distanceKm && `${fmt.number(activity.distanceKm, 1)}km`}
-            {activity.avgPacePerKm && ` @ ${activity.avgPacePerKm} avg`}
-            {activity.avgHeartRate && `, HR ${activity.avgHeartRate}`}
+            <span className="text-leaf font-bold">{t("activity.actual")}</span>{" "}
+            {activity.distanceKm && `${fmt.number(activity.distanceKm, 1)}${t("common.km")}`}
+            {activity.avgPacePerKm && ` @ ${activity.avgPacePerKm} ${t("activity.avg")}`}
+            {activity.avgHeartRate && `, ${t("activity.hr")} ${activity.avgHeartRate}`}
           </p>
           {mw.description && (
             <p className="text-xs text-leaf font-semibold mt-1">{mw.description}</p>
@@ -468,35 +478,35 @@ export default function ActivityDetailPage() {
       {/* Key stats */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         {activity.distanceKm != null && (
-          <Stat label="Distance" value={`${fmt.number(activity.distanceKm, 2)} km`} />
+          <Stat label={t("history.distance")} value={`${fmt.number(activity.distanceKm, 2)} ${t("common.km")}`} />
         )}
-        <Stat label="Duration" value={formatDuration(activity.durationMin)} />
+        <Stat label={t("history.duration")} value={formatDuration(activity.durationMin, t)} />
         {activity.movingTimeMin != null && activity.movingTimeMin !== activity.durationMin && (
-          <Stat label="Moving time" value={formatDuration(activity.movingTimeMin)} />
+          <Stat label={t("activity.movingTime")} value={formatDuration(activity.movingTimeMin, t)} />
         )}
         {activity.avgPacePerKm && (
-          <Stat label="Avg pace" value={activity.avgPacePerKm} />
+          <Stat label={t("activity.avgPace")} value={activity.avgPacePerKm} />
         )}
         {activity.avgHeartRate != null && (
-          <Stat label="Avg HR" value={`${activity.avgHeartRate} bpm`} />
+          <Stat label={t("history.avgHr")} value={`${activity.avgHeartRate} ${t("history.bpm")}`} />
         )}
         {activity.maxHeartRate != null && (
-          <Stat label="Max HR" value={`${activity.maxHeartRate} bpm`} />
+          <Stat label={t("activity.maxHr")} value={`${activity.maxHeartRate} ${t("history.bpm")}`} />
         )}
         {activity.elevationGainM != null && activity.elevationGainM > 0 && (
-          <Stat label="Elevation" value={`${Math.round(activity.elevationGainM)} m`} />
+          <Stat label={t("history.elevation")} value={`${Math.round(activity.elevationGainM)} m`} />
         )}
         {activity.avgCadence != null && (
-          <Stat label="Cadence" value={`${activity.avgCadence} spm`} />
+          <Stat label={t("activity.cadence")} value={`${activity.avgCadence} ${t("activity.spm")}`} />
         )}
         {activity.avgWatts != null && (
-          <Stat label="Avg power" value={`${activity.avgWatts} W`} />
+          <Stat label={t("activity.avgPower")} value={`${activity.avgWatts} W`} />
         )}
         {activity.calories != null && activity.calories > 0 && (
-          <Stat label="Calories" value={`${activity.calories} kcal`} />
+          <Stat label={t("activity.calories")} value={`${activity.calories} kcal`} />
         )}
         {activity.perceivedEffort != null && (
-          <Stat label="Effort" value={`${activity.perceivedEffort}/10`} />
+          <Stat label={t("activity.effort")} value={`${activity.perceivedEffort}/10`} />
         )}
       </div>
 
@@ -511,7 +521,7 @@ export default function ActivityDetailPage() {
       {activity.laps && Array.isArray(activity.laps) && activity.laps.length >= 2 && (
         <section className="mb-6">
           <h2 className="label-xs mb-3">
-            Laps
+            {t("activity.laps")}
           </h2>
           <div className="sticker p-4">
             <LapsTable laps={activity.laps} />
@@ -523,7 +533,7 @@ export default function ActivityDetailPage() {
       {activity.splits && Array.isArray(activity.splits) && activity.splits.length > 0 && (
         <section>
           <h2 className="label-xs mb-3">
-            Splits
+            {t("activity.splits")}
           </h2>
           <div className="sticker p-4">
             <SplitsTable splits={activity.splits} />

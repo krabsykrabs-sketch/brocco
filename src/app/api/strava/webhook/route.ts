@@ -4,6 +4,8 @@ import { getValidToken, fetchStravaActivity, storeStravaActivity } from "@/lib/s
 import { isEligibleForAnalysis, analyzeActivity } from "@/lib/activity-analysis";
 import { recordSyncOutcome } from "@/lib/strava";
 import { rateLimit } from "@/lib/rate-limit";
+import { serverTranslator } from "@/lib/i18n-server";
+import { resolveLang } from "@/lib/i18n";
 
 /**
  * GET: Strava webhook verification (subscription creation).
@@ -96,7 +98,11 @@ export async function POST(request: NextRequest) {
       console.error(`[webhook] Failed to process activity ${activityId} for user ${userId}:`, err);
       // Surface it: a dead refresh token used to fail here silently and the
       // Settings reconnect banner never appeared.
-      await recordSyncOutcome(userId, `Webhook sync failed: ${err instanceof Error ? err.message : "unknown error"}`);
+      const t = serverTranslator(resolveLang(profile.language));
+      await recordSyncOutcome(
+        userId,
+        t("api.strava.webhookSyncFailed", { reason: err instanceof Error ? err.message : t("api.strava.unknownError") })
+      );
     }
 
     return NextResponse.json({ ok: true });

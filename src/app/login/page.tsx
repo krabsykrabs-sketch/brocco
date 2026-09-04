@@ -27,7 +27,7 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Login failed");
+        setError(data.error || t("auth.loginFailed"));
         return;
       }
 
@@ -45,9 +45,9 @@ export default function LoginPage() {
       <div className="w-full max-w-sm sticker-lg p-6">
         <div className="text-center mb-8">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/brocco-runner.png" alt="Brocco, running" className="h-36 mx-auto mb-4" />
+          <img src="/brand/brocco-runner.png" alt={t("auth.mascotAlt")} className="h-36 mx-auto mb-4" />
           <h1 className="text-2xl font-extrabold text-ink">brocco.run</h1>
-          <p className="text-moss text-sm mt-1">Run like a broccoli.</p>
+          <p className="text-moss text-sm mt-1">{t("auth.tagline")}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -62,7 +62,7 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
               className="field"
-              placeholder="you@example.com"
+              placeholder={t("auth.emailPlaceholder")}
             />
           </div>
 
@@ -77,7 +77,7 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
               className="field"
-              placeholder="Enter password"
+              placeholder={t("auth.passwordPlaceholder")}
             />
           </div>
 
@@ -101,7 +101,7 @@ export default function LoginPage() {
         </p>
 
         <p className="text-center text-moss text-sm mt-6">
-          Have an invite code?{" "}
+          {t("auth.haveInvite")}{" "}
           <a href="/signup" className="text-leaf font-bold underline">
             {t("auth.signup")}
           </a>

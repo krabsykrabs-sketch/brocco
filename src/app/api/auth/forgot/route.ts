@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 import { sendEmail, passwordResetEmail } from "@/lib/email";
+import { requestTranslator } from "@/lib/i18n-server";
 
 const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -12,10 +13,11 @@ const TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
  * so the endpoint can't be used to enumerate accounts.
  */
 export async function POST(request: NextRequest) {
+  const t = requestTranslator(request);
   try {
     const { email } = await request.json();
     if (!email || typeof email !== "string") {
-      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+      return NextResponse.json({ error: t("api.auth.emailRequired") }, { status: 400 });
     }
 
     const normalized = email.toLowerCase().trim();
@@ -26,14 +28,14 @@ export async function POST(request: NextRequest) {
       !rateLimit(`forgot-ip:${ip}`, 10, 15 * 60 * 1000)
     ) {
       return NextResponse.json(
-        { error: "Too many requests. Try again in a few minutes." },
+        { error: t("api.auth.tooManyRequests") },
         { status: 429 }
       );
     }
 
     const genericResponse = NextResponse.json({
       ok: true,
-      message: "If that address has an account, a reset link is on its way.",
+      message: t("api.auth.resetSent"),
     });
 
     const user = await prisma.user.findUnique({ where: { email: normalized } });
@@ -60,6 +62,6 @@ export async function POST(request: NextRequest) {
 
     return genericResponse;
   } catch {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: t("api.internalError") }, { status: 500 });
   }
 }

@@ -8,6 +8,7 @@ import { resolveFeatures } from "@/lib/features";
 import { ensureFreshStravaData } from "@/lib/strava-fresh";
 import { COACH_MODEL } from "@/lib/models";
 import { rateLimit } from "@/lib/rate-limit";
+import { userTranslator } from "@/lib/i18n-server";
 
 const anthropic = new Anthropic();
 
@@ -35,10 +36,12 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  const t = await userTranslator(session.userId);
+
   // The costliest endpoint in the app (streaming Opus + tool loop) had no
   // limit at all. 60/hour is far above real conversational use.
   if (!rateLimit(`chat:${session.userId}`, 60, 60 * 60 * 1000)) {
-    return new Response(JSON.stringify({ error: "Too many messages — give Brocco a minute." }), {
+    return new Response(JSON.stringify({ error: t("api.chat.tooMany") }), {
       status: 429,
       headers: { "Content-Type": "application/json" },
     });
@@ -60,7 +63,7 @@ export async function POST(request: NextRequest) {
   });
 
   if (!chatSession) {
-    return new Response(JSON.stringify({ error: "Session not found" }), {
+    return new Response(JSON.stringify({ error: t("api.chat.sessionNotFound") }), {
       status: 404,
       headers: { "Content-Type": "application/json" },
     });
@@ -216,7 +219,7 @@ export async function POST(request: NextRequest) {
         // persist "" — which then poisoned the session on replay (see above).
         const fallbackText =
           result.toolLog.length > 0
-            ? "Done ✓ " + result.toolLog.filter((l) => l.includes("→ OK")).map((l) => l.replace(/^.*→ OK: /, "")).join("; ")
+            ? t("api.chat.done") + " " + result.toolLog.filter((l) => l.includes("→ OK")).map((l) => l.replace(/^.*→ OK: /, "")).join("; ")
             : "…";
         const groundedText = groundStatusMarker(result.fullText.trim() ? result.fullText : fallbackText, result.appliedMutation);
         await prisma.chatMessage.update({
@@ -253,7 +256,7 @@ export async function POST(request: NextRequest) {
         // Never leave the empty placeholder behind — it bricked the session.
         await prisma.chatMessage.deleteMany({ where: { sessionId, role: "assistant", displayText: "" } }).catch(() => {});
         // Internal messages (Prisma dumps, stack fragments) stay in the log.
-        const errorMsg = "Something went wrong on my side — try that again.";
+        const errorMsg = t("api.chat.failed");
         try {
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ error: errorMsg })}\n\n`)

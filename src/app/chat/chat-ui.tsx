@@ -186,7 +186,9 @@ function SessionSidebar({
                 s.id === currentId ? "bg-ghost" : ""
               }`}
             >
-              <p className="text-sm font-bold text-ink truncate">{s.title}</p>
+              <p className="text-sm font-bold text-ink truncate">
+                {s.title === "New conversation" ? t("chat.untitled") : s.title === "Kitchen chat" ? t("chat.kitchenUntitled") : s.title}
+              </p>
               <p className="text-xs text-sage mt-0.5">{formatTime(s.updatedAt, lang)}</p>
             </button>
           ))}
@@ -670,7 +672,7 @@ export default function ChatUI({
                 {
                   id: `error-${Date.now()}`,
                   role: "assistant",
-                  displayText: `Error: ${data.error}`,
+                  displayText: `${t("chat.errorPrefix")} ${data.error}`,
                 },
               ]);
               setStreamingText("");
@@ -723,7 +725,7 @@ export default function ChatUI({
           <div className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/icons/icon-64.png" alt="Brocco" className="w-6 h-6 rounded-full border-2 border-ink" />
-            <span className="font-bold text-sm text-ink md:text-lg md:font-extrabold">{kitchen ? "Brocco's kitchen 🍳" : "brocco.run"}</span>
+            <span className="font-bold text-sm text-ink md:text-lg md:font-extrabold">{kitchen ? t("chat.kitchenTitle") : "brocco.run"}</span>
           </div>
         </div>
         {/* Desktop nav only */}
@@ -750,7 +752,7 @@ export default function ChatUI({
               <>
                 <p className="text-sm font-bold text-ink">{t("chat.cooking")}</p>
                 <p className="text-xs text-moss font-semibold mt-1 max-w-xs mx-auto">
-                  Tell me what&apos;s in your fridge and I&apos;ll suggest something — your saved recipes and pantry staples included.
+                  {t("chat.cookingSub")}
                 </p>
               </>
             ) : (

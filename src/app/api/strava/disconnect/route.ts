@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { getValidToken } from "@/lib/strava";
+import { serverTranslator } from "@/lib/i18n-server";
+import { resolveLang } from "@/lib/i18n";
 
 /**
  * POST /api/strava/disconnect — unlink Strava without deleting the account
@@ -15,10 +17,11 @@ export async function POST() {
 
   const profile = await prisma.userProfile.findUnique({
     where: { userId: session.userId },
-    select: { stravaAccessToken: true },
+    select: { stravaAccessToken: true, language: true },
   });
   if (!profile?.stravaAccessToken) {
-    return NextResponse.json({ error: "Strava not connected" }, { status: 400 });
+    const t = serverTranslator(resolveLang(profile?.language));
+    return NextResponse.json({ error: t("api.strava.notConnected") }, { status: 400 });
   }
 
   // Best-effort revoke on Strava's side — a dead token here must not stop

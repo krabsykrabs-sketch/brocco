@@ -3,22 +3,24 @@ import crypto from "crypto";
 import { prisma } from "@/lib/db";
 import { hashPassword } from "@/lib/auth";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
+import { requestTranslator } from "@/lib/i18n-server";
 
 /** POST /api/auth/reset — set a new password using an emailed reset token. */
 export async function POST(request: NextRequest) {
+  const t = requestTranslator(request);
   try {
     const { token, password } = await request.json();
 
     if (!token || typeof token !== "string") {
-      return NextResponse.json({ error: "Reset token missing" }, { status: 400 });
+      return NextResponse.json({ error: t("api.auth.resetTokenMissing") }, { status: 400 });
     }
     if (!password || typeof password !== "string" || password.length < 8) {
-      return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
+      return NextResponse.json({ error: t("api.auth.passwordMin") }, { status: 400 });
     }
 
     // Brute-forcing a 256-bit token is hopeless anyway, but no free lunches
     if (!rateLimit(`reset-ip:${clientIp(request)}`, 10, 15 * 60 * 1000)) {
-      return NextResponse.json({ error: "Too many attempts. Try again later." }, { status: 429 });
+      return NextResponse.json({ error: t("api.auth.tooManyAttemptsLater") }, { status: 429 });
     }
 
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
@@ -26,7 +28,7 @@ export async function POST(request: NextRequest) {
 
     if (!reset || reset.usedAt || reset.expiresAt < new Date()) {
       return NextResponse.json(
-        { error: "This reset link is invalid or has expired. Request a new one." },
+        { error: t("api.auth.resetLinkInvalid") },
         { status: 400 }
       );
     }
@@ -44,6 +46,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: t("api.internalError") }, { status: 500 });
   }
 }

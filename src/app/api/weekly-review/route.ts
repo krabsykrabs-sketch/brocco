@@ -20,6 +20,8 @@ import { COACH_MODEL } from "@/lib/models";
 import { rateLimit } from "@/lib/rate-limit";
 import { generateNumberChecked } from "@/lib/number-guard";
 import { sportProfile, totalMinutes } from "@/lib/sport";
+import { serverTranslator } from "@/lib/i18n-server";
+import { resolveLang, fmtNumber } from "@/lib/i18n";
 
 const anthropic = new Anthropic();
 
@@ -45,13 +47,15 @@ export async function GET(request: NextRequest) {
   const userId = session.userId;
 
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
-  if (!profile) return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+  const lang = resolveLang(profile?.language);
+  const t = serverTranslator(lang);
+  if (!profile) return NextResponse.json({ error: t("api.profileNotFound") }, { status: 404 });
 
   const force = new URL(request.url).searchParams.get("force") === "1";
   // force bypasses both the window AND the cache read — an Opus call on
   // every hit. Cap it.
   if (force && !rateLimit(`weekly-review-force:${userId}`, 5, 60 * 60 * 1000)) {
-    return NextResponse.json({ error: "Too many forced reviews." }, { status: 429 });
+    return NextResponse.json({ error: t("api.weeklyReview.tooManyForced") }, { status: 429 });
   }
   const localNow = nowInTimezone(profile.timezone); // yyyy-MM-ddTHH:mm
   const today = localNow.slice(0, 10);
@@ -199,8 +203,13 @@ export async function GET(request: NextRequest) {
   }
   if (!content) {
     content = sp.sessionsBased
-      ? `Week done: ${completed}/${nonRest.length} sessions completed, ${totalMinutes(activities)} minutes trained.`
-      : `Week done: ${runKm.toFixed(1)}km of ${plannedKm.toFixed(0)}km planned, ${completed}/${nonRest.length} sessions completed.`;
+      ? t("fallback.weeklyReview.sessions", { completed, planned: nonRest.length, minutes: totalMinutes(activities) })
+      : t("fallback.weeklyReview.km", {
+          km: fmtNumber(runKm, lang, 1, 1),
+          plannedKm: fmtNumber(plannedKm, lang, 0),
+          completed,
+          planned: nonRest.length,
+        });
   }
 
   await prisma.weeklyReview.upsert({

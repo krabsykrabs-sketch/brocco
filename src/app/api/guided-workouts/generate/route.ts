@@ -3,11 +3,12 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
-import { validateWorkoutDefinition, estimateDurationMin, type WorkoutDefinition } from "@/lib/guided-workout";
+import { validateWorkoutDefinition, describeWorkoutValidation, estimateDurationMin, type WorkoutDefinition } from "@/lib/guided-workout";
 import { UTILITY_MODEL } from "@/lib/models";
 import { ILLUSTRATED_LABELS } from "@/lib/exercise-art";
 import { resolveLang, LANGUAGE_FULL } from "@/lib/i18n";
 import { sportProfile } from "@/lib/sport";
+import { userTranslator } from "@/lib/i18n-server";
 
 const anthropic = new Anthropic();
 
@@ -45,9 +46,10 @@ export async function POST(request: NextRequest) {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const userId = session.userId;
+  const t = await userTranslator(userId);
 
   if (!rateLimit(`workout-gen:${userId}`, 10, 60 * 60 * 1000)) {
-    return NextResponse.json({ error: "Too many workouts generated — take one of them and go train!" }, { status: 429 });
+    return NextResponse.json({ error: t("api.workoutGen.tooMany") }, { status: 429 });
   }
 
   const body = await request.json().catch(() => ({}));
@@ -63,7 +65,7 @@ export async function POST(request: NextRequest) {
       where: { id: plannedWorkoutId, plan: { userId } },
       select: { id: true, title: true, description: true, targetDurationMin: true },
     });
-    if (!planned) return NextResponse.json({ error: "Planned workout not found" }, { status: 404 });
+    if (!planned) return NextResponse.json({ error: t("api.workoutGen.plannedNotFound") }, { status: 404 });
 
     // Reuse an already-generated session for this plan entry
     const existing = await prisma.guidedWorkout.findFirst({
@@ -95,7 +97,12 @@ export async function POST(request: NextRequest) {
     : sp.sessionsBased
       ? ` Build conditioning that supports ${sp.sport}.`
       : "";
-  const languageLine = lang === "en" ? "" : ` Write title, focus, exercise names and notes in ${LANGUAGE_FULL[lang]}; keep "art" keys and "mode" values exactly as specified.`;
+  // Always stated, English included: the planned workout's title/description
+  // (or the free-form request) may be in another language — a plan written
+  // while the athlete chatted in German, say — and without an explicit
+  // instruction the model mirrors that text, so an English user got German
+  // exercise names. The profile language wins; only the "art" key is English.
+  const languageLine = ` LANGUAGE: write the title, focus, block labels, exercise names and notes in ${LANGUAGE_FULL[lang]} — the athlete's app language — even if the planned workout or request below is written in another language. Keep "art" keys and "mode" values exactly as specified, in English.`;
 
   const ask = planned
     ? `Create the guided S&C session for this planned workout from a ${sp.athleteNoun}'s training plan:\nTitle: ${planned.title}\nDescription: ${planned.description || "(none)"}\nTarget duration: ${planned.targetDurationMin ? `${planned.targetDurationMin} min` : "15-20 min"}${injuryBlock}`
@@ -135,8 +142,9 @@ export async function POST(request: NextRequest) {
       const validated = validateWorkoutDefinition(defCandidate);
       if (validated.ok) def = validated.def;
       else {
-        lastError = `${validated.error} (expected shape: {"title", "focus", "definition": {"blocks": [...]}})`;
-        console.error(`[workout-gen] attempt ${attempt} invalid (${validated.error}); raw head: ${text.slice(0, 250)}`);
+        const reason = describeWorkoutValidation(validated);
+        lastError = `${reason} (expected shape: {"title", "focus", "definition": {"blocks": [...]}})`;
+        console.error(`[workout-gen] attempt ${attempt} invalid (${reason}); raw head: ${text.slice(0, 250)}`);
       }
     } catch (err) {
       lastError = err instanceof Error ? err.message : "generation failed";
@@ -145,13 +153,13 @@ export async function POST(request: NextRequest) {
 
   if (!def || !parsed) {
     console.error("Guided workout generation failed:", lastError);
-    return NextResponse.json({ error: "Couldn't generate a workout — try again or use a preset." }, { status: 502 });
+    return NextResponse.json({ error: t("api.workoutGen.failed") }, { status: 502 });
   }
 
   const workout = await prisma.guidedWorkout.create({
     data: {
       userId,
-      title: String(parsed.title || planned?.title || "Workout").slice(0, 80),
+      title: String(parsed.title || planned?.title || t("workout.untitled")).slice(0, 80),
       focus: parsed.focus ? String(parsed.focus).slice(0, 60) : null,
       durationMin: estimateDurationMin(def),
       definition: def as object,

@@ -1,9 +1,11 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { useT } from "./features-provider";
 
 export function AppFooter() {
   const pathname = usePathname();
+  const t = useT();
 
   // Hide on chat, login, signup pages
   if (pathname.startsWith("/chat") || pathname.startsWith("/kitchen/chat") || pathname.startsWith("/login") || pathname.startsWith("/signup")) return null;
@@ -16,7 +18,7 @@ export function AppFooter() {
         rel="noopener noreferrer"
         className="flex items-center gap-1.5 text-xs text-moss hover:text-ink transition-colors"
       >
-        Powered by
+        {t("shell.poweredBy")}
         <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-[#FC4C02]" aria-label="Strava">
           <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
         </svg>
@@ -24,7 +26,7 @@ export function AppFooter() {
       </a>
       <span className="text-shade">|</span>
       <a href="/legal" className="text-xs text-moss hover:text-ink transition-colors">
-        Legal
+        {t("shell.legal")}
       </a>
     </footer>
   );

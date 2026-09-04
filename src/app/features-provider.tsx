@@ -22,6 +22,7 @@ const FeaturesContext = createContext<Features>(ALL_FEATURES);
 const LangContext = createContext<Lang>(DEFAULT_LANG);
 
 const LANG_KEY = "brocco_lang";
+let persistedDetected = false;
 
 function loadCachedLang(): Lang {
   try {
@@ -68,6 +69,20 @@ export function FeaturesProvider({ children }: { children: React.ReactNode }) {
           if (isLang(d.language)) {
             setLang(d.language);
             try { localStorage.setItem(LANG_KEY, d.language); } catch { /* full/blocked */ }
+          } else if (d.language === null && !persistedDetected) {
+            // Nobody picked a language yet: the UI is following the browser
+            // guess, but the SERVER (prompts, briefings, push texts) only
+            // knows profile.language — write the guess there once so Brocco
+            // speaks the same language as the buttons. Settings still wins.
+            persistedDetected = true;
+            const guess = loadCachedLang();
+            if (guess !== "en") {
+              fetch("/api/profile", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ language: guess }),
+              }).catch(() => {});
+            }
           }
         })
         .catch(() => {});

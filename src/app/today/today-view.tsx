@@ -55,26 +55,27 @@ function formatHeaderDate(dateStr: string, lang: Lang): string {
   return fmtDate(dateStr, lang, { weekday: "long", day: "numeric", month: "long" });
 }
 
-function activityDetail(a: ActivityRow, lang: Lang): string {
+function activityDetail(a: ActivityRow, lang: Lang, t: ReturnType<typeof useT>): string {
   return [
-    a.distanceKm ? `${fmtNumber(a.distanceKm, lang, 1)} km` : null,
+    a.distanceKm ? `${fmtNumber(a.distanceKm, lang, 1)} ${t("common.km")}` : null,
     a.avgPacePerKm,
-    !a.distanceKm && a.durationMin ? `${Math.round(a.durationMin)} min` : null,
+    !a.distanceKm && a.durationMin ? `${Math.round(a.durationMin)} ${t("common.min")}` : null,
   ].filter(Boolean).join(" · ");
 }
 
 // --- Agenda rows ---
 
 function EventRow({ event }: { event: EventOccurrence }) {
+  const t = useT();
   const meta = categoryMeta(event.category);
   const isLastDay = event.end?.slice(0, 10) === event.date;
   return (
     <div className={`flex items-center gap-3 border-2 rounded-xl px-3.5 py-2.5 shadow-[2px_2px_0_var(--color-shade)] ${event.continuation ? "opacity-80" : ""} ${meta.bg}`}>
       <div className="w-12 flex-shrink-0 text-right">
         {event.continuation ? (
-          <span className="text-sm text-moss" title="Continues from an earlier day">⟶</span>
+          <span className="text-sm text-moss" title={t("today.continuesFrom")}>⟶</span>
         ) : event.allDay ? (
-          <span className="text-[10px] uppercase font-extrabold text-moss">{event.category === "birthday" ? "🎂" : "all day"}</span>
+          <span className="text-[10px] uppercase font-extrabold text-moss">{event.category === "birthday" ? "🎂" : t("today.allDay")}</span>
         ) : (
           <span className="text-sm font-extrabold text-ink tabular-nums">{timeOf(event)}</span>
         )}
@@ -85,15 +86,15 @@ function EventRow({ event }: { event: EventOccurrence }) {
         <p className="text-xs text-moss font-semibold truncate">
           {event.continuation
             ? isLastDay && !event.allDay
-              ? `ends ${event.end!.slice(11, 16)}`
-              : "continues all day"
+              ? t("today.endsAt").replace("{t}", event.end!.slice(11, 16))
+              : t("today.continuesAllDay")
             : !event.allDay && event.end
-            ? `until ${event.end.slice(11, 16)}`
+            ? t("today.until").replace("{t}", event.end.slice(11, 16))
             : ""}
           {event.location ? `${event.continuation || (!event.allDay && event.end) ? " · " : ""}${event.location}` : ""}
         </p>
       </div>
-      {event.recurring && <span className="text-xs text-sage" title="Recurring">↻</span>}
+      {event.recurring && <span className="text-xs text-sage" title={t("today.recurring")}>↻</span>}
     </div>
   );
 }
@@ -109,16 +110,16 @@ function WorkoutRow({ workout, matched }: { workout: WorkoutItem; matched: Activ
     return (
       <div className="flex items-center gap-3 bg-ghost border-2 border-ink/20 rounded-xl px-3.5 py-2.5">
         <div className="w-12 flex-shrink-0 text-right"><span className="text-sm">💤</span></div>
-        <p className="text-sm text-moss font-semibold">Rest day — recovery is training too.</p>
+        <p className="text-sm text-moss font-semibold">{t("today.restDay")}</p>
       </div>
     );
   }
 
   const done = workout.completed || !!matched;
   const details = [
-    workout.targetDistanceKm ? `${workout.targetDistanceKm} km` : null,
+    workout.targetDistanceKm ? `${workout.targetDistanceKm} ${t("common.km")}` : null,
     workout.targetPace,
-    workout.targetDurationMin ? `${workout.targetDurationMin} min` : null,
+    workout.targetDurationMin ? `${workout.targetDurationMin} ${t("common.min")}` : null,
   ].filter(Boolean).join(" · ");
 
   // Strength sessions are playable: deep-link into the guided workout timer
@@ -134,23 +135,23 @@ function WorkoutRow({ workout, matched }: { workout: WorkoutItem; matched: Activ
   return (
     <Link href={href} className="sticker sticker-press grid grid-cols-2 overflow-hidden">
       <div className="px-3.5 py-2.5 border-r-2 border-dashed border-shade min-w-0">
-        <p className="label-xs mb-0.5">Planned</p>
+        <p className="label-xs mb-0.5">{t("today.planned")}</p>
         <p className="text-sm font-bold text-ink truncate flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full border border-ink/60 flex-shrink-0" style={{ backgroundColor: getWorkoutTypeColor(workout.workoutType) }} />
           {workout.title}
         </p>
-        <p className="text-xs text-moss font-semibold truncate tabular-nums">{details || (isStrength ? "guided session" : "training plan")}</p>
+        <p className="text-xs text-moss font-semibold truncate tabular-nums">{details || (isStrength ? t("today.guidedSession") : t("today.trainingPlan"))}</p>
       </div>
       {done ? (
         <div className="px-3.5 py-2.5 bg-sprout min-w-0">
-          <p className="label-xs mb-0.5 text-leaf!">✓ Done</p>
-          <p className="text-sm font-extrabold text-ink truncate tabular-nums">{matched ? activityDetail(matched, lang) || matched.name : "completed"}</p>
-          {matched?.avgHeartRate && <p className="text-xs text-leaf font-bold tabular-nums">{Math.round(matched.avgHeartRate)} bpm</p>}
+          <p className="label-xs mb-0.5 text-leaf!">✓ {t("common.done")}</p>
+          <p className="text-sm font-extrabold text-ink truncate tabular-nums">{matched ? activityDetail(matched, lang, t) || matched.name : t("today.completed")}</p>
+          {matched?.avgHeartRate && <p className="text-xs text-leaf font-bold tabular-nums">{Math.round(matched.avgHeartRate)} {t("today.bpm")}</p>}
         </div>
       ) : (
         <div className="px-3.5 py-2.5 bg-ghost min-w-0 flex flex-col justify-center">
           {isStrength ? (
-            <span className="btn-brocco self-start px-3 py-1.5 text-xs">Start ▶</span>
+            <span className="btn-brocco self-start px-3 py-1.5 text-xs">{t("common.start")} ▶</span>
           ) : (
             workout.detectable ? (
               <>
@@ -172,17 +173,18 @@ function WorkoutRow({ workout, matched }: { workout: WorkoutItem; matched: Activ
 
 /** A completed activity with no planned workout behind it. */
 function ExtraActivityRow({ activity }: { activity: ActivityRow }) {
+  const t = useT();
   const lang = useLang();
   return (
     <Link href={`/activity/${activity.id}`} className="sticker sticker-press grid grid-cols-2 overflow-hidden">
       <div className="px-3.5 py-2.5 border-r-2 border-dashed border-shade bg-ghost min-w-0">
-        <p className="label-xs mb-0.5">Unplanned</p>
-        <p className="text-sm font-bold text-ghost-ink">— spontaneous</p>
+        <p className="label-xs mb-0.5">{t("today.unplanned")}</p>
+        <p className="text-sm font-bold text-ghost-ink">— {t("today.spontaneous")}</p>
       </div>
       <div className="px-3.5 py-2.5 bg-sprout min-w-0">
-        <p className="label-xs mb-0.5 text-leaf!">✓ Done</p>
+        <p className="label-xs mb-0.5 text-leaf!">✓ {t("common.done")}</p>
         <p className="text-sm font-extrabold text-ink truncate">{activity.name}</p>
-        <p className="text-xs text-leaf font-bold truncate tabular-nums">{activityDetail(activity, lang)}</p>
+        <p className="text-xs text-leaf font-bold truncate tabular-nums">{activityDetail(activity, lang, t)}</p>
       </div>
     </Link>
   );
@@ -240,8 +242,9 @@ function WeeklyReviewCard() {
 // --- Morning briefing (clamped to two lines until expanded) ---
 
 function BriefingCard({ briefing, loading }: { briefing: string | null; loading: boolean }) {
+  const t = useT();
   const [expanded, setExpanded] = useState(false);
-  const text = briefing || "Have a good one. Open the chat if you want to talk anything through.";
+  const text = briefing || t("today.briefingFallback");
   const isLong = text.length > 120;
 
   return (
@@ -261,7 +264,7 @@ function BriefingCard({ briefing, loading }: { briefing: string | null; loading:
             </p>
             {isLong && (
               <button onClick={() => setExpanded((e) => !e)} className="text-xs text-leaf font-bold mt-0.5">
-                {expanded ? "less" : "more"}
+                {expanded ? t("today.less") : t("today.more")}
               </button>
             )}
           </div>
@@ -321,7 +324,7 @@ function WeekCard({ data }: { data: TodayData }) {
     <Link href="/plan" className="sticker-lg sticker-press block px-4 py-3">
       <div className="flex items-center justify-between mb-1.5">
         <p className="label-xs">
-          {t("today.thisWeek")}{ws.weekNumber ? ` · W${ws.weekNumber}${ws.totalWeeks ? `/${ws.totalWeeks}` : ""}` : ""}{ws.phaseName ? ` · ${ws.phaseName}` : ""}
+          {t("today.thisWeek")}{ws.weekNumber ? ` · ${t("plan.weekAbbr")}${ws.weekNumber}${ws.totalWeeks ? `/${ws.totalWeeks}` : ""}` : ""}{ws.phaseName ? ` · ${ws.phaseName}` : ""}
         </p>
         {!sessionsBased && ws.totalSessions > 0 && (
           <p className="text-[10px] text-sage font-bold">{ws.completedSessions}/{ws.totalSessions} {t("common.sessions")}</p>
@@ -336,7 +339,7 @@ function WeekCard({ data }: { data: TodayData }) {
         ) : (
           <p className="text-sm text-ink tabular-nums">
             <span className="font-extrabold text-lg">{fmtNumber(ws.runKm, lang, 1)}</span>
-            {ws.plannedKm > 0 && <span className="text-sage font-bold"> / {ws.plannedKm.toFixed(0)} km</span>}
+            {ws.plannedKm > 0 && <span className="text-sage font-bold"> / {ws.plannedKm.toFixed(0)} {t("common.km")}</span>}
           </p>
         )}
         {(ws.plannedKm > 0 || sessionsBased) && (
@@ -396,7 +399,7 @@ export default function TodayView() {
     return (
       <main className="min-h-screen max-w-2xl mx-auto px-4">
         <PageHeader title={t("today.title")} />
-        <div className="text-moss text-center py-12 font-semibold">{loading ? "Loading..." : "Failed to load."}</div>
+        <div className="text-moss text-center py-12 font-semibold">{loading ? t("common.loading") : t("today.failedLoad")}</div>
       </main>
     );
   }
@@ -465,8 +468,8 @@ export default function TodayView() {
       {data.planExpired && (
         <div className="mb-3 sticker px-3.5 py-3 flex items-center gap-3">
           <span className="text-xl flex-shrink-0">🏁</span>
-          <p className="text-sm text-ink font-bold flex-1">{data.activePlanName || "Your plan"} {t("today.planDone")}</p>
-          <Link href={`/chat?msg=${encodeURIComponent("I'd like to build a new training plan")}`} className="btn-brocco px-3 py-1.5 text-xs flex-shrink-0">{t("today.buildPlan")}</Link>
+          <p className="text-sm text-ink font-bold flex-1">{data.activePlanName || t("today.yourPlan")} {t("today.planDone")}</p>
+          <Link href={`/chat?msg=${encodeURIComponent(t("plan.msgNewPlan"))}`} className="btn-brocco px-3 py-1.5 text-xs flex-shrink-0">{t("today.buildPlan")}</Link>
         </div>
       )}
 
@@ -482,24 +485,24 @@ export default function TodayView() {
               <Link href="/api/strava/auth?returnTo=/today" className="btn-brocco flex items-center gap-3 px-4 py-3">
                 <span className="text-lg">🏃</span>
                 <div className="flex-1 text-left">
-                  <p className="text-sm font-extrabold">Connect Strava first</p>
-                  <p className="text-xs text-leaf font-bold">Brocco reads your history and builds the plan around it</p>
+                  <p className="text-sm font-extrabold">{t("today.connectStravaFirst")}</p>
+                  <p className="text-xs text-leaf font-bold">{t("today.connectStravaFirstSub")}</p>
                 </div>
               </Link>
-              <Link href={`/chat?msg=${encodeURIComponent("I'd like to build a training plan")}`} className="sticker sticker-press flex items-center gap-3 px-4 py-3">
+              <Link href={`/chat?msg=${encodeURIComponent(t("today.msgBuildPlan"))}`} className="sticker sticker-press flex items-center gap-3 px-4 py-3">
                 <span className="text-lg">💬</span>
                 <div className="flex-1">
-                  <p className="text-sm font-bold text-ink">Or build a plan without it</p>
-                  <p className="text-xs text-moss font-semibold">Brocco will ask you a few questions instead</p>
+                  <p className="text-sm font-bold text-ink">{t("today.buildWithout")}</p>
+                  <p className="text-xs text-moss font-semibold">{t("today.buildWithoutSub")}</p>
                 </div>
               </Link>
             </>
           ) : (
-            <Link href={`/chat?msg=${encodeURIComponent("I'd like to build a training plan")}`} className="btn-brocco flex items-center gap-3 px-4 py-3">
+            <Link href={`/chat?msg=${encodeURIComponent(t("today.msgBuildPlan"))}`} className="btn-brocco flex items-center gap-3 px-4 py-3">
               <span className="text-lg">💬</span>
               <div className="flex-1 text-left">
-                <p className="text-sm font-extrabold">Build my training plan</p>
-                <p className="text-xs text-leaf font-bold">Chat with Brocco to create one</p>
+                <p className="text-sm font-extrabold">{t("today.buildMyPlan")}</p>
+                <p className="text-xs text-leaf font-bold">{t("today.buildMyPlanSub")}</p>
               </div>
             </Link>
           )}
@@ -519,11 +522,11 @@ export default function TodayView() {
           <div className="text-center py-10">
             <p className="text-4xl mb-3">🌤️</p>
             <p className="text-ink text-sm font-bold">
-              {anyLifeFeature(features) ? "Clear day ahead" : "No training today"}
+              {anyLifeFeature(features) ? t("today.clearDay") : t("today.noTraining")}
             </p>
             <p className="text-moss text-xs mt-1 font-semibold">
               {anyLifeFeature(features)
-                ? "Nothing scheduled. Ask Brocco if you want to add something."
+                ? t("today.nothingScheduledAsk")
                 : t("today.restUp")}
             </p>
           </div>
@@ -539,7 +542,7 @@ export default function TodayView() {
       {/* Ask Brocco */}
       <section>
         <Link href="/chat" className="btn-quiet flex items-center justify-center gap-2 w-full py-2.5 text-sm">
-          <span>💬</span><span>Open chat with Brocco</span>
+          <span>💬</span><span>{t("today.openChat")}</span>
         </Link>
       </section>
     </main>

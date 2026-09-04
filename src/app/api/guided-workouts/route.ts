@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { validateWorkoutDefinition, estimateDurationMin } from "@/lib/guided-workout";
+import { userTranslator } from "@/lib/i18n-server";
 
 /** GET /api/guided-workouts — the user's saved workouts, most recent first. */
 export async function GET() {
@@ -56,10 +57,16 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
   const title = String(body.title || "").trim();
-  if (!title || title.length > 80) return NextResponse.json({ error: "title required (max 80 chars)" }, { status: 400 });
+  if (!title || title.length > 80) {
+    const t = await userTranslator(session.userId);
+    return NextResponse.json({ error: t("api.validation.workout.titleRequired", { max: 80 }) }, { status: 400 });
+  }
 
   const validated = validateWorkoutDefinition(body.definition);
-  if (!validated.ok) return NextResponse.json({ error: validated.error }, { status: 400 });
+  if (!validated.ok) {
+    const t = await userTranslator(session.userId);
+    return NextResponse.json({ error: t(`api.validation.workout.${validated.code}`, validated.vars) }, { status: 400 });
+  }
 
   const workout = await prisma.guidedWorkout.create({
     data: {

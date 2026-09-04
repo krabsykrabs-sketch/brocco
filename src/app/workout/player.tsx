@@ -57,7 +57,9 @@ const KIND_FILL: Record<Segment["kind"], string> = {
 export default function WorkoutPlayer({ title, definition, workoutId, onExit }: PlayerProps) {
   const t = useT();
   const lang = useLang();
-  const segments = useMemo(() => flattenSegments(definition), [definition]);
+  // Segment labels ("Get ready", "Rest", "Round 2/3") come out of the
+  // engine already in the app language; exercise names are the definition's.
+  const segments = useMemo(() => flattenSegments(definition, lang), [definition, lang]);
   const totalEstSec = useMemo(() => segments.reduce((s, seg) => s + segEstSec(seg), 0), [segments]);
 
   const [idx, setIdx] = useState(0);
@@ -86,12 +88,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
 
   const seg = segments[idx];
   const isTimed = seg?.seconds != null;
-  const segLabel =
-    seg?.kind === "prep" ? t("player.getReady")
-    : seg?.kind === "warmup" ? t("workout.warmUp")
-    : seg?.kind === "cooldown" ? t("workout.coolDown")
-    : seg?.kind === "rest" ? (seg.label === "Round rest" ? t("player.roundRest") : t("player.rest"))
-    : seg?.label ?? "";
+  const segLabel = seg?.label ?? "";
   // A picture of the position beats a sentence you have to read mid-effort.
   const artSrc = seg?.kind === "work" ? artPathFor(seg.label, seg.art) : null;
 
@@ -279,7 +276,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
       setLogState("undone");
       emitDataChanged(["activities"]);
     } else {
-      emitToast({ text: "Couldn't undo — check History later.", kind: "error" });
+      emitToast({ text: t("player.undoFailed"), kind: "error" });
     }
   }
 
@@ -507,7 +504,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
                         {s.context ? <span className="text-sage font-semibold"> · {s.context}</span> : null}
                       </span>
                       <span className="text-[10px] text-sage font-bold tabular-nums flex-shrink-0">
-                        {s.seconds != null ? fmt(s.seconds) : `${s.reps} reps`}
+                        {s.seconds != null ? fmt(s.seconds) : `${s.reps} ${t("common.reps")}`}
                       </span>
                     </button>
                   );
