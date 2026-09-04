@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
   });
   const userName = user?.name || "Athlete";
 
-  const context = await buildCoachContext(session.userId);
+  const context = await buildCoachContext(session.userId, { currentSessionId: sessionId });
   const { staticPart, dynamicPart } = await buildSystemPrompt(
     session.userId,
     userName,

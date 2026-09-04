@@ -69,19 +69,19 @@ export async function summarizeStaleSessions(userId: string): Promise<void> {
         .map((m) => `${m.role === "user" ? "Athlete" : "Brocco"}: ${(m.displayText || "").trim()}`)
         .filter((l) => l.length > (l.startsWith("Athlete") ? 9 : 8))
         .join("\n")
-        .slice(-10000);
+        .slice(-24000);
 
       const response = await anthropic.messages.create({
         model: UTILITY_MODEL,
         max_tokens: 2000,
         output_config: { effort: "low" },
         system:
-          "You condense a coaching conversation into memory notes for the coach's future self. Return 1-5 short lines, one fact per line, no bullets or headers: decisions made, reasons the athlete gave (e.g. why a session was missed), injuries or niggles mentioned, preferences expressed, follow-ups agreed. Concrete and specific; include dates/names when said. OMIT pleasantries, generic advice, and anything already obvious from training data (distances run, sessions completed). If the conversation contains nothing durable, return exactly: NOTHING",
+          `You condense a coaching conversation into memory notes for the coach's future self. Return ${transcript.length > 6000 ? "up to 12" : "1-5"} short lines, one fact per line, no bullets or headers${transcript.length > 6000 ? ', grouped under the plain-text headings DECISIONS, PLAN CHANGES, HEALTH, OPEN QUESTIONS (skip empty ones)' : ""}: decisions made, plan changes and the reasoning, reasons the athlete gave (e.g. why a session was missed), injuries, medical history or niggles mentioned, preferences expressed, follow-ups agreed and their dates. Concrete and specific; include dates/names when said. OMIT pleasantries, generic advice, and anything already obvious from training data (distances run, sessions completed). If the conversation contains nothing durable, return exactly: NOTHING`,
         messages: [{ role: "user", content: transcript }],
       });
       const block = response.content.find((b) => b.type === "text");
       const text = block && block.type === "text" ? block.text.trim() : "";
-      const summary = !text || text === "NOTHING" ? "" : text.slice(0, 1500);
+      const summary = !text || text === "NOTHING" ? "" : text.slice(0, transcript.length > 6000 ? 3500 : 1500);
       await prisma.chatSession.update({ where: { id: s.id }, data: { summary, updatedAt: s.updatedAt } });
     } catch (err) {
       // Leave summary null — retried on the next trigger.
@@ -106,4 +106,78 @@ export async function recentConversationSummaries(userId: string, limit = 3): Pr
   return withContent
     .map((s) => `[${format(s.createdAt, "MMM d")}]\n${s.summary}`)
     .join("\n");
+}
+
+
+/**
+ * The tail of the most recent finished conversation, verbatim, when it ended
+ * less than `maxAgeHours` ago. A summary is right for last week; for last
+ * night the athlete's own words are cheap and far better — the opener that
+ * greeted a long medical/plan discussion with an uninformed week check-in
+ * had only a five-line digest of it, written seconds too late.
+ */
+export async function recentConversationTail(
+  userId: string,
+  opts: { excludeSessionId?: string; maxAgeHours?: number; maxMessages?: number; maxChars?: number } = {}
+): Promise<{ text: string; endedAt: Date } | null> {
+  const { excludeSessionId, maxAgeHours = 24, maxMessages = 14, maxChars = 4000 } = opts;
+  const since = new Date(Date.now() - maxAgeHours * 3600 * 1000);
+  const last = await prisma.chatMessage.findFirst({
+    where: {
+      role: "user",
+      createdAt: { gte: since },
+      session: { userId, type: "general", ...(excludeSessionId ? { id: { not: excludeSessionId } } : {}) },
+    },
+    orderBy: { createdAt: "desc" },
+    select: { sessionId: true, createdAt: true },
+  });
+  if (!last) return null;
+  const rows = await prisma.chatMessage.findMany({
+    where: { sessionId: last.sessionId, role: { in: ["user", "assistant"] } },
+    orderBy: { createdAt: "desc" },
+    take: maxMessages,
+    select: { role: true, displayText: true },
+  });
+  const lines = rows
+    .reverse()
+    .map((m) => `${m.role === "user" ? "Athlete" : "Brocco"}: ${(m.displayText || "").replace(/\s+/g, " ").trim()}`)
+    .filter((l) => l.length > 9);
+  let text = lines.join("\n");
+  if (text.length > maxChars) text = "…" + text.slice(-maxChars);
+  return text ? { text, endedAt: last.createdAt } : null;
+}
+
+let sweeperStarted = false;
+/** Hourly in-process sweep, started from instrumentation.ts. Independent of
+ * push: the reminder scheduler goes idle without VAPID keys, this must not. */
+export function startConversationSweeper(): void {
+  if (sweeperStarted) return;
+  sweeperStarted = true;
+  const run = () => sweepAllConversations().catch((err) => console.error("[conversation-memory] sweep failed:", err));
+  setTimeout(run, 2 * 60 * 1000); // shortly after boot, then hourly
+  setInterval(run, 60 * 60 * 1000);
+}
+
+/** Nightly/hourly sweep for every user with something to condense. */
+export async function sweepAllConversations(): Promise<void> {
+  const users = await prisma.chatSession.findMany({
+    where: { type: "general", summary: null },
+    distinct: ["userId"],
+    select: { userId: true },
+    take: 50,
+  });
+  for (const u of users) {
+    await summarizeStaleSessions(u.userId).catch(() => {});
+  }
+}
+
+/** Race a promise against a deadline; resolves undefined on timeout. */
+export async function withDeadline<T>(p: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), ms); });
+  try {
+    return await Promise.race([p, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

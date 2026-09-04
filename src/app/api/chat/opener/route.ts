@@ -11,7 +11,7 @@ import { COACH_MODEL } from "@/lib/models";
 import { renderWeeklyGoalsLine } from "@/lib/weekly-goals";
 import { generateNumberChecked, extractKm } from "@/lib/number-guard";
 import { weekTrainingFigures } from "@/lib/week-training";
-import { summarizeStaleSessions, recentConversationSummaries } from "@/lib/conversation-memory";
+import { summarizeStaleSessions, recentConversationSummaries, recentConversationTail, withDeadline } from "@/lib/conversation-memory";
 
 const anthropic = new Anthropic();
 
@@ -86,9 +86,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ skipped: true });
   }
 
-  // First open of a new day is the natural moment to condense yesterday's
-  // conversation into memory. Fire-and-forget — never blocks the opener.
-  summarizeStaleSessions(userId).catch(() => {});
+  // First open of a new day is the moment yesterday's conversation becomes
+  // memory — and the opener must WAIT for it. Fired in the background, the
+  // notes were written seconds after the opener that needed them, so every
+  // morning's first message was blind to the evening before. The hourly
+  // sweep usually has this done already; the deadline keeps a cold start
+  // from stalling the chat.
+  await withDeadline(summarizeStaleSessions(userId), 20_000);
 
   // The conversation this opener will be appended to. Without it the opener
   // was generated blind and happily re-asked questions the athlete had
@@ -229,11 +233,34 @@ export async function POST(request: NextRequest) {
   const convoNotes = await recentConversationSummaries(userId);
   const convoLine = convoNotes ? `\nNotes from recent conversations (you already know this — never re-ask it):\n${convoNotes}` : "";
 
-  const source = `${analysisContext}${triggerHint}${goalsLine}${convoLine}`;
+  // Last night's conversation, verbatim, when it is recent enough to still
+  // be "where we left off". A digest is for last week.
+  const tail = hasConversation ? null : await recentConversationTail(userId, { excludeSessionId: sessionId, maxAgeHours: 30 });
+  const tailLine = tail
+    ? `\nYOUR LAST CONVERSATION (ended ${format(tail.endedAt, "EEE HH:mm")}, verbatim tail — this is where you left off):\n${tail.text}`
+    : "";
+
+  // A plan re-decided in the last two days makes "why did you miss X" about
+  // the OLD plan's sessions wrong by construction.
+  const twoDaysAgo = new Date(Date.now() - 48 * 3600 * 1000);
+  const [recentAdjust, recentPlan] = await Promise.all([
+    prisma.planAdjustmentLog.findFirst({ where: { userId, createdAt: { gte: twoDaysAgo } }, orderBy: { createdAt: "desc" }, select: { createdAt: true, summary: true } }),
+    prisma.plan.findFirst({ where: { userId, status: "active", createdAt: { gte: twoDaysAgo } }, select: { createdAt: true, name: true } }),
+  ]);
+  const planChangeLine = recentPlan
+    ? `\nPLAN CHANGED: a new plan ("${recentPlan.name}") was created ${format(recentPlan.createdAt, "EEE HH:mm")}. Everything before that was under the old plan — do not ask about sessions missed before it, and do not summarise the week as if the old plan still applied.`
+    : recentAdjust
+      ? `\nPLAN CHANGED ${format(recentAdjust.createdAt, "EEE HH:mm")}: ${recentAdjust.summary}. Sessions before that change are not "missed"; the plan was re-decided.`
+      : "";
+
+  const continuing = !!tail || (!!convoNotes && trigger !== "new_activity");
+  const source = `${analysisContext}${triggerHint}${goalsLine}${convoLine}${tailLine}${planChangeLine}`;
   const styleLine =
     hasConversation && trigger === "new_activity"
       ? `You are re-opening an ongoing conversation (shown above). Continue it naturally in 1-2 sentences — no week summary, no re-asking anything already answered above.`
-      : `Write a brief data-driven training check-in for ${userName}. 2-4 sentences max. Pattern: quick summary of the week so far + highlight something specific (good or concerning) + what's coming up + open question.${hasConversation ? " The conversation above already happened today — do not re-raise topics it settled." : ""}`;
+      : continuing
+        ? `You are CONTINUING a relationship, not starting one. Open by picking up where the last conversation left off — one sentence that shows you remember what was decided (the plan change, the injury, the reason) — then one concrete, forward-looking question about today (how the body feels, whether today's session is on). 2-3 sentences max. NO week summary, NO "you missed X" about anything discussed or predating a plan change, NO re-asking what the notes or the last conversation already answer.`
+        : `Write a brief data-driven training check-in for ${userName}. 2-4 sentences max. Pattern: quick summary of the week so far + highlight something specific (good or concerning) + what's coming up + open question.${hasConversation ? " The conversation above already happened today — do not re-raise topics it settled." : ""}`;
   const systemPrompt = `You are Brocco, a broccoli running coach. ${styleLine} Be direct and specific. NUMBERS: quote only figures that appear in the data below, exactly as written. Never calculate, sum or estimate a distance — if a number you want is not in the data, leave it out and say it qualitatively instead. Running kilometres and bike kilometres are separate; never add them together. Don't say "Hello" or generic greetings. Today is ${format(parseWall(todayStr), "EEEE, MMMM d, yyyy")} and the current LOCAL TIME is ${timeNow} — never treat today's still-pending workout as missed or overdue. End with a status line: [STATUS:question]your question[/STATUS] or [STATUS:info]key insight[/STATUS].`;
 
   try {
@@ -248,6 +275,7 @@ export async function POST(request: NextRequest) {
       [
         Math.max(0, plannedKm - weekRunKm),
         ...extractKm(history.map((m) => (typeof m.content === "string" ? m.content : "")).join("\n")),
+        ...(tail ? extractKm(tail.text) : []),
       ],
       "opener",
       async (correction) => {
@@ -265,7 +293,7 @@ export async function POST(request: NextRequest) {
               ...history,
               {
                 role: "user",
-                content: `${source}\n\n${hasConversation && trigger === "new_activity" ? "Continue the conversation, reacting to the new activity." : "Generate the opening analysis."}${correction ? `\n\n${correction}` : ""}`,
+                content: `${source}\n\n${hasConversation && trigger === "new_activity" ? "Continue the conversation, reacting to the new activity." : continuing ? "Pick up where you left off." : "Generate the opening analysis."}${correction ? `\n\n${correction}` : ""}`,
               },
             ],
           })

@@ -18,14 +18,14 @@ import { getPaceCurve, formatTimeSec, formatPaceSec } from "@/lib/run-trends";
 import type { StravaLap } from "@/lib/strava";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 import { resolveFeatures, anyLifeFeature, type Features } from "@/lib/features";
-import { recentConversationSummaries } from "@/lib/conversation-memory";
+import { recentConversationSummaries, recentConversationTail } from "@/lib/conversation-memory";
 import { resolveLang, LANGUAGE_FULL } from "@/lib/i18n";
 
 /**
  * Build the coaching context for the AI system prompt.
  * Target: ~1500-2000 tokens. Summarize, don't dump raw JSON.
  */
-export async function buildCoachContext(userId: string): Promise<string> {
+export async function buildCoachContext(userId: string, opts?: { currentSessionId?: string }): Promise<string> {
   const now = new Date();
 
   const [user, profile, recentActivities, healthNotes] = await Promise.all([
@@ -141,9 +141,15 @@ export async function buildCoachContext(userId: string): Promise<string> {
   const guidedBlock = await buildGuidedWorkoutContext(userId, now);
 
   // --- Cross-day conversation memory ---
-  const convoSummaries = await recentConversationSummaries(userId);
-  const convoBlock = convoSummaries
-    ? `RECENT CONVERSATIONS (notes from the last few days' chats — treat as things you already know; NEVER re-ask what's answered here):\n${convoSummaries}`
+  const [convoSummaries, convoTail] = await Promise.all([
+    recentConversationSummaries(userId),
+    recentConversationTail(userId, { excludeSessionId: opts?.currentSessionId, maxAgeHours: 30, maxMessages: 12, maxChars: 3000 }),
+  ]);
+  const convoBlock = convoSummaries || convoTail
+    ? `RECENT CONVERSATIONS (treat as things you already know; NEVER re-ask what's answered here):\n${[
+        convoSummaries,
+        convoTail ? `Where you left off (${format(convoTail.endedAt, "EEE HH:mm")}, verbatim tail):\n${convoTail.text}` : "",
+      ].filter(Boolean).join("\n")}`
     : "";
 
   // --- Health notes ---

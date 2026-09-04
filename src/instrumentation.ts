@@ -9,5 +9,7 @@ export async function register() {
     assertEnv();
     const { startReminderScheduler } = await import("@/lib/reminder-push");
     startReminderScheduler();
+    const { startConversationSweeper } = await import("@/lib/conversation-memory");
+    startConversationSweeper();
   }
 }
