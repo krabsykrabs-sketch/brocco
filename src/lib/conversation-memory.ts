@@ -40,8 +40,23 @@ export async function summarizeStaleSessions(userId: string): Promise<void> {
   await prisma.chatSession
     .deleteMany({ where: { userId, createdAt: { lt: dayStart }, messages: { none: {} } } })
     .catch(() => {});
+  // "Finished" = not the live thread. The live thread is the most recently
+  // used one, unless it has been idle for three days (the rollover rule in
+  // /api/chat/sessions) — summarising a thread that will continue tomorrow
+  // would freeze its notes at the halfway point.
+  const live = await prisma.chatSession.findFirst({
+    where: { userId, type: "general", updatedAt: { gte: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) } },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true },
+  });
   const stale = await prisma.chatSession.findMany({
-    where: { userId, type: "general", summary: null, createdAt: { lt: dayStart } },
+    where: {
+      userId,
+      type: "general",
+      summary: null,
+      createdAt: { lt: dayStart },
+      ...(live ? { id: { not: live.id } } : {}),
+    },
     orderBy: { createdAt: "desc" },
     take: 3,
     select: { id: true, updatedAt: true },

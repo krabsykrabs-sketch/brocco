@@ -42,6 +42,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/** A thread is continued (rather than a new one started) while all three hold. */
+const THREAD_IDLE_MS = 3 * 24 * 60 * 60 * 1000;
+const THREAD_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
+const THREAD_MAX_MESSAGES = 300;
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getSession();
@@ -72,14 +77,25 @@ export async function POST(request: NextRequest) {
     const today = todayInTimezone(tz);
 
     if (!forceNew) {
-      // Reuse today's newest session of this type.
+      // One rolling conversation, not one per day. The thread stays open
+      // while it is alive — used in the last 3 days, younger than two weeks,
+      // not enormous — so the morning after a long evening continues that
+      // evening instead of starting from a blank page. The athlete can
+      // always start a fresh one from the sidebar.
       const latest = await prisma.chatSession.findFirst({
         where: { userId: session.userId, type },
-        orderBy: { createdAt: "desc" },
-        select: { id: true, title: true, createdAt: true },
+        orderBy: { updatedAt: "desc" },
+        select: { id: true, title: true, createdAt: true, updatedAt: true, _count: { select: { messages: true } } },
       });
-      if (latest && dateInTimezone(latest.createdAt, tz) === today) {
-        return NextResponse.json({ id: latest.id, title: latest.title, reused: true });
+      if (latest) {
+        const idleMs = Date.now() - latest.updatedAt.getTime();
+        const ageMs = Date.now() - latest.createdAt.getTime();
+        const alive =
+          dateInTimezone(latest.createdAt, tz) === today ||
+          (idleMs < THREAD_IDLE_MS && ageMs < THREAD_MAX_AGE_MS && latest._count.messages < THREAD_MAX_MESSAGES);
+        if (alive) {
+          return NextResponse.json({ id: latest.id, title: latest.title, reused: true });
+        }
       }
     } else {
       // A fresh session for an auto-sent message — but an EMPTY session from

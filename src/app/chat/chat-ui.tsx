@@ -171,7 +171,7 @@ function SessionSidebar({
         </div>
         <div className="p-2 border-b-2 border-shade">
           <button
-            onClick={() => { router.push(basePath); onClose(); }}
+            onClick={() => { router.push(`${basePath}?new=1`); onClose(); }}
             className="btn-brocco w-full text-left px-3 py-2 text-sm"
           >
             {t("chat.newConversation")}
@@ -201,6 +201,7 @@ export default function ChatUI({
   initialMessages,
   autoMessage,
   draftMessage,
+  forceNewSession = false,
   mode = "coach",
 }: {
   sessionId: string | null;
@@ -208,6 +209,8 @@ export default function ChatUI({
   autoMessage?: string;
   /** Pre-fills the composer WITHOUT sending — the user finishes the sentence. */
   draftMessage?: string;
+  /** Start a fresh thread instead of continuing the live one. */
+  forceNewSession?: boolean;
   mode?: "coach" | "kitchen";
 }) {
   const router = useRouter();
@@ -443,8 +446,8 @@ export default function ChatUI({
             }
           }
         } else {
-          // Get or reuse today's session
-          const res = await fetch("/api/chat/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sessionBody) });
+          // Continue the live thread — or, from the sidebar button, start a new one
+          const res = await fetch("/api/chat/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(forceNewSession ? { forceNew: true, ...sessionBody } : sessionBody) });
           const data = await res.json();
           if (cancelled) return;
           setSessionId(data.id);
@@ -500,8 +503,9 @@ export default function ChatUI({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleSend() {
-    const text = input.trim();
+  async function handleSend(preset?: unknown) {
+    // Called from onClick (event) or with a preset string (check-in chip).
+    const text = (typeof preset === "string" ? preset : input).trim();
     if (!text || sending) return;
 
     // Stop recording if active
@@ -720,6 +724,20 @@ export default function ChatUI({
 
       {/* Input */}
       <div className="safe-bottom px-4 pt-3 border-t-2 border-ink bg-paper flex-shrink-0">
+        {!kitchen && (
+          <div className="flex gap-2 mb-2">
+            {/* The daily numbers used to arrive unasked as the opener; now
+                they are one tap away, so the opener can simply continue. */}
+            <button
+              type="button"
+              onClick={() => handleSend(t("chat.weekCheckinMsg"))}
+              disabled={sending}
+              className="text-xs font-extrabold px-3 py-1.5 rounded-full border-2 border-ink bg-sprout disabled:opacity-40"
+            >
+              {t("chat.weekCheckin")}
+            </button>
+          </div>
+        )}
         <div className="flex gap-2 items-end">
           <textarea
             ref={inputRef}

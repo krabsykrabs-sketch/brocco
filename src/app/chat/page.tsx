@@ -11,8 +11,10 @@ function ChatPageContent() {
   // workout: … here's what I want changed:").
   const msg = searchParams.get("msg") || undefined;
   const draft = searchParams.get("draft") || undefined;
+  // ?new=1: the sidebar's "New conversation" — a fresh thread on purpose.
+  const forceNew = searchParams.get("new") === "1";
 
-  return <ChatUI sessionId={null} initialMessages={[]} autoMessage={msg} draftMessage={draft} />;
+  return <ChatUI sessionId={null} initialMessages={[]} autoMessage={msg} draftMessage={draft} forceNewSession={forceNew} />;
 }
 
 export default function NewChatPage() {

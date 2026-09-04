@@ -253,7 +253,7 @@ export async function POST(request: NextRequest) {
       ? `\nPLAN CHANGED ${format(recentAdjust.createdAt, "EEE HH:mm")}: ${recentAdjust.summary}. Sessions before that change are not "missed"; the plan was re-decided.`
       : "";
 
-  const continuing = !!tail || (!!convoNotes && trigger !== "new_activity");
+  const continuing = trigger !== "new_activity" && (!!tail || hasConversation || !!convoNotes);
   const source = `${analysisContext}${triggerHint}${goalsLine}${convoLine}${tailLine}${planChangeLine}`;
   const styleLine =
     hasConversation && trigger === "new_activity"
