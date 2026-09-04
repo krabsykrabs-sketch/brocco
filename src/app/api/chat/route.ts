@@ -213,8 +213,10 @@ export async function POST(request: NextRequest) {
         });
 
         // Auto-generate title after first exchange
-        const messageCount = await prisma.chatMessage.count({ where: { sessionId } });
-        if (messageCount === 2 && chatSession.title === "New conversation") {
+        // Keyed on the title alone: the opener is stored as an assistant row,
+        // so "count === 2" was never true for a normal session and they all
+        // stayed "New conversation" forever. Runs once — the title changes.
+        if (chatSession.title === "New conversation") {
           generateTitle(sessionId, message, result.fullText).catch(() => {});
         }
 

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { ILLUSTRATED_LABELS } from "@/lib/exercise-art";
-import { startOfWeek, endOfWeek, subWeeks, format, subDays } from "date-fns";
+import { startOfWeek, endOfWeek, subWeeks, format, subDays, addDays } from "date-fns";
 import type Anthropic from "@anthropic-ai/sdk";
 import {
   applyPlanGeneration,
@@ -110,7 +110,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: "query_data",
     description:
-      "Retrieve specific historical training data not in the default context window. query_type 'plan_outline' returns the ACTIVE plan's full structure — goal, race date, every phase, and every week's start date, detail level, target km, target sessions and session codes — use it before converting or restructuring an existing plan.",
+      "Retrieve specific historical training data not in the default context window. query_type 'plan_outline' returns the ACTIVE plan's full structure — goal, race date, every phase, and every week's start date, detail level, target km, target sessions and session codes — use it before converting or restructuring an existing plan. query_type 'workout_details' returns the FULL content of planned sessions in a date range (default: today to +14 days): description, structured steps, targets, status, and for strength sessions the exact exercise list of the linked guided timer session — use it whenever the athlete asks what a session involves or you need to check before changing one.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -123,6 +123,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
             "heart_rate_trend",
             "workout_comparison",
             "plan_outline",
+            "workout_details",
           ],
         },
         filters: {
@@ -816,6 +817,63 @@ async function handleQueryData(
             elevationGainM: a.elevationGainM ? Number(a.elevationGainM) : null,
             date: format(new Date(a.startDateLocal), "yyyy-MM-dd"),
           })),
+        },
+      };
+    }
+    case "workout_details": {
+      const from = filters.date_from ? new Date(filters.date_from as string) : new Date(new Date().toISOString().slice(0, 10));
+      const to = filters.date_to ? new Date(filters.date_to as string) : addDays(from, 14);
+      const rows = await prisma.plannedWorkout.findMany({
+        where: { plan: { userId, status: "active" }, date: { gte: from, lte: to } },
+        orderBy: { date: "asc" },
+        take: Math.min(limit, 40),
+        select: {
+          id: true, date: true, title: true, workoutType: true, activityType: true, status: true,
+          targetDistanceKm: true, targetPace: true, targetDurationMin: true, description: true, steps: true, weekNumber: true,
+        },
+      });
+      const guided = rows.length
+        ? await prisma.guidedWorkout.findMany({
+            where: { userId, plannedWorkoutId: { in: rows.map((r) => r.id) } },
+            select: { plannedWorkoutId: true, title: true, focus: true, durationMin: true, definition: true },
+          })
+        : [];
+      const guidedByWorkout = new Map(guided.map((g) => [g.plannedWorkoutId, g]));
+      type Def = { warmupSec?: number; cooldownSec?: number; blocks?: Array<{ label?: string; rounds?: number; exercises?: Array<{ name: string; mode?: string; reps?: number; workSec?: number; restSec?: number; note?: string }> }> };
+      return {
+        success: true,
+        data: {
+          range: { from: format(from, "yyyy-MM-dd"), to: format(to, "yyyy-MM-dd") },
+          workouts: rows.map((w) => {
+            const g = guidedByWorkout.get(w.id);
+            const def = (g?.definition as Def | null) || null;
+            return {
+              id: w.id,
+              date: format(new Date(w.date), "yyyy-MM-dd"),
+              week_number: w.weekNumber,
+              title: w.title,
+              workout_type: w.workoutType,
+              activity_type: w.activityType,
+              status: w.status,
+              target_distance_km: w.targetDistanceKm != null ? Number(w.targetDistanceKm) : null,
+              target_pace: w.targetPace,
+              target_duration_min: w.targetDurationMin,
+              description: w.description,
+              steps: w.steps ?? null,
+              guided_session: g
+                ? {
+                    title: g.title,
+                    focus: g.focus,
+                    duration_min: g.durationMin,
+                    blocks: (def?.blocks || []).map((b) => ({
+                      label: b.label,
+                      rounds: b.rounds,
+                      exercises: (b.exercises || []).map((e) => `${e.name}${e.mode === "reps" ? ` ×${e.reps ?? "?"}` : ` ${e.workSec ?? "?"}s`}${e.note ? ` — ${e.note}` : ""}`),
+                    })),
+                  }
+                : null,
+            };
+          }),
         },
       };
     }

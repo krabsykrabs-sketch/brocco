@@ -62,23 +62,37 @@ export async function POST(request: NextRequest) {
       if (body?.type === "kitchen") type = "kitchen";
     } catch { /* no body = default behavior */ }
 
+    // "Today" in the USER'S timezone, not the server's (a UTC server rolls
+    // the day at 2am Berlin time and would split one evening in two).
+    const profile = await prisma.userProfile.findUnique({
+      where: { userId: session.userId },
+      select: { timezone: true },
+    });
+    const tz = profile?.timezone || "Europe/Berlin";
+    const today = todayInTimezone(tz);
+
     if (!forceNew) {
-      // Reuse today's general session if one exists — "today" in the USER'S
-      // timezone, not the server's (a UTC server rolls the day at 2am Berlin
-      // time and would split one evening into two conversations).
-      const profile = await prisma.userProfile.findUnique({
-        where: { userId: session.userId },
-        select: { timezone: true },
-      });
-      const tz = profile?.timezone || "Europe/Berlin";
+      // Reuse today's newest session of this type.
       const latest = await prisma.chatSession.findFirst({
         where: { userId: session.userId, type },
         orderBy: { createdAt: "desc" },
         select: { id: true, title: true, createdAt: true },
       });
-
-      if (latest && dateInTimezone(latest.createdAt, tz) === todayInTimezone(tz)) {
+      if (latest && dateInTimezone(latest.createdAt, tz) === today) {
         return NextResponse.json({ id: latest.id, title: latest.title, reused: true });
+      }
+    } else {
+      // A fresh session for an auto-sent message — but an EMPTY session from
+      // today serves exactly as well. Without this every hand-off link that
+      // got abandoned before its message was sent left another "New
+      // conversation" in the sidebar.
+      const empty = await prisma.chatSession.findFirst({
+        where: { userId: session.userId, type, messages: { none: {} } },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, title: true, createdAt: true },
+      });
+      if (empty && dateInTimezone(empty.createdAt, tz) === today) {
+        return NextResponse.json({ id: empty.id, title: empty.title, reused: false });
       }
     }
 

@@ -35,6 +35,11 @@ async function localDayStart(userId: string): Promise<Date> {
  */
 export async function summarizeStaleSessions(userId: string): Promise<void> {
   const dayStart = await localDayStart(userId);
+  // Sessions that never received a message carry nothing worth keeping and
+  // only clutter the sidebar — sweep the ones from earlier days.
+  await prisma.chatSession
+    .deleteMany({ where: { userId, createdAt: { lt: dayStart }, messages: { none: {} } } })
+    .catch(() => {});
   const stale = await prisma.chatSession.findMany({
     where: { userId, type: "general", summary: null, createdAt: { lt: dayStart } },
     orderBy: { createdAt: "desc" },

@@ -433,6 +433,7 @@ async function buildPlanContext(userId: string, timezone: string): Promise<strin
         targetPace: true,
         targetDurationMin: true,
         status: true,
+        description: true,
       },
     }),
     prisma.activity.findMany({
@@ -505,7 +506,12 @@ async function buildPlanContext(userId: string, timezone: string): Promise<strin
       default:
         ann = "upcoming";
     }
-    return `- ${formatDateShort(dateStr)}: ${w.workoutType} "${w.title}"${renderTargets(w) ? ` — ${renderTargets(w)}` : ""} [${ann}] (id: ${w.id})`;
+    // The description is what the athlete sees on the session card. Without
+    // it here the coach inferred a session's content from its title and
+    // phase — and argued "isometrics" against a card that said calf raises.
+    const desc = (w.description || "").replace(/\s+/g, " ").trim();
+    const descNote = desc ? `\n    ↳ ${desc.length > 220 ? desc.slice(0, 217) + "…" : desc}` : "";
+    return `- ${formatDateShort(dateStr)}: ${w.workoutType} "${w.title}"${renderTargets(w) ? ` — ${renderTargets(w)}` : ""} [${ann}] (id: ${w.id})${descNote}`;
   };
 
   const thisWeek = workouts.filter((w) => wallDateString(w.date) <= wallDateString(addDaysWall(weekStart, 6)));
@@ -821,6 +827,7 @@ ${staplesBlock}${equipmentBlock}`;
 - When suggesting plan changes, explain the reasoning
 - Flag any concerning patterns (overtraining, pace regression, HR drift)
 - Be direct and concise. Don't repeat data the user can already see on the dashboard.
+- NEVER GUESS WHAT A SESSION CONTAINS. Each planned session's description is shown under its line in the plan context (↳), and query_data with query_type "workout_details" returns the full description, structured steps and — for strength sessions — the exact exercise list of the guided timer session. If the athlete asks what a session involves, or disputes what you said about it, READ it before answering; a title or phase name is not the content.
 - If the user has no activities yet, welcome them and ask about their training background.
 - Keep responses focused and actionable. Don't write essays.
 - SAVE WHAT YOU LEARN: when a conversation yields a durable fact or decision — why a session was missed, an injury update, a preference, something you agreed to revisit ("we'll test the knee Thursday") — store it with save_profile coaching_notes_update in the SAME turn, so future-you doesn't re-ask. Don't save small talk or things the training data already shows.
