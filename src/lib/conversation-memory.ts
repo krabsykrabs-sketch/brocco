@@ -44,7 +44,7 @@ export async function summarizeStaleSessions(userId: string): Promise<void> {
     where: { userId, type: "general", summary: null, createdAt: { lt: dayStart } },
     orderBy: { createdAt: "desc" },
     take: 3,
-    select: { id: true },
+    select: { id: true, updatedAt: true },
   });
 
   for (const s of stale) {
@@ -58,7 +58,9 @@ export async function summarizeStaleSessions(userId: string): Promise<void> {
       if (userTurns.length < 2) {
         // Not a real conversation (opener only, or a single drive-by message)
         // — mark summarized-empty so it isn't re-examined every day.
-        await prisma.chatSession.update({ where: { id: s.id }, data: { summary: "" } });
+        // Pin updatedAt: a memory write is not activity. Letting Prisma bump it
+        // re-dated months-old sessions to today in the sidebar, three per open.
+        await prisma.chatSession.update({ where: { id: s.id }, data: { summary: "", updatedAt: s.updatedAt } });
         continue;
       }
 
@@ -80,7 +82,7 @@ export async function summarizeStaleSessions(userId: string): Promise<void> {
       const block = response.content.find((b) => b.type === "text");
       const text = block && block.type === "text" ? block.text.trim() : "";
       const summary = !text || text === "NOTHING" ? "" : text.slice(0, 1500);
-      await prisma.chatSession.update({ where: { id: s.id }, data: { summary } });
+      await prisma.chatSession.update({ where: { id: s.id }, data: { summary, updatedAt: s.updatedAt } });
     } catch (err) {
       // Leave summary null — retried on the next trigger.
       console.error(`[conversation-memory] failed to summarize session ${s.id}:`, err);
