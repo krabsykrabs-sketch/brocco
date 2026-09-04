@@ -202,6 +202,10 @@ export const en = {
   "shell.legal": "Legal",
   "chat.untitled": "New conversation",
   "chat.kitchenUntitled": "Kitchen chat",
+  "calendar.workoutType.yoga": "yoga session",
+  "calendar.preparing": "Preparing…",
+  "calendar.startFailed": "Couldn't prepare the session. Try again in a moment.",
+  "calendar.guidedSession": "Guided session — ready when you are",
 } as const;
 
 export const de: Partial<Record<keyof typeof en, string>> = {
@@ -404,6 +408,10 @@ export const de: Partial<Record<keyof typeof en, string>> = {
   "shell.legal": "Rechtliches",
   "chat.untitled": "Neue Unterhaltung",
   "chat.kitchenUntitled": "Küchen-Chat",
+  "calendar.workoutType.yoga": "Yoga-Einheit",
+  "calendar.preparing": "Wird vorbereitet…",
+  "calendar.startFailed": "Die Einheit konnte nicht vorbereitet werden. Versuch es gleich noch mal.",
+  "calendar.guidedSession": "Geführte Einheit — starte, wenn du bereit bist",
 };
 
 export const es: Partial<Record<keyof typeof en, string>> = {
@@ -606,4 +614,8 @@ export const es: Partial<Record<keyof typeof en, string>> = {
   "shell.legal": "Legal",
   "chat.untitled": "Nueva conversación",
   "chat.kitchenUntitled": "Chat de cocina",
+  "calendar.workoutType.yoga": "sesión de yoga",
+  "calendar.preparing": "Preparando…",
+  "calendar.startFailed": "No se pudo preparar la sesión. Inténtalo de nuevo en un momento.",
+  "calendar.guidedSession": "Sesión guiada — cuando quieras",
 };

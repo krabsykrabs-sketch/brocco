@@ -19,6 +19,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
     workout: {
       id: w.id,
       title: w.title,
+      kind: w.kind,
       focus: w.focus,
       durationMin: w.durationMin,
       definition: w.definition,

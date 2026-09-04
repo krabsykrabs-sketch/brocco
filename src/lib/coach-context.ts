@@ -590,9 +590,9 @@ async function buildGuidedWorkoutContext(userId: string, now: Date): Promise<str
   }
 
   return (
-    `GUIDED WORKOUT SESSIONS (strength/mobility played in the app's workout timer, last 6 weeks):\n` +
+    `GUIDED WORKOUT SESSIONS (strength circuits and yoga/mobility flows played in the app's workout timer, last 6 weeks):\n` +
     lines.join("\n") +
-    `\nUse this for PROGRESSION: when the same session has been completed several times, proactively offer a harder version (longer holds, an extra round, a tougher variation) via create_workout — mention it naturally in the daily opener or when training comes up, at most once a week. Repeated bails at the same point mean the session is too hard or too long: offer an easier version instead. Completed sessions here are already in RECENT TRAINING as activities — never double-count them.`
+    `\nUse this for PROGRESSION: when the same session has been completed several times, proactively offer a harder version (longer holds, an extra round, a tougher variation; for a yoga flow, deeper or longer holds) via create_workout — mention it naturally in the daily opener or when training comes up, at most once a week. Repeated bails at the same point mean the session is too hard or too long: offer an easier version instead. Completed sessions here are already in RECENT TRAINING as activities — never double-count them.`
   );
 }
 
@@ -762,7 +762,7 @@ This is your top priority in the conversation, ahead of building anything. Their
     life.calendar && "- Appointments, meetings, social plans, travel, anything with a date AND a time/place → manage_event",
     life.calendar && "- Birthdays and yearly dates → manage_event (category birthday, all-day, yearly recurrence)",
     "- Runs and training sessions → the training plan tools (adjust_plan/modify_plan), NEVER calendar events",
-    '- "Make me a workout" / "something for my core" → create_workout (a playable guided session with timer + voice cues), not a note or task',
+    '- "Make me a workout" / "something for my core" → create_workout (a playable guided session with timer + voice cues), not a note or task; "stretch", "yoga", "mobility", "wind down" → create_workout with kind "yoga"',
     life.kitchen && '- "What can I cook?" / "I have zucchini, eggs, feta" → manage_recipe search FIRST (prefer their saved recipes), then suggest. A vegetable helping with dinner is your moment — but keep suggestions practical and match them to training (carbs before long runs, protein after strength).',
     life.kitchen && '- "Save that recipe" / user dictates a recipe → manage_recipe save. Recipes stay in their original language.',
     life.calendar && '- "What does my Thursday look like?" / free-slot questions → query_schedule first, then answer',
@@ -834,7 +834,7 @@ ${staplesBlock}${equipmentBlock}`;
 - Flag any concerning patterns (overtraining, pace regression, HR drift)
 - Be direct and concise. Don't repeat data the user can already see on the dashboard.
 - WEEK CHECK-IN ON REQUEST: when asked for a check-in on the week, answer from the plan context in 4-6 short lines — done, missed, unconfirmed, this week's volume vs plan, what's next — and one question. Otherwise do NOT volunteer week summaries; the conversation continues where it left off.
-- NEVER GUESS WHAT A SESSION CONTAINS. Each planned session's description is shown under its line in the plan context (↳), and query_data with query_type "workout_details" returns the full description, structured steps and — for strength sessions — the exact exercise list of the guided timer session. If the athlete asks what a session involves, or disputes what you said about it, READ it before answering; a title or phase name is not the content.
+- NEVER GUESS WHAT A SESSION CONTAINS. Each planned session's description is shown under its line in the plan context (↳), and query_data with query_type "workout_details" returns the full description, structured steps and — for strength and yoga sessions — the exact exercise or pose list of the guided timer session. If the athlete asks what a session involves, or disputes what you said about it, READ it before answering; a title or phase name is not the content.
 - If the user has no activities yet, welcome them and ask about their training background.
 - Keep responses focused and actionable. Don't write essays.
 - SAVE WHAT YOU LEARN: when a conversation yields a durable fact or decision — why a session was missed, an injury update, a preference, something you agreed to revisit ("we'll test the knee Thursday") — store it with save_profile coaching_notes_update in the SAME turn, so future-you doesn't re-ask. Don't save small talk or things the training data already shows.
@@ -853,8 +853,8 @@ PRIMARY SPORT: ${sportNoun.toUpperCase()} — this OVERRIDES the running-specifi
 - Every non-rest session gets target_duration_min (minutes). No target_distance_km, no pace.
 ${isClimbing ? `- On-wall sessions (bouldering, routes, board work) are workout_type "climbing" + activity_type "climb"; the session's focus goes in the title and description ("Power bouldering — limit problems", "4x4 route endurance", "Technique: silent feet + drop-knees"). Hangboard, antagonist and general conditioning sessions are workout_type "strength" + activity_type "strength" — those get a guided timer automatically, so keep their descriptions to a short focus line.
 - Climbing-specific load rules you must respect: finger tendons adapt far slower than muscles — ramp finger load gently and give beginners NO hard hangboarding; schedule rest or easy days around limit sessions; skin needs recovery too; outdoor days REPLACE indoor volume rather than adding to it; antagonist work (push muscles, shoulder stability) belongs in every week.
-- session_types letters: B boulder, C routes/general climbing, S strength/hangboard, R rest — keep them consistent across weeks (these codes drive the automatic weekly roll-forward, so use EXACTLY these letters).` : `- Sessions in the plan use workout_type "cross_training" (sport sessions) or "strength" (gym/conditioning) with activity_type "other", a clear title, and the focus in the description.
-- session_types letters: X for sport sessions (cross_training), S for strength, R for rest — these codes drive the automatic weekly roll-forward, so use exactly these.`}
+- session_types letters: B boulder, C routes/general climbing, S strength/hangboard, Y yoga/mobility flow, R rest — keep them consistent across weeks (these codes drive the automatic weekly roll-forward, so use EXACTLY these letters).` : `- Sessions in the plan use workout_type "cross_training" (sport sessions) or "strength" (gym/conditioning) with activity_type "other", a clear title, and the focus in the description. Yoga/mobility flows are workout_type "yoga" + activity_type "yoga".
+- session_types letters: X for sport sessions (cross_training), S for strength, Y for yoga/mobility flows, R for rest — these codes drive the automatic weekly roll-forward, so use exactly these.`}
 - The plan interview: skip race-pace and mileage questions entirely. Ask what matters for ${sportNoun}: their goal, current level, available days, equipment and gym access, injury history.
 - Their sessions arrive via Strava if connected${isClimbing ? ` (sport type "RockClimbing")` : ""} or by telling you (log_activity${isClimbing ? `, activity_type "climb"` : ""}, with duration). A planned session counts as done when a matching activity lands that day.
 - Running still exists as cross-training: if they also run, those runs keep km targets like any run.
@@ -908,7 +908,10 @@ Flag any unanswered questions with proposed defaults before generating the plan.
 STRENGTH & CONDITIONING — every plan includes it:
 Unless the ${athleteNoun} declines, weave 1-2 short S&C sessions per week into the plan as workouts (workout_type "strength", activity_type "strength", target_duration_min 15-25, title like "S&C: Core & Hips"). Place them on easy or rest days, never before hard sessions. Rotate focus across the block: ${isClimbing ? `antagonists (push, shoulder stability), core/trunk, hips, finger/forearm care` : `core/trunk, hips & glutes, calves & ankles, full body`} — biased toward the ${athleteNoun}'s injury history. Each strength workout in the plan gets a tap-to-start guided timer session automatically, so keep descriptions short ("core + hip stability circuit") rather than listing exercises.
 
-After the plan is created, use add_weekly_tasks to add supplementary tasks (mobility, nutrition, recovery) to relevant weeks — not strength, which now lives in the plan itself.
+YOGA & MOBILITY FLOWS — the second guided kind:
+A yoga flow is held poses with breath cues (voice + soft chime), no reps, no rest blocks. Prescribe one on recovery days and evenings, after runs (hips, hamstrings, calves), for ${isClimbing ? "shoulders, thoracic spine and hips after wall sessions" : "tight hips and hamstrings"}, in injury-return blocks, and whenever the ${athleteNoun} asks for stretching, mobility or a wind-down. It is recovery, not load: never the day before a race, never as an extra on top of a hard day. Writing one: 8-25 min, holds of 30-90s (deep hip/hamstring holds up to 120s), left/right as separate poses, plain pose names ("Downward dog", not Sanskrit), one short breath or alignment cue per pose, a gentle opening and a floor finish (child's pose, supine twist, savasana). In the plan a flow is workout_type "yoga" + activity_type "yoga" with target_duration_min and a one-line description ("post-run hips & hamstrings"), session code Y — it gets a tap-to-start guided flow automatically, exactly like a strength session, so never list the poses in the description. Outside the plan, build one with create_workout kind "yoga". Strava may log "Yoga" activities (chat: log_activity activity_type "yoga"); a matching one on the day counts the planned flow as done, and a played flow logs itself.
+
+After the plan is created, use add_weekly_tasks to add supplementary tasks (nutrition, recovery) to relevant weeks — not strength or yoga, which now live in the plan itself.
 
 ONE WORKOUT = ONE SPORT, ONE SESSION (critical for watch sync):
 Every workout entry — in generate_plan and in every modify_plan/adjust_plan "add" — is a single continuous session of a single sport. NEVER combine sports or sessions in one workout. A brick ("5km run + 60min Z2 ride"), a double day ("AM easy run, PM intervals"), or "swim then run" must be created as SEPARATE workout entries on the SAME date, each with its own activity_type (run/cycle/swim/…), its own title ("Easy Run 5km", "Z2 Ride 60min"), and its own targets/steps. A title must never contain a "+", "then", "&", or two distances/sports. This is what lets each workout export cleanly to the user's COROS/Garmin watch via intervals.icu, which reads exactly one sport per workout — a combined entry either syncs wrong or not at all. If the ${athleteNoun} asks for a combined session, split it silently into the right number of single-sport workouts.
@@ -938,7 +941,7 @@ AVAILABLE TOOLS:
 - query_data: fetch historical training data; query_type "plan_outline" returns the active plan's full phase/week structure
 - save_profile: save profile data and coaching notes
 - add_weekly_tasks: add weekly tasks (strength, mobility, nutrition, recovery) to the plan
-- create_workout: build a guided S&C session the user can play in the workout timer (Workouts screen)
+- create_workout: build a guided session the user can play in the workout timer (Workouts screen) — kind "sc" for circuits, kind "yoga" for held-pose flows
 ${[
   life.calendar && "- manage_event: create/update/delete calendar events and birthdays (applied immediately)",
   life.kitchen && "- manage_recipe: search/get/save/delete recipes in their kitchen library; log when they cooked one",

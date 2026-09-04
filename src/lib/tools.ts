@@ -1,5 +1,24 @@
 import { prisma } from "@/lib/db";
-import { ILLUSTRATED_LABELS } from "@/lib/exercise-art";
+import { ILLUSTRATED_LABELS, EXERCISE_ART } from "@/lib/exercise-art";
+
+/**
+ * The yoga poses among the illustrated exercises, as `art` slugs. A yoga
+ * flow (create_workout kind "yoga", the generate route) is steered onto
+ * these rather than the whole S&C list so the picture matches the pose.
+ */
+export const YOGA_POSE_SLUGS = [
+  "mountain-pose", "chair-pose", "tree-pose", "standing-forward-fold", "wide-leg-forward-fold",
+  "downward-dog", "upward-dog", "cobra-pose", "sphinx-pose", "locust-pose", "camel-pose",
+  "cat-pose", "cow-pose", "thread-the-needle", "puppy-pose", "childs-pose",
+  "low-lunge", "high-lunge", "warrior-one", "warrior-two", "reverse-warrior", "triangle-pose", "extended-side-angle",
+  "lizard-pose", "half-split", "kneeling-hip-flexor-stretch", "pigeon-pose", "frog-pose", "garland-pose",
+  "seated-forward-fold", "butterfly-pose", "seated-twist", "boat-pose",
+  "reclined-figure-four", "happy-baby", "supine-twist", "legs-up-the-wall", "savasana",
+  "band-inversion", "band-eversion", "band-dorsiflexion", "band-plantarflexion",
+] as const;
+const POSE_LABEL_BY_SLUG = new Map(EXERCISE_ART.map((e) => [e.slug, e.label]));
+/** `slug (Label)` pairs for prompts — the slug is the diagram key, the label the plain English name. */
+export const YOGA_POSE_HINTS = YOGA_POSE_SLUGS.filter((slug) => POSE_LABEL_BY_SLUG.has(slug)).map((slug) => `${slug} (${POSE_LABEL_BY_SLUG.get(slug)})`);
 import { startOfWeek, endOfWeek, subWeeks, format, subDays, addDays } from "date-fns";
 import type Anthropic from "@anthropic-ai/sdk";
 import {
@@ -112,7 +131,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: "query_data",
     description:
-      "Retrieve specific historical training data not in the default context window. query_type 'plan_outline' returns the ACTIVE plan's full structure — goal, race date, every phase, and every week's start date, detail level, target km, target sessions and session codes — use it before converting or restructuring an existing plan. query_type 'workout_details' returns the FULL content of planned sessions in a date range (default: today to +14 days): description, structured steps, targets, status, and for strength sessions the exact exercise list of the linked guided timer session — use it whenever the athlete asks what a session involves or you need to check before changing one.",
+      "Retrieve specific historical training data not in the default context window. query_type 'plan_outline' returns the ACTIVE plan's full structure — goal, race date, every phase, and every week's start date, detail level, target km, target sessions and session codes — use it before converting or restructuring an existing plan. query_type 'workout_details' returns the FULL content of planned sessions in a date range (default: today to +14 days): description, structured steps, targets, status, and for strength and yoga sessions the exact exercise/pose list of the linked guided timer session — use it whenever the athlete asks what a session involves or you need to check before changing one. Yoga sessions return their pose flow the same way (guided_session.kind \"yoga\").",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -224,8 +243,8 @@ export const toolDefinitions: Anthropic.Tool[] = [
                   "Fields to change (update) or the new workout's fields (add). Use exactly these names.",
                 properties: {
                   title: { type: "string" },
-                  workout_type: { type: "string", description: "easy, long, tempo, interval, recovery, race_pace, cross_training, strength, rest, race, climbing" },
-                  activity_type: { type: "string", description: "run, cycle, swim, climb, other — REQUIRED for non-running sessions" },
+                  workout_type: { type: "string", description: "easy, long, tempo, interval, recovery, race_pace, cross_training, strength, yoga, rest, race, climbing" },
+                  activity_type: { type: "string", description: "run, cycle, swim, hike, strength, yoga, climb, other — REQUIRED for non-running sessions (a yoga/mobility flow is workout_type \"yoga\" + activity_type \"yoga\")" },
                   distance: { type: "number", description: "KILOMETRES" },
                   pace: { type: "string" },
                   duration: { type: "number", description: "MINUTES" },
@@ -339,7 +358,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
               session_types: {
                 type: "array",
                 items: { type: "string" },
-                description: "Session type codes, e.g. ['E','E','I','E','T','L','R'] for easy/interval/tempo/long/rest",
+                description: "Session type codes, one per day Mon-Sun, e.g. ['E','E','I','E','T','L','R']: E easy, I intervals, T tempo, L long, V recovery, P race pace, S strength, Y yoga/mobility flow, X cross-training, R rest (climbing plans: B boulder, C routes)",
               },
             },
             required: ["week_number", "start_date", "detail_level", "target_km", "target_sessions"],
@@ -356,7 +375,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
               title: { type: "string", description: "e.g., 'Easy Run'" },
               workout_type: {
                 type: "string",
-                enum: ["easy", "long", "tempo", "interval", "race_pace", "recovery", "rest", "cross_training", "strength", "race", "climbing"],
+                enum: ["easy", "long", "tempo", "interval", "race_pace", "recovery", "rest", "cross_training", "strength", "yoga", "race", "climbing"],
               },
               detail_level: {
                 type: "string",
@@ -365,7 +384,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
               },
               activity_type: {
                 type: "string",
-                enum: ["run", "cycle", "swim", "hike", "strength", "climb", "rest", "other"],
+                enum: ["run", "cycle", "swim", "hike", "strength", "yoga", "climb", "rest", "other"],
                 description: "The single sport for this workout (defaults to 'run'). Each workout is exactly one sport — split combined sessions into separate workouts.",
               },
               target_distance_km: { type: "number", description: "REQUIRED for every run (activity_type 'run'), including plain easy runs — km is how running volume is measured. Omit for cycling (use target_duration_min instead)." },
@@ -504,18 +523,25 @@ export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: "create_workout",
     description:
-      'Create a guided S&C (strength & conditioning) session the user can play in the workout timer (big countdown, voice cues). Use when the user asks for a workout to DO now or to save for later ("make me a 20-minute core workout", "something for my hips, no equipment"). Design for runners: bodyweight by default, 10-30 min, left/right sides as separate entries, short form cues in notes. Prefer mode "time" (30-45s work) for flow; "reps" only where counting matters. Respect active injuries from the health context. ILLUSTRATED EXERCISES: these have a diagram the athlete sees mid-workout, so prefer them verbatim whenever one fits what you want — ' +
+      'Create a guided session the user can play in the workout timer (big countdown, voice cues). Two kinds. kind "sc" (default): a strength & conditioning circuit — use when the user asks for a workout to DO now or to save for later ("make me a 20-minute core workout", "something for my hips, no equipment"). Design for runners: bodyweight by default, 10-30 min, left/right sides as separate entries, short form cues in notes. Prefer mode "time" (30-45s work) for flow; "reps" only where counting matters. kind "yoga": a flow of HELD POSES with breath cues (voice + soft chime) — use for yoga, mobility, stretching, wind-down and recovery requests ("a 15-minute hip opener", "something to stretch after my run", "evening yoga"). Yoga rules: every exercise is mode "time" with workSec = the hold (10-300s; typically 30-60s, 60-120s for deep hip/hamstring holds), restSec 0 (poses flow into each other, no rest blocks), no reps; blocks use rounds 1 (rounds 2-3 only for a sequence deliberately repeated, e.g. a sun salutation); left/right poses are two entries; `note` is a short breathing/alignment cue ("exhale, sink the hips", "5 slow breaths, long spine"); `art` is the pose slug — ' +
+      YOGA_POSE_SLUGS.join(', ') +
+      ' — with a plain pose name ("Downward dog", not Sanskrit); 8-25 min total, open gently and end on the floor (child\'s pose, supine twist or savasana). Respect active injuries from the health context. ILLUSTRATED EXERCISES: these have a diagram the athlete sees mid-workout, so prefer them verbatim whenever one fits what you want — ' +
       ILLUSTRATED_LABELS.join(', ') +
       '. Left/right variants keep the name and append " (left)"/" (right)". Use a different exercise only when none of these expresses the movement. LANGUAGE: write title, focus, block labels, exercise names and notes in the athlete\'s PROFILE language — the one named in your LANGUAGE instruction, or English when there is none — even if the athlete typed this message in another language; the "art" key always stays English. After creating, tell the user it\'s ready in the Workouts screen.',
     input_schema: {
       type: "object" as const,
       properties: {
-        title: { type: "string", description: "e.g. 'Core Stability 15'" },
-        focus: { type: "string", description: "e.g. 'core', 'hips & glutes', 'full body'" },
+        title: { type: "string", description: "e.g. 'Core Stability 15' or 'Evening hip flow'" },
+        kind: {
+          type: "string",
+          enum: ["sc", "yoga"],
+          description: "Session kind: \"sc\" (default) = strength & conditioning circuit with timer + optional rest; \"yoga\" = flow of held poses with breath cues (time-only holds 10-300s, restSec 0, no reps, rounds 1-3).",
+        },
+        focus: { type: "string", description: "e.g. 'core', 'hips & glutes', 'full body', 'hips & hamstrings', 'shoulders & thoracic'" },
         definition: {
           type: "object",
           description:
-            "The workout structure. Shape: {warmupSec?, cooldownSec?, blocks: [{label?, rounds (1-10), restBetweenRoundsSec?, exercises: [{name, mode: 'time'|'reps', workSec? (5-600, for time), reps? (1-100, for reps), restSec? (0-600), note?}]}]} — 1-3 blocks, 3-8 exercises each.",
+            "The workout structure. Shape: {warmupSec?, cooldownSec?, blocks: [{label?, rounds (1-10), restBetweenRoundsSec?, exercises: [{name, mode: 'time'|'reps', workSec? (5-600, for time), reps? (1-100, for reps), restSec? (0-600), note?}]}]} — 1-3 blocks, 3-8 exercises each. For kind \"yoga\": mode 'time' only, workSec 10-300 (the hold), restSec 0, rounds 1-3, note = breath cue, art = pose slug.",
           properties: {
             warmupSec: { type: "integer" },
             cooldownSec: { type: "integer" },
@@ -851,7 +877,7 @@ async function handleQueryData(
       const guided = rows.length
         ? await prisma.guidedWorkout.findMany({
             where: { userId, plannedWorkoutId: { in: rows.map((r) => r.id) } },
-            select: { plannedWorkoutId: true, title: true, focus: true, durationMin: true, definition: true },
+            select: { plannedWorkoutId: true, title: true, focus: true, durationMin: true, kind: true, definition: true },
           })
         : [];
       const guidedByWorkout = new Map(guided.map((g) => [g.plannedWorkoutId, g]));
@@ -879,6 +905,7 @@ async function handleQueryData(
               guided_session: g
                 ? {
                     title: g.title,
+                    kind: g.kind,
                     focus: g.focus,
                     duration_min: g.durationMin,
                     blocks: (def?.blocks || []).map((b) => ({
@@ -1792,10 +1819,15 @@ async function handleCreateWorkout(
   const title = String(input.title || "").trim();
   if (!title || title.length > 80) return { success: false, error: "title is required (max 80 chars)" };
 
-  const validated = validateWorkoutDefinition(input.definition);
+  // The kind lives on the row (list filters, player mode) AND inside the
+  // definition (validation applies the yoga rules: time-only holds, no rest).
+  const kind: "sc" | "yoga" = input.kind === "yoga" ? "yoga" : "sc";
+  const rawDef = input.definition && typeof input.definition === "object" ? { ...(input.definition as object), kind } : input.definition;
+  const validated = validateWorkoutDefinition(rawDef);
   if (!validated.ok) return { success: false, error: `Invalid definition: ${describeWorkoutValidation(validated)}` };
+  const def = { ...validated.def, kind };
 
-  const durationMin = estimateDurationMin(validated.def);
+  const durationMin = estimateDurationMin(def);
   const [workout, t] = await Promise.all([
     prisma.guidedWorkout.create({
       data: {
@@ -1803,7 +1835,8 @@ async function handleCreateWorkout(
         title,
         focus: input.focus ? String(input.focus).slice(0, 60) : null,
         durationMin,
-        definition: validated.def as object,
+        definition: def as object,
+        kind,
         source: "brocco",
       },
     }),
@@ -1813,7 +1846,7 @@ async function handleCreateWorkout(
 
   return {
     success: true,
-    data: { workout_id: workout.id, title, duration_min: durationMin, start_url: `/workout?start=${workout.id}` },
+    data: { workout_id: workout.id, title, kind, duration_min: durationMin, start_url: `/workout?start=${workout.id}` },
     notification: {
       type: "workout_created",
       message: t("workout.readyToast", { title, min: durationMin }),

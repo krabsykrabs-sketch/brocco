@@ -4,14 +4,17 @@ import { prisma } from "@/lib/db";
 import { validateWorkoutDefinition, estimateDurationMin } from "@/lib/guided-workout";
 import { userTranslator } from "@/lib/i18n-server";
 
-/** GET /api/guided-workouts — the user's saved workouts, most recent first. */
-export async function GET() {
+/** GET /api/guided-workouts?kind=sc|yoga — the user's saved workouts, most recent first. */
+export async function GET(request: NextRequest) {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  const kindParam = request.nextUrl.searchParams.get("kind");
+  const kind = kindParam === "sc" || kindParam === "yoga" ? kindParam : null;
+
   const [workouts, profile] = await Promise.all([
     prisma.guidedWorkout.findMany({
-      where: { userId: session.userId },
+      where: { userId: session.userId, ...(kind ? { kind } : {}) },
       orderBy: [{ pinned: "desc" }, { lastUsedAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
       take: 50,
     }),
@@ -37,6 +40,7 @@ export async function GET() {
     workouts: workouts.map((w) => ({
       id: w.id,
       title: w.title,
+      kind: w.kind,
       focus: w.focus,
       durationMin: w.durationMin,
       source: w.source,
@@ -62,19 +66,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: t("api.validation.workout.titleRequired", { max: 80 }) }, { status: 400 });
   }
 
-  const validated = validateWorkoutDefinition(body.definition);
+  // kind may come top-level or inside the definition; it goes into the
+  // definition BEFORE validation so the yoga rules apply, and onto the row.
+  const rawDef = body.definition && typeof body.definition === "object" ? body.definition : null;
+  const kind: "sc" | "yoga" = body.kind === "yoga" || rawDef?.kind === "yoga" ? "yoga" : "sc";
+  const validated = validateWorkoutDefinition(rawDef ? { ...rawDef, kind } : body.definition);
   if (!validated.ok) {
     const t = await userTranslator(session.userId);
     return NextResponse.json({ error: t(`api.validation.workout.${validated.code}`, validated.vars) }, { status: 400 });
   }
+  const def = { ...validated.def, kind };
 
   const workout = await prisma.guidedWorkout.create({
     data: {
       userId: session.userId,
       title,
       focus: body.focus ? String(body.focus).slice(0, 60) : null,
-      durationMin: estimateDurationMin(validated.def),
-      definition: validated.def as object,
+      durationMin: estimateDurationMin(def),
+      definition: def as object,
+      kind,
       source: "brocco",
     },
   });

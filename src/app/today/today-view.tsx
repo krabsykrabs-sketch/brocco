@@ -122,8 +122,8 @@ function WorkoutRow({ workout, matched }: { workout: WorkoutItem; matched: Activ
     workout.targetDurationMin ? `${workout.targetDurationMin} ${t("common.min")}` : null,
   ].filter(Boolean).join(" · ");
 
-  // Strength sessions are playable: deep-link into the guided workout timer
-  const isStrength = workout.workoutType === "strength" || workout.activityType === "strength";
+  // Strength and yoga sessions are playable: deep-link into the guided workout timer
+  const isStrength = ["strength", "yoga"].includes(workout.workoutType) || ["strength", "yoga"].includes(workout.activityType);
   // Session detail lives in the calendar day view now — the plan tab shows the
   // arc, not individual workouts.
   const href = isStrength && !done

@@ -19,8 +19,13 @@ import { fmtDate, type Lang } from "@/lib/i18n";
 import type { DictKey } from "@/lib/dict";
 import WorkoutPlayer from "./player";
 
+type Tab = "sc" | "yoga";
+const TAB_STORAGE_KEY = "brocco_workout_tab";
+
 interface SavedWorkout {
   id: string;
+  /** "sc" | "yoga" — older rows and older API responses mean "sc". */
+  kind?: Tab;
   title: string;
   focus: string | null;
   durationMin: number;
@@ -97,6 +102,8 @@ function WorkoutPreview({
     [data.definition, rounds]
   );
   const scaled = data.definition.blocks.some((b, i) => (rounds[i] ?? b.rounds) !== b.rounds);
+  // A flow repeats at most three times (sun salutations); circuits go up to the timer ceiling.
+  const maxRounds = data.definition.kind === "yoga" ? 3 : 50;
 
   const adjustMsg =
     `${t("workout.adjustIntro")}: "${data.title}"${data.focus ? ` (${t("workout.focusLabel")}: ${data.focus})` : ""}.\n\n` +
@@ -162,7 +169,7 @@ function WorkoutPreview({
                       {rounds[bi] ?? b.rounds} {(rounds[bi] ?? b.rounds) === 1 ? t("workout.round") : t("workout.roundsPlural")}
                     </span>
                     <button
-                      onClick={() => setRounds((r) => r.map((n, i) => (i === bi ? Math.min(50, n + 1) : n)))}
+                      onClick={() => setRounds((r) => r.map((n, i) => (i === bi ? Math.min(maxRounds, n + 1) : n)))}
                       className="w-6 h-6 flex items-center justify-center bg-ghost border-2 border-ink rounded-md text-xs font-extrabold sticker-press"
                       aria-label={t("workout.moreRounds")}
                     >
@@ -346,6 +353,25 @@ function WorkoutViewInner() {
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [showStalePlan, setShowStalePlan] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null); // status text while Brocco builds
+  const [tab, setTab] = useState<Tab>("sc");
+
+  // The last tab sticks: someone who lives in the yoga list shouldn't land on Tabata every visit.
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(TAB_STORAGE_KEY);
+      if (v === "yoga" || v === "sc") setTab(v);
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
+  const pickTab = useCallback((v: Tab) => {
+    setTab(v);
+    try {
+      localStorage.setItem(TAB_STORAGE_KEY, v);
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
 
   const fetchSaved = useCallback(() => {
     fetch("/api/guided-workouts")
@@ -362,18 +388,20 @@ function WorkoutViewInner() {
     fetchSaved();
   }, [fetchSaved]);
 
-  const presets = useMemo(() => presetsForSport(primarySport, lang), [primarySport, lang]);
+  const presets = useMemo(() => presetsForSport(primarySport, lang, tab), [primarySport, lang, tab]);
 
   const loadSaved = useCallback(async (id: string): Promise<PreviewData | null> => {
     try {
       const res = await fetch(`/api/guided-workouts/${id}`);
       if (!res.ok) throw new Error();
       const { workout } = await res.json();
+      // The row's `kind` wins over a definition saved before definitions carried one.
+      const definition: WorkoutDefinition = { ...workout.definition, kind: workout.definition?.kind ?? workout.kind ?? "sc" };
       return {
         workoutId: workout.id,
         title: workout.title,
         focus: workout.focus,
-        definition: workout.definition,
+        definition,
         source: workout.source,
         pinned: workout.pinned,
         timesCompleted: workout.timesCompleted,
@@ -420,6 +448,7 @@ function WorkoutViewInner() {
           if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.error || "failed");
           const { workout } = await r.json();
           fetchSaved();
+          if (workout.kind === "yoga") pickTab("yoga");
           return startSaved(workout.id);
         })
         .catch(() => emitToast({ text: t("workout.couldntBuild"), kind: "error" }))
@@ -460,7 +489,7 @@ function WorkoutViewInner() {
             await fetch("/api/guided-workouts", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ title: full.workout.title, focus: full.workout.focus, definition: full.workout.definition }),
+              body: JSON.stringify({ title: full.workout.title, focus: full.workout.focus, definition: full.workout.definition, kind: full.workout.kind }),
             });
             fetchSaved();
           },
@@ -486,8 +515,10 @@ function WorkoutViewInner() {
   // Local-calendar date, not toISOString() — west of UTC that slips a day.
   const now = new Date();
   const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-  const ownWorkouts = saved.filter((w) => w.source !== "plan");
-  const planWorkouts = saved.filter((w) => w.source === "plan");
+  const inTab = saved.filter((w) => (w.kind ?? "sc") === tab);
+  const ownWorkouts = inTab.filter((w) => w.source !== "plan");
+  const planWorkouts = inTab.filter((w) => w.source === "plan");
+  const yogaTab = tab === "yoga";
   const freshPlan = planWorkouts.filter((w) => isFreshPlanWorkout(w, todayIso));
   const stalePlan = planWorkouts.filter((w) => !isFreshPlanWorkout(w, todayIso));
 
@@ -502,16 +533,34 @@ function WorkoutViewInner() {
         </div>
       )}
 
+      {/* S&C | Yoga */}
+      <div className="mt-4 grid grid-cols-2 gap-1 p-1 bg-ghost border-2 border-ink rounded-xl" role="tablist" data-testid="workout-tabs">
+        {(["sc", "yoga"] as const).map((k) => (
+          <button
+            key={k}
+            role="tab"
+            aria-selected={tab === k}
+            onClick={() => pickTab(k)}
+            className={`py-2 text-sm font-extrabold rounded-lg transition-colors ${
+              tab === k ? "bg-brocco text-ink shadow-[2px_2px_0_var(--color-shade)]" : "text-moss hover:text-ink"
+            }`}
+          >
+            {k === "sc" ? "💪 " : "🧘 "}
+            {t(k === "sc" ? "workout.tabSc" : "workout.tabYoga")}
+          </button>
+        ))}
+      </div>
+
       <div className="mt-4 space-y-5 pb-8">
         {/* Ask Brocco */}
         <Link
-          href={`/chat?msg=${encodeURIComponent(t("workout.askForToday"))}`}
+          href={`/chat?msg=${encodeURIComponent(t(yogaTab ? "workout.askForYogaToday" : "workout.askForToday"))}`}
           className="btn-brocco flex items-center gap-3 px-4 py-3"
         >
           <span className="text-xl">💬</span>
           <div className="flex-1 text-left">
-            <p className="text-sm font-extrabold">{t("workout.askBrocco")}</p>
-            <p className="text-xs text-leaf font-bold">{t("workout.askBroccoSub")}</p>
+            <p className="text-sm font-extrabold">{t(yogaTab ? "workout.askBroccoYoga" : "workout.askBrocco")}</p>
+            <p className="text-xs text-leaf font-bold">{t(yogaTab ? "workout.askBroccoYogaSub" : "workout.askBroccoSub")}</p>
           </div>
         </Link>
 
@@ -538,17 +587,17 @@ function WorkoutViewInner() {
           </div>
         </section>
 
-        {/* Custom intervals */}
-        <CustomIntervalForm onStart={(def, title) => setActive({ title, definition: def, workoutId: null })} />
+        {/* Custom intervals — a timer thing, not a flow thing */}
+        {!yogaTab && <CustomIntervalForm onStart={(def, title) => setActive({ title, definition: def, workoutId: null })} />}
 
-        {/* Saved workouts */}
+        {/* Saved workouts / flows of this kind */}
         <section>
-          <h2 className="label-xs mb-2">{t("workout.yourWorkouts")}</h2>
+          <h2 className="label-xs mb-2">{t(yogaTab ? "workout.yourFlows" : "workout.yourWorkouts")}</h2>
           {loading ? (
             <p className="text-sm text-moss font-semibold text-center py-4">{t("common.loading")}</p>
           ) : ownWorkouts.length === 0 && planWorkouts.length === 0 ? (
             <p className="text-xs text-sage font-semibold text-center py-4">
-              {t("workout.nothingSaved")}
+              {t(yogaTab ? "workout.nothingSavedYoga" : "workout.nothingSaved")}
             </p>
           ) : (
             <div className="space-y-2">

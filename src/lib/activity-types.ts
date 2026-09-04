@@ -10,6 +10,7 @@ export const HIKE_TYPES = ["Hike", "Walk"];
 export const STRENGTH_TYPES = ["WeightTraining", "Workout"];
 // Strava's sport_type; manual chat logs normalize to it too (log_activity).
 export const CLIMB_TYPES = ["RockClimbing"];
+export const YOGA_TYPES = ["Yoga"];
 
 const TYPE_MAP: Record<string, string[]> = {
   run: RUN_TYPES,
@@ -18,6 +19,7 @@ const TYPE_MAP: Record<string, string[]> = {
   hike: HIKE_TYPES,
   strength: STRENGTH_TYPES,
   climb: CLIMB_TYPES,
+  yoga: YOGA_TYPES,
   rest: [],
   other: ["Workout"],
 };
@@ -36,5 +38,5 @@ export function isRunning(stravaActivityType: string): boolean {
 /** The Strava-style type a manually confirmed session of this sport is logged as. */
 export const MANUAL_TYPE_FOR_KIND: Record<string, string> = {
   run: "Run", cycle: "Ride", swim: "Swim", hike: "Hike",
-  strength: "WeightTraining", climb: "RockClimbing", other: "Workout",
+  strength: "WeightTraining", climb: "RockClimbing", yoga: "Yoga", other: "Workout",
 };

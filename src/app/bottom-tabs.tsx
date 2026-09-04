@@ -75,24 +75,24 @@ const PLAN: Tab = {
   match: (p) => p.startsWith("/plan"),
 };
 
-const HISTORY: Tab = {
-  name: "History",
-  key: "nav.history" as DictKey,
-  href: "/history",
+/** Dumbbell: two plates either side of a bar — same 24x24 stroke style as the rest. */
+const WORKOUTS: Tab = {
+  name: "Workouts",
+  key: "nav.workouts" as DictKey,
+  href: "/workout",
   icon: (active) => (
     <svg className="w-5 h-5" fill={active ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24" strokeWidth={active ? 0 : 1.5}>
       {active
-        ? <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 6a.75.75 0 0 0-1.5 0v6c0 .414.336.75.75.75h4.5a.75.75 0 0 0 0-1.5h-3.75V6Z" clipRule="evenodd" />
-        : <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+        ? <path fillRule="evenodd" d="M5.25 6.75A1.5 1.5 0 0 1 6.75 5.25h.75a1.5 1.5 0 0 1 1.5 1.5v10.5a1.5 1.5 0 0 1-1.5 1.5h-.75a1.5 1.5 0 0 1-1.5-1.5v-3.75H3.75a.75.75 0 0 1 0-1.5h1.5V6.75Zm9.75 0a1.5 1.5 0 0 1 1.5-1.5h.75a1.5 1.5 0 0 1 1.5 1.5v4.5h1.5a.75.75 0 0 1 0 1.5h-1.5v4.5a1.5 1.5 0 0 1-1.5 1.5h-.75a1.5 1.5 0 0 1-1.5-1.5V6.75Zm-4.5 4.5h3v1.5h-3v-1.5Z" clipRule="evenodd" />
+        : <path strokeLinecap="round" strokeLinejoin="round" d="M6 5.25h1.5a.75.75 0 0 1 .75.75v12a.75.75 0 0 1-.75.75H6a.75.75 0 0 1-.75-.75V6A.75.75 0 0 1 6 5.25Zm12 0h-1.5a.75.75 0 0 0-.75.75v12c0 .414.336.75.75.75H18a.75.75 0 0 0 .75-.75V6a.75.75 0 0 0-.75-.75ZM8.25 12h7.5M3 12h2.25M18.75 12H21" />
       }
     </svg>
   ),
-  match: (p) => p.startsWith("/history") || p.startsWith("/activity"),
+  match: (p) => p.startsWith("/workout"),
 };
 
 function makeMoreTab(features: Features, surfaced: Tab[]): Tab {
   const hasPlan = surfaced.some((t) => t.name === "Plan");
-  const hasHistory = surfaced.some((t) => t.name === "History");
   return {
     name: "More",
     key: "nav.more" as DictKey,
@@ -105,27 +105,23 @@ function makeMoreTab(features: Features, surfaced: Tab[]): Tab {
         }
       </svg>
     ),
+    // Plan and History live under More now (Plan only surfaces as a tab when
+    // the calendar is off), so their routes light this tab up.
     match: (p) =>
-      p.startsWith("/more") || p.startsWith("/settings") || p.startsWith("/workout") ||
+      p.startsWith("/more") || p.startsWith("/settings") ||
+      p.startsWith("/history") || p.startsWith("/activity") ||
       (features.kitchen && p.startsWith("/kitchen")) ||
-      (!hasPlan && p.startsWith("/plan")) ||
-      (!hasHistory && (p.startsWith("/history") || p.startsWith("/activity"))),
+      (!hasPlan && p.startsWith("/plan")),
   };
 }
 
 /**
- * Tab bar composition adapts to the enabled features: with calendar/tasks
- * disabled, Plan and History reclaim their old spots — a coach-only user
- * gets Today · Chat · Plan · History · More, close to the classic layout.
+ * Today · Calendar · Chat · Workouts · More. Plan and History moved under
+ * More to make room for Workouts; with the calendar feature off, Plan takes
+ * the calendar's slot so a coach-only user still reaches the plan in one tap.
  */
 function composeTabs(features: Features): Tab[] {
-  const tabs: Tab[] = [TODAY];
-  if (features.calendar) tabs.push(CALENDAR);
-  tabs.push(CHAT);
-  for (const extra of [PLAN, HISTORY]) {
-    if (tabs.length >= 4) break;
-    tabs.push(extra);
-  }
+  const tabs: Tab[] = [TODAY, features.calendar ? CALENDAR : PLAN, CHAT, WORKOUTS];
   tabs.push(makeMoreTab(features, tabs));
   return tabs;
 }

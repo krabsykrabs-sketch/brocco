@@ -5,7 +5,7 @@ import { fmtDate, fmtNumber, weekdayInitials, type Lang } from "@/lib/i18n";
 import type { DictKey } from "@/lib/dict";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "../nav";
 import { categoryMeta, EVENT_CATEGORY_META, getWorkoutTypeColor } from "@/lib/categories";
@@ -13,6 +13,7 @@ import { useScreenContext, useDataChanged } from "@/lib/capture-context";
 import { isCompatibleType, isRunning } from "@/lib/activity-types";
 import { isAutoDetectable } from "@/lib/plan-progress";
 import { ResolveButtons } from "@/app/resolve-buttons";
+import { emitToast } from "@/lib/toast";
 
 // --- Types ---
 
@@ -120,6 +121,7 @@ const WORKOUT_TYPE_KEY: Record<string, DictKey> = {
   recovery: "calendar.workoutType.recovery", rest: "calendar.workoutType.rest",
   cross_training: "calendar.workoutType.cross_training", strength: "calendar.workoutType.strength",
   race: "calendar.workoutType.race", climbing: "calendar.workoutType.climbing",
+  yoga: "calendar.workoutType.yoga",
 };
 
 /** "easy run", "Tempolauf", … — falls back to the raw type for anything unmapped. */
@@ -343,6 +345,54 @@ function EventChip({ event, onTap }: { event: EventOccurrence; onTap: () => void
   );
 }
 
+/** Session types the guided-workout player can run. */
+const GUIDED_TYPES = new Set(["strength", "yoga"]);
+function isGuidedWorkout(w: WorkoutItem): boolean {
+  return GUIDED_TYPES.has(w.workoutType) || GUIDED_TYPES.has(w.activityType);
+}
+/**
+ * Startable = guided-capable, not done, and dated today or within the last
+ * three days — a missed session is still worth doing, next week's isn't yet.
+ */
+function canStartWorkout(w: WorkoutItem, state: WorkoutState, today: string): boolean {
+  return isGuidedWorkout(w) && state !== "done" && w.date <= today && w.date >= addDaysStr(today, -3);
+}
+
+/**
+ * "Start ▶" for a planned guided session. Mirrors Today's deep link, but
+ * resolves the guided session here first (generate reuses a linked one) so
+ * the calendar can show a busy state and a toast if building it fails.
+ */
+function StartWorkoutButton({ workoutId, className = "" }: { workoutId: string; className?: string }) {
+  const t = useT();
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  async function start(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/guided-workouts/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plannedWorkoutId: workoutId }),
+      });
+      if (!res.ok) throw new Error("generate failed");
+      const { workout } = await res.json();
+      router.push(`/workout?start=${workout.id}`);
+    } catch {
+      emitToast({ text: t("calendar.startFailed"), kind: "error" });
+      setBusy(false);
+    }
+  }
+  return (
+    <button type="button" onClick={start} disabled={busy} className={`btn-brocco px-3 py-1.5 text-xs whitespace-nowrap disabled:opacity-60 ${className}`}>
+      {busy ? t("calendar.preparing") : `${t("common.start")} ▶`}
+    </button>
+  );
+}
+
 /**
  * Planned | actual, side by side: the plan in the left cell, the matched
  * activity's real numbers in the right one — instead of a tiny badge.
@@ -377,6 +427,10 @@ function WorkoutChip({ workout, matched, state }: { workout: WorkoutItem; matche
         <div className="px-2.5 py-1.5 bg-[#faeed8] min-w-0">
           <p className="label-xs">? {t("confirm.notConfirmed")}</p>
           <p className="text-[10px] text-moss font-semibold truncate">{t("confirm.notConfirmedHint")}</p>
+        </div>
+      ) : state === "today" && isGuidedWorkout(workout) ? (
+        <div className="px-2.5 py-1.5 bg-ghost min-w-0 flex items-center">
+          <span className="btn-brocco px-3 py-1 text-xs whitespace-nowrap">{t("common.start")} ▶</span>
         </div>
       ) : (
         <div className="px-2.5 py-1.5 bg-ghost min-w-0">
@@ -485,16 +539,19 @@ function WorkoutDetailCard({
   matched,
   state,
   detail,
+  today,
   stravaConnected = true,
 }: {
   stravaConnected?: boolean;
   workout: WorkoutItem;
   matched: ActivityItem | null;
   state: WorkoutState;
+  today: string;
   detail: WorkoutDetail | null | undefined; // undefined = still loading, null = failed
 }) {
   const t = useT();
   const lang = useLang();
+  const startable = canStartWorkout(workout, state, today);
   // The range endpoint already carries the description, so the "why" is on
   // screen before the detail request lands.
   const description = detail?.workout.description ?? workout.description;
@@ -590,6 +647,24 @@ function WorkoutDetailCard({
           <p className="label-xs text-clay!">{t("calendar.missed")}</p>
           <p className="text-xs font-bold text-clay">{t("calendar.nothingMatching")}</p>
         </div>
+      ) : startable ? (
+        // Guided session, still open: play it from here. A past one also
+        // keeps the "did it happen?" prompt so it can be resolved instead.
+        <div className="border-t-2 border-ink">
+          {state === "unconfirmed" && (
+            <div className="bg-[#faeed8] border-b-2 border-shade px-3 py-2 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="label-xs">{t("confirm.didItHappen")}</p>
+                <p className="text-[10px] text-moss font-semibold">{t("confirm.notConfirmedHint")}</p>
+              </div>
+              <ResolveButtons workoutId={workout.workoutId} compact />
+            </div>
+          )}
+          <div className="bg-ghost px-3 py-2 flex items-center justify-between gap-3">
+            <p className="text-xs font-bold text-moss min-w-0">{t("calendar.guidedSession")}</p>
+            <StartWorkoutButton workoutId={workout.workoutId} />
+          </div>
+        </div>
       ) : state === "unconfirmed" || (state === "today" && !isAutoDetectable(workout.activityType, stravaConnected)) ? (
         // The app can't see this sport happen — ask, don't accuse.
         <div className="bg-[#faeed8] border-t-2 border-ink px-3 py-2 flex items-center justify-between gap-3">
@@ -642,6 +717,7 @@ function DayView({
           workout={workout}
           matched={matched}
           state={state}
+          today={today}
           detail={details[workout.workoutId]}
         />
       ))}
@@ -1058,7 +1134,7 @@ export default function CalendarView() {
         };
     if (compact && isEmpty) {
       return (
-        <div {...rowTap} className="flex items-center gap-3 py-1.5 opacity-60 cursor-pointer">
+        <div {...rowTap} className={`flex items-center gap-3 py-1.5 cursor-pointer ${isToday ? "bg-sprout/60 rounded-xl border-l-4 border-brocco -mx-2 px-2 py-2" : "opacity-60"}`}>
           <DayLabel date={date} isToday={isToday} />
           <div className="flex-1 border-b-2 border-dotted border-shade" />
         </div>
@@ -1066,7 +1142,7 @@ export default function CalendarView() {
     }
     const { rows, extras } = reconcileDay(data.workouts, data.activities, today, stravaConnected);
     return (
-      <div {...rowTap} className="flex gap-3 py-1.5 cursor-pointer">
+      <div {...rowTap} className={`flex gap-3 py-1.5 cursor-pointer ${isToday ? "bg-sprout/60 rounded-xl border-l-4 border-brocco -mx-2 px-2 py-2" : ""}`}>
         <DayLabel date={date} isToday={isToday} />
         <div className="flex-1 min-w-0 space-y-1.5">
           {data.events.map((e) => <EventChip key={e.occurrenceKey} event={e} onTap={() => setDetail(e)} />)}
@@ -1160,7 +1236,13 @@ export default function CalendarView() {
     return (
       <button onClick={() => { setAnchor(date); setView("day"); }} className="w-11 flex-shrink-0 text-center pt-0.5">
         <p className={`text-[10px] font-extrabold uppercase ${isToday ? "text-leaf" : "text-sage"}`}>{fmt(date, lang, { weekday: "short" })}</p>
-        <p className={`text-lg font-extrabold leading-tight tabular-nums ${isToday ? "text-leaf" : "text-ink"}`}>{toDate(date).getDate()}</p>
+        {isToday ? (
+          <span className="mx-auto mt-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-brocco border-2 border-ink text-base font-extrabold leading-none tabular-nums text-ink shadow-[2px_2px_0_var(--color-shade)]">
+            {toDate(date).getDate()}
+          </span>
+        ) : (
+          <p className="text-lg font-extrabold leading-tight tabular-nums text-ink">{toDate(date).getDate()}</p>
+        )}
       </button>
     );
   }

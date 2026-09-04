@@ -223,6 +223,8 @@ enum WorkoutType {
   // On-wall climbing session (bouldering, routes, hangboard lives in
   // strength). The session focus goes in title/description.
   climbing
+  /// A yoga / mobility flow — guided like strength, but holds and breath, no reps or rest.
+  yoga
 }
 
 enum ActivityKind {
@@ -234,6 +236,7 @@ enum ActivityKind {
   rest
   other
   climb
+  yoga
 }
 
 enum WorkoutStatus {
@@ -667,6 +670,8 @@ model GuidedWorkout {
   focus            String?   // e.g. "core", "hips & glutes", "full body"
   durationMin      Int       @map("duration_min")
   definition       Json      @db.JsonB
+  /// "sc" (strength & conditioning, the timer player) or "yoga" (flow player: holds, breath cues, voice + chime).
+  kind             String    @default("sc")
   source           String    @default("brocco") // brocco | plan
   plannedWorkoutId String?   @map("planned_workout_id") @db.Uuid
   timesCompleted   Int       @default(0) @map("times_completed")

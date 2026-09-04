@@ -7,6 +7,7 @@ import { emitDataChanged } from "@/lib/capture-context";
 import { artPathFor } from "@/lib/exercise-art";
 import { useT, useLang } from "@/app/features-provider";
 import { localeFor } from "@/lib/i18n";
+import FlowStage from "./flow-stage";
 
 /**
  * Full-screen workout player. Deadline-based timing (endTime vs Date.now())
@@ -14,7 +15,29 @@ import { localeFor } from "@/lib/i18n";
  * transitions; SpeechSynthesis announces each segment; screen wake-lock keeps
  * the phone on mid-plank. Rep-based segments show a big Done button instead
  * of a countdown.
+ *
+ * Yoga definitions (`kind: "yoga"`) run the same engine in flow mode: no
+ * countdown beeps, a soft two-tone chime at each pose change, Brocco reads
+ * "<pose>. <breath cue>", and the centre is a progress ring with breath
+ * pacing (FlowStage) instead of the big digits. Logging on finish/quit is
+ * shared unchanged.
  */
+
+/** localStorage prefs are per mode: a quiet yoga setup shouldn't mute the gym timer. */
+function readPref(key: string): boolean {
+  try {
+    return localStorage.getItem(key) !== "off";
+  } catch {
+    return true;
+  }
+}
+function savePref(key: string, on: boolean) {
+  try {
+    localStorage.setItem(key, on ? "on" : "off");
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 const EST_SEC_PER_REP = 3;
 
@@ -57,6 +80,8 @@ const KIND_FILL: Record<Segment["kind"], string> = {
 export default function WorkoutPlayer({ title, definition, workoutId, onExit }: PlayerProps) {
   const t = useT();
   const lang = useLang();
+  const yoga = definition.kind === "yoga";
+  const prefPrefix = yoga ? "brocco_yoga" : "brocco_wo";
   // Segment labels ("Get ready", "Rest", "Round 2/3") come out of the
   // engine already in the app language; exercise names are the definition's.
   const segments = useMemo(() => flattenSegments(definition, lang), [definition, lang]);
@@ -69,6 +94,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
   const [quitPrompt, setQuitPrompt] = useState(false);
   const [soundOn, setSoundOn] = useState(true);
   const [voiceOn, setVoiceOn] = useState(true);
+  const [breathOn, setBreathOn] = useState(true); // yoga only: the in/out pacing line
   const [showPlan, setShowPlan] = useState(false);
   // Auto-log state: sessions log themselves on finish; undo removes it all.
   const [logState, setLogState] = useState<"logging" | "logged" | "failed" | "undone">("logging");
@@ -94,18 +120,24 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
 
   // Restore audio prefs
   useEffect(() => {
-    setSoundOn(localStorage.getItem("brocco_wo_sound") !== "off");
-    setVoiceOn(localStorage.getItem("brocco_wo_voice") !== "off");
-  }, []);
+    setSoundOn(readPref(`${prefPrefix}_sound`));
+    setVoiceOn(readPref(`${prefPrefix}_voice`));
+    if (yoga) setBreathOn(readPref("brocco_yoga_breath"));
+  }, [prefPrefix, yoga]);
 
   // --- Audio ---
+  const audioCtx = useCallback((): AudioContext => {
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!audioCtxRef.current) audioCtxRef.current = new Ctx();
+    const ctx = audioCtxRef.current;
+    if (ctx.state === "suspended") ctx.resume();
+    return ctx;
+  }, []);
+
   const beep = useCallback((freq: number, durMs: number, volume = 0.4) => {
     if (!soundOnRef.current) return;
     try {
-      const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!audioCtxRef.current) audioCtxRef.current = new Ctx();
-      const ctx = audioCtxRef.current;
-      if (ctx.state === "suspended") ctx.resume();
+      const ctx = audioCtx();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.frequency.value = freq;
@@ -118,23 +150,53 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
     } catch {
       /* audio unavailable */
     }
-  }, []);
+  }, [audioCtx]);
+
+  // The flow's transition sound: two soft sine tones a fifth apart (C5, G5),
+  // the second a beat behind, each fading over ~0.6 s at low volume. Marks
+  // the change without the urgency of the gym beep.
+  const chime = useCallback(() => {
+    if (!soundOnRef.current) return;
+    try {
+      const ctx = audioCtx();
+      const now = ctx.currentTime;
+      for (const [freq, at] of [[523.25, 0], [783.99, 0.12]] as const) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, now + at);
+        gain.gain.linearRampToValueAtTime(0.12, now + at + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + at + 0.6);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now + at);
+        osc.stop(now + at + 0.65);
+      }
+    } catch {
+      /* audio unavailable */
+    }
+  }, [audioCtx]);
 
   const speak = useCallback((text: string) => {
     if (!voiceOnRef.current || typeof speechSynthesis === "undefined") return;
     try {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
-      u.rate = 1.05;
+      u.rate = yoga ? 0.95 : 1.05;
       u.lang = localeFor(lang);
       speechSynthesis.speak(u);
     } catch {
       /* speech unavailable */
     }
-  }, [lang]);
+  }, [lang, yoga]);
 
   const announceSegment = useCallback(
     (s: Segment) => {
+      if (yoga) {
+        // Pose name, then the breath/alignment cue — the settle-in is spoken at start.
+        if (s.kind === "work") speak(s.note ? `${s.label}. ${s.note}` : s.label);
+        return;
+      }
       if (s.kind === "work") {
         speak(s.reps != null ? `${s.label}, ${s.reps} ${t("common.reps")}` : `${s.label}, ${s.seconds}`);
       } else if (s.kind === "rest") {
@@ -145,7 +207,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
         speak(t("workout.coolDown"));
       }
     },
-    [speak, t]
+    [speak, t, yoga]
   );
 
   // --- Wake lock ---
@@ -189,9 +251,14 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
     (newIdx: number, announce = true) => {
       if (newIdx >= segments.length) {
         setFinished(true);
-        beep(1320, 600);
-        buzz([120, 60, 120]);
-        speak(t("player.complete"));
+        if (yoga) {
+          chime();
+          speak(t("player.flowComplete"));
+        } else {
+          beep(1320, 600);
+          buzz([120, 60, 120]);
+          speak(t("player.complete"));
+        }
         return;
       }
       const s = segments[newIdx];
@@ -202,18 +269,22 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
         setRemaining(s.seconds);
       }
       if (announce) {
-        beep(1320, 250);
-        buzz(60);
+        if (yoga) {
+          chime();
+        } else {
+          beep(1320, 250);
+          buzz(60);
+        }
         announceSegment(s);
       }
     },
-    [segments, beep, buzz, speak, announceSegment, t]
+    [segments, beep, chime, buzz, speak, announceSegment, t, yoga]
   );
 
   // Kick off the first segment's clock + announcement
   useEffect(() => {
     endTimeRef.current = Date.now() + (segments[0]?.seconds ?? 0) * 1000;
-    speak(`${title}. ${t("player.getReady")}`);
+    speak(`${title}. ${t(yoga ? "player.settleIn" : "player.getReady")}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -228,13 +299,14 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
       }
       setRemaining(rem);
       const whole = Math.ceil(rem);
-      if (whole <= 3 && whole >= 1 && lastBeepSecRef.current !== whole) {
+      // No 3-2-1 in a flow — the chime at the change is the only sound.
+      if (!yoga && whole <= 3 && whole >= 1 && lastBeepSecRef.current !== whole) {
         lastBeepSecRef.current = whole;
         beep(880, 120, 0.3);
       }
     }, 200);
     return () => clearInterval(t);
-  }, [paused, finished, isTimed, idx, goTo, beep]);
+  }, [paused, finished, isTimed, idx, goTo, beep, yoga]);
 
   function togglePause() {
     if (finished) return;
@@ -316,10 +388,10 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
     const totalMin = Math.max(1, Math.round((Date.now() - startedAtRef.current) / 60000));
     return (
       <div className="fixed inset-0 z-[90] bg-cream flex flex-col items-center justify-center px-6 text-center">
-        <p className="text-6xl mb-4">🥦</p>
-        <h2 className="text-2xl font-extrabold text-ink mb-1">{t("player.complete")}</h2>
+        <p className="text-6xl mb-4">{yoga ? "🧘" : "🥦"}</p>
+        <h2 className="text-2xl font-extrabold text-ink mb-1">{t(yoga ? "player.flowComplete" : "player.complete")}</h2>
         <p className="text-sm text-moss font-semibold mb-6">
-          {title} · {totalMin} {t("common.min")} · {workSegs} {t("workout.exercisesPlural")}
+          {title} · {totalMin} {t("common.min")} · {workSegs} {t(yoga ? "workout.posesPlural" : "workout.exercisesPlural")}
         </p>
         <div className="mb-8 min-h-[1.5rem]">
           {logState === "logging" && <p className="text-xs text-sage font-bold">{t("player.logging")}</p>}
@@ -371,13 +443,23 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
         <div className="flex items-center justify-between mt-1.5">
           <p className="text-[11px] text-sage font-bold truncate">{title}</p>
           <p className="text-[11px] text-sage font-bold flex-shrink-0 tabular-nums">
-            {seg.kind === "work" ? `${t("player.exerciseOf")} ${workDone + 1}/${workSegs}` : `${workDone}/${workSegs}`}
+            {seg.kind === "work" ? `${t(yoga ? "player.poseOf" : "player.exerciseOf")} ${workDone + 1}/${workSegs}` : `${workDone}/${workSegs}`}
           </p>
         </div>
       </div>
 
-      {/* Center: the big display — active exercise sticker with progress fill */}
+      {/* Center: the big display — a progress ring for a flow, the exercise sticker with progress fill otherwise */}
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center min-h-0">
+        {yoga ? (
+          <FlowStage
+            seg={seg}
+            pct={segPct / 100}
+            elapsedSec={seg.seconds != null ? seg.seconds - remaining : 0}
+            showBreath={breathOn}
+            artSrc={artSrc}
+            t={t}
+          />
+        ) : (
         <div className="sticker-lg relative overflow-hidden w-full max-w-sm px-6 py-8">
           <div
             className={`absolute inset-y-0 left-0 ${KIND_FILL[seg.kind]} transition-all`}
@@ -423,6 +505,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
             )}
           </div>
         </div>
+        )}
 
         {seg.nextUp && seg.nextUp !== seg.label && (
           <p className="text-sm text-sage font-bold mt-4">
@@ -460,17 +543,25 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
         </div>
         <div className="flex items-center justify-center gap-5 mt-4">
           <button
-            onClick={() => { const v = !soundOn; setSoundOn(v); localStorage.setItem("brocco_wo_sound", v ? "on" : "off"); }}
+            onClick={() => { const v = !soundOn; setSoundOn(v); savePref(`${prefPrefix}_sound`, v); }}
             className={`text-xs font-bold ${soundOn ? "text-ink" : "text-ghost-ink line-through"}`}
           >
-            {t("player.beeps")}
+            {t(yoga ? "player.chime" : "player.beeps")}
           </button>
           <button
-            onClick={() => { const v = !voiceOn; setVoiceOn(v); localStorage.setItem("brocco_wo_voice", v ? "on" : "off"); if (!v && typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); }}
+            onClick={() => { const v = !voiceOn; setVoiceOn(v); savePref(`${prefPrefix}_voice`, v); if (!v && typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); }}
             className={`text-xs font-bold ${voiceOn ? "text-ink" : "text-ghost-ink line-through"}`}
           >
             {t("player.voice")}
           </button>
+          {yoga && (
+            <button
+              onClick={() => { const v = !breathOn; setBreathOn(v); savePref("brocco_yoga_breath", v); }}
+              className={`text-xs font-bold ${breathOn ? "text-ink" : "text-ghost-ink line-through"}`}
+            >
+              {t("player.breath")}
+            </button>
+          )}
         </div>
       </div>
 

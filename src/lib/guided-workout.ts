@@ -35,6 +35,8 @@ export interface WorkoutBlock {
 }
 
 export interface WorkoutDefinition {
+  /** "sc" (default): timer circuits. "yoga": a flow of held poses with breath cues — no reps, no rest blocks. */
+  kind?: "sc" | "yoga";
   warmupSec?: number;
   cooldownSec?: number;
   blocks: WorkoutBlock[];
@@ -55,6 +57,18 @@ const LIMITS = {
   warmupCooldownMax: 900,
   nameMax: 60,
   noteMax: 120,
+};
+
+/**
+ * A yoga flow is held poses, nothing else: every entry is timed (10 s–5 min),
+ * rest is meaningless (the next pose IS the rest), and a sequence repeats at
+ * most three times (sun salutations). Everything else inherits LIMITS.
+ */
+const YOGA_LIMITS = {
+  rounds: 3,
+  workSecMin: 10,
+  workSecMax: 300,
+  exercisesPerBlock: 24, // sides are separate entries, so a flow runs longer than a circuit
 };
 
 /**
@@ -83,13 +97,13 @@ export type WorkoutValidationCode =
 export interface WorkoutValidationError {
   ok: false;
   code: WorkoutValidationCode;
-  /** `block` / `exercise` are 1-based for display; limits as in LIMITS. */
-  vars: { block?: number; exercise?: number; min?: number; max?: number };
+  /** `block` / `exercise` are 1-based for display; limits as in LIMITS. `kind` is set when a yoga-only rule fired. */
+  vars: { block?: number; exercise?: number; min?: number; max?: number; kind?: "yoga" };
 }
 
 /** English, model-facing wording with the JSON path (0-based) the model sent. */
 export function describeWorkoutValidation(err: WorkoutValidationError): string {
-  const { block, exercise, min, max } = err.vars;
+  const { block, exercise, min, max, kind } = err.vars;
   const blockPath = block != null ? `blocks[${block - 1}]` : "blocks";
   const exPath = exercise != null ? `${blockPath}.exercises[${exercise - 1}]` : blockPath;
   switch (err.code) {
@@ -103,7 +117,10 @@ export function describeWorkoutValidation(err: WorkoutValidationError): string {
     case "exercisesRange": return `${blockPath}.exercises must be an array of 1-${max}`;
     case "exerciseNotObject": return `${exPath} must be an object`;
     case "nameRequired": return `${exPath}.name is required (max ${max} chars)`;
-    case "modeInvalid": return `${exPath}.mode must be "time" or "reps"`;
+    case "modeInvalid":
+      return kind === "yoga"
+        ? `${exPath}.mode must be "time" — a yoga flow holds poses for workSec seconds, it never counts reps`
+        : `${exPath}.mode must be "time" or "reps"`;
     case "workSecRange": return `${exPath}.workSec must be ${min}-${max} for mode "time"`;
     case "repsRange": return `${exPath}.reps must be an integer ${min}-${max} for mode "reps"`;
     case "restSecRange": return `${exPath}.restSec must be 0-${max}`;
@@ -117,9 +134,13 @@ export function validateWorkoutDefinition(
     ({ ok: false, code, vars });
   if (!raw || typeof raw !== "object") return fail("notObject");
   const d = raw as Record<string, unknown>;
+  const kind: "sc" | "yoga" = d.kind === "yoga" ? "yoga" : "sc";
+  const yoga = kind === "yoga";
 
-  const warmupSec = d.warmupSec == null ? undefined : Number(d.warmupSec);
-  const cooldownSec = d.cooldownSec == null ? undefined : Number(d.cooldownSec);
+  // A flow has no warm-up/cool-down bookends — the first and last poses are
+  // those. Sent anyway, they're dropped rather than rejected.
+  const warmupSec = yoga || d.warmupSec == null ? undefined : Number(d.warmupSec);
+  const cooldownSec = yoga || d.cooldownSec == null ? undefined : Number(d.cooldownSec);
   for (const [code, v] of [["warmupRange", warmupSec], ["cooldownRange", cooldownSec]] as const) {
     if (v != null && (!Number.isFinite(v) || v < 0 || v > LIMITS.warmupCooldownMax)) {
       return fail(code, { max: LIMITS.warmupCooldownMax });
@@ -136,15 +157,17 @@ export function validateWorkoutDefinition(
     const block = bi + 1;
     if (!b || typeof b !== "object") return fail("blockNotObject", { block });
     const rounds = Number(b.rounds);
-    if (!Number.isInteger(rounds) || rounds < 1 || rounds > LIMITS.rounds) {
-      return fail("roundsRange", { block, max: LIMITS.rounds });
+    const maxRounds = yoga ? YOGA_LIMITS.rounds : LIMITS.rounds;
+    if (!Number.isInteger(rounds) || rounds < 1 || rounds > maxRounds) {
+      return fail("roundsRange", { block, max: maxRounds });
     }
-    const restBetweenRoundsSec = b.restBetweenRoundsSec == null ? undefined : Number(b.restBetweenRoundsSec);
+    const restBetweenRoundsSec = yoga || b.restBetweenRoundsSec == null ? undefined : Number(b.restBetweenRoundsSec);
     if (restBetweenRoundsSec != null && (!Number.isFinite(restBetweenRoundsSec) || restBetweenRoundsSec < 0 || restBetweenRoundsSec > LIMITS.restSecMax)) {
       return fail("restBetweenRoundsRange", { block, max: LIMITS.restSecMax });
     }
-    if (!Array.isArray(b.exercises) || b.exercises.length === 0 || b.exercises.length > LIMITS.exercisesPerBlock) {
-      return fail("exercisesRange", { block, max: LIMITS.exercisesPerBlock });
+    const maxExercises = yoga ? YOGA_LIMITS.exercisesPerBlock : LIMITS.exercisesPerBlock;
+    if (!Array.isArray(b.exercises) || b.exercises.length === 0 || b.exercises.length > maxExercises) {
+      return fail("exercisesRange", { block, max: maxExercises });
     }
     const exercises: WorkoutExercise[] = [];
     for (let ei = 0; ei < b.exercises.length; ei++) {
@@ -155,15 +178,19 @@ export function validateWorkoutDefinition(
       if (!name || name.length > LIMITS.nameMax) return fail("nameRequired", { block, exercise, max: LIMITS.nameMax });
       const mode = e.mode === "reps" ? "reps" : e.mode === "time" ? "time" : null;
       if (!mode) return fail("modeInvalid", { block, exercise });
+      if (yoga && mode === "reps") return fail("modeInvalid", { block, exercise, kind: "yoga" });
       const workSec = e.workSec == null ? undefined : Number(e.workSec);
       const reps = e.reps == null ? undefined : Number(e.reps);
-      if (mode === "time" && (workSec == null || !Number.isFinite(workSec) || workSec < LIMITS.workSecMin || workSec > LIMITS.workSecMax)) {
-        return fail("workSecRange", { block, exercise, min: LIMITS.workSecMin, max: LIMITS.workSecMax });
+      const workMin = yoga ? YOGA_LIMITS.workSecMin : LIMITS.workSecMin;
+      const workMax = yoga ? YOGA_LIMITS.workSecMax : LIMITS.workSecMax;
+      if (mode === "time" && (workSec == null || !Number.isFinite(workSec) || workSec < workMin || workSec > workMax)) {
+        return fail("workSecRange", { block, exercise, min: workMin, max: workMax });
       }
       if (mode === "reps" && (reps == null || !Number.isInteger(reps) || reps < LIMITS.repsMin || reps > LIMITS.repsMax)) {
         return fail("repsRange", { block, exercise, min: LIMITS.repsMin, max: LIMITS.repsMax });
       }
-      const restSec = e.restSec == null ? undefined : Number(e.restSec);
+      // Yoga: rest is ignored, not an error — the flow moves pose to pose.
+      const restSec = yoga || e.restSec == null ? undefined : Number(e.restSec);
       if (restSec != null && (!Number.isFinite(restSec) || restSec < 0 || restSec > LIMITS.restSecMax)) {
         return fail("restSecRange", { block, exercise, max: LIMITS.restSecMax });
       }
@@ -191,6 +218,7 @@ export function validateWorkoutDefinition(
   return {
     ok: true,
     def: {
+      kind,
       ...(warmupSec ? { warmupSec: Math.round(warmupSec) } : {}),
       ...(cooldownSec ? { cooldownSec: Math.round(cooldownSec) } : {}),
       blocks,
@@ -234,6 +262,8 @@ export interface Segment {
 }
 
 const PREP_SEC = 10;
+/** A flow opens with a short "Settle in" instead of a countdown-style "Get ready". */
+const SETTLE_SEC = 5;
 
 /**
  * "{n}"-style placeholders in a dictionary string. Kept here rather than in
@@ -252,6 +282,7 @@ export function fillTemplate(s: string, vars: Record<string, string | number>): 
 export function flattenSegments(def: WorkoutDefinition, lang: Lang = DEFAULT_LANG): Segment[] {
   const t = translator(lang);
   const segs: Segment[] = [];
+  if (def.kind === "yoga") return flattenFlow(def, t);
   segs.push({ kind: "prep", label: t("player.getReady"), seconds: PREP_SEC });
   if (def.warmupSec) {
     segs.push({ kind: "warmup", label: t("workout.warmUp"), seconds: def.warmupSec, note: t("workout.warmUpNote") });
@@ -301,10 +332,40 @@ export function flattenSegments(def: WorkoutDefinition, lang: Lang = DEFAULT_LAN
   return segs;
 }
 
+/**
+ * The yoga timeline: one "Settle in" breath, then pose after pose. No rest
+ * segments (the definition never carries rest), no warm-up/cool-down. Rounds
+ * still apply — a sun salutation repeats — and show as "Round 2/3" context.
+ */
+function flattenFlow(def: WorkoutDefinition, t: ReturnType<typeof translator>): Segment[] {
+  const segs: Segment[] = [{ kind: "prep", label: t("player.settleIn"), seconds: SETTLE_SEC }];
+  const multiBlock = def.blocks.length > 1;
+  def.blocks.forEach((b, bi) => {
+    const blockName = b.label || (multiBlock ? `${t("workout.block")} ${bi + 1}` : "");
+    for (let round = 1; round <= b.rounds; round++) {
+      const roundCtx = b.rounds > 1 ? `${t("workout.roundLabel")} ${round}/${b.rounds}` : "";
+      const context = [roundCtx, blockName].filter(Boolean).join(" · ") || undefined;
+      for (const e of b.exercises) {
+        segs.push({
+          kind: "work",
+          label: e.name,
+          seconds: e.mode === "time" ? e.workSec : (e.reps ?? 1) * EST_SEC_PER_REP,
+          ...(e.note ? { note: e.note } : {}),
+          ...(e.art ? { art: e.art } : {}),
+          ...(context ? { context } : {}),
+        });
+      }
+    }
+  });
+  for (let i = 0; i < segs.length - 1; i++) segs[i].nextUp = segs[i + 1].label;
+  return segs;
+}
+
 // --- Presets (client-side constants, no DB row, no AI call) ---
 
 export interface PresetWorkout {
   key: string;
+  kind: "sc" | "yoga";
   title: string;
   focus: string;
   emoji: string;
@@ -338,6 +399,8 @@ interface PresetBlockSource {
 
 export interface PresetSource {
   key: string;
+  /** Which tab of the Workouts screen it lives on; "sc" when absent. */
+  kind?: "sc" | "yoga";
   titleKey: DictKey;
   focusKey: DictKey;
   emoji: string;
@@ -349,6 +412,11 @@ export interface PresetSource {
 
 function timed(nameKey: DictKey, art: string | undefined, workSec: number, restSec: number, noteKey?: DictKey, side?: Side): PresetExerciseSource {
   return { nameKey, ...(art ? { art } : {}), workSec, restSec, ...(noteKey ? { noteKey } : {}), ...(side ? { side } : {}) };
+}
+
+/** A held pose: name, diagram, hold seconds, breath/alignment cue — never any rest. */
+function pose(nameKey: DictKey, art: string, holdSec: number, cueKey: DictKey, side?: Side): PresetExerciseSource {
+  return timed(nameKey, art, holdSec, 0, cueKey, side);
 }
 
 export const PRESET_WORKOUTS: PresetSource[] = [
@@ -560,16 +628,239 @@ export const CLIMBING_PRESET_WORKOUTS: PresetSource[] = [
   },
 ];
 
+
+/**
+ * Yoga flows. Same dictionary-keyed shape as the S&C presets, `kind: "yoga"`:
+ * every entry is a held pose with a breath/alignment cue and no rest. Sides
+ * are separate entries so the player can announce "Pigeon (left)" and the
+ * ring counts one side at a time. Durations are the hold sums (+5 s settle).
+ */
+export const YOGA_PRESET_WORKOUTS: PresetSource[] = [
+  {
+    key: "yoga-morning",
+    kind: "yoga",
+    titleKey: "preset.yogaMorningTitle",
+    focusKey: "preset.focusMobility",
+    emoji: "🌅",
+    descriptionKey: "preset.yogaMorningDesc",
+    blocks: [
+      {
+        labelKey: "preset.blockFlow",
+        rounds: 1,
+        exercises: [
+          pose("yoga.poseChildsPose", "childs-pose", 45, "yoga.cueChildsPose"),
+          pose("yoga.poseCat", "cat-pose", 30, "yoga.cueCat"),
+          pose("yoga.poseCow", "cow-pose", 30, "yoga.cueCow"),
+          pose("yoga.poseThreadTheNeedle", "thread-the-needle", 40, "yoga.cueThreadTheNeedle", "left"),
+          pose("yoga.poseThreadTheNeedle", "thread-the-needle", 40, "yoga.cueThreadTheNeedle", "right"),
+          pose("yoga.posePuppy", "puppy-pose", 40, "yoga.cuePuppy"),
+          pose("yoga.poseSphinx", "sphinx-pose", 30, "yoga.cueSphinx"),
+          pose("yoga.poseDownwardDog", "downward-dog", 45, "yoga.cueDownwardDog"),
+          pose("yoga.poseLowLunge", "low-lunge", 45, "yoga.cueLowLunge", "left"),
+          pose("yoga.poseLowLunge", "low-lunge", 45, "yoga.cueLowLunge", "right"),
+          pose("yoga.poseStandingForwardFold", "standing-forward-fold", 45, "yoga.cueStandingForwardFold"),
+          pose("yoga.poseMountain", "mountain-pose", 30, "yoga.cueMountain"),
+          pose("yoga.poseChair", "chair-pose", 30, "yoga.cueChair"),
+          pose("yoga.poseTree", "tree-pose", 30, "yoga.cueTree", "left"),
+          pose("yoga.poseTree", "tree-pose", 30, "yoga.cueTree", "right"),
+          pose("yoga.poseGarland", "garland-pose", 45, "yoga.cueGarland"),
+        ],
+      },
+    ],
+  },
+  {
+    key: "yoga-postrun",
+    kind: "yoga",
+    titleKey: "preset.yogaPostRunTitle",
+    focusKey: "preset.focusRecovery",
+    emoji: "🏃",
+    descriptionKey: "preset.yogaPostRunDesc",
+    blocks: [
+      {
+        labelKey: "preset.blockFlow",
+        rounds: 1,
+        exercises: [
+          pose("yoga.poseStandingForwardFold", "standing-forward-fold", 45, "yoga.cueStandingForwardFold"),
+          pose("yoga.poseLowLunge", "low-lunge", 45, "yoga.cueLowLunge", "left"),
+          pose("yoga.poseLowLunge", "low-lunge", 45, "yoga.cueLowLunge", "right"),
+          pose("yoga.poseHalfSplit", "half-split", 45, "yoga.cueHalfSplit", "left"),
+          pose("yoga.poseHalfSplit", "half-split", 45, "yoga.cueHalfSplit", "right"),
+          pose("yoga.poseLizard", "lizard-pose", 45, "yoga.cueLizard", "left"),
+          pose("yoga.poseLizard", "lizard-pose", 45, "yoga.cueLizard", "right"),
+          pose("yoga.poseDownwardDog", "downward-dog", 45, "yoga.cueDownwardDogPedal"),
+          pose("yoga.poseKneelingHipFlexor", "kneeling-hip-flexor-stretch", 45, "yoga.cueKneelingHipFlexor", "left"),
+          pose("yoga.poseKneelingHipFlexor", "kneeling-hip-flexor-stretch", 45, "yoga.cueKneelingHipFlexor", "right"),
+          pose("yoga.posePigeon", "pigeon-pose", 60, "yoga.cuePigeon", "left"),
+          pose("yoga.posePigeon", "pigeon-pose", 60, "yoga.cuePigeon", "right"),
+          pose("yoga.poseReclinedFigureFour", "reclined-figure-four", 45, "yoga.cueReclinedFigureFour", "left"),
+          pose("yoga.poseReclinedFigureFour", "reclined-figure-four", 45, "yoga.cueReclinedFigureFour", "right"),
+          pose("yoga.poseSeatedForwardFold", "seated-forward-fold", 60, "yoga.cueSeatedForwardFold"),
+        ],
+      },
+    ],
+  },
+  {
+    key: "yoga-hips",
+    kind: "yoga",
+    titleKey: "preset.yogaHipsTitle",
+    focusKey: "preset.focusHips",
+    emoji: "🪷",
+    descriptionKey: "preset.yogaHipsDesc",
+    blocks: [
+      {
+        labelKey: "preset.blockFlow",
+        rounds: 1,
+        exercises: [
+          pose("yoga.poseChildsPose", "childs-pose", 60, "yoga.cueChildsPose"),
+          pose("yoga.poseLowLunge", "low-lunge", 60, "yoga.cueLowLunge", "left"),
+          pose("yoga.poseLowLunge", "low-lunge", 60, "yoga.cueLowLunge", "right"),
+          pose("yoga.poseLizard", "lizard-pose", 60, "yoga.cueLizard", "left"),
+          pose("yoga.poseLizard", "lizard-pose", 60, "yoga.cueLizard", "right"),
+          pose("yoga.poseGarland", "garland-pose", 60, "yoga.cueGarland"),
+          pose("yoga.poseButterfly", "butterfly-pose", 90, "yoga.cueButterfly"),
+          pose("yoga.posePigeon", "pigeon-pose", 90, "yoga.cuePigeon", "left"),
+          pose("yoga.posePigeon", "pigeon-pose", 90, "yoga.cuePigeon", "right"),
+          pose("yoga.poseHappyBaby", "happy-baby", 60, "yoga.cueHappyBaby"),
+          pose("yoga.poseReclinedFigureFour", "reclined-figure-four", 60, "yoga.cueReclinedFigureFour", "left"),
+          pose("yoga.poseReclinedFigureFour", "reclined-figure-four", 60, "yoga.cueReclinedFigureFour", "right"),
+          pose("yoga.poseSupineTwist", "supine-twist", 45, "yoga.cueSupineTwist", "left"),
+          pose("yoga.poseSupineTwist", "supine-twist", 45, "yoga.cueSupineTwist", "right"),
+        ],
+      },
+    ],
+  },
+  {
+    key: "yoga-evening",
+    kind: "yoga",
+    titleKey: "preset.yogaEveningTitle",
+    focusKey: "preset.focusWindDown",
+    emoji: "🌙",
+    descriptionKey: "preset.yogaEveningDesc",
+    blocks: [
+      {
+        labelKey: "preset.blockFlow",
+        rounds: 1,
+        exercises: [
+          pose("yoga.poseChildsPose", "childs-pose", 90, "yoga.cueChildsPose"),
+          pose("yoga.poseCat", "cat-pose", 30, "yoga.cueCat"),
+          pose("yoga.poseCow", "cow-pose", 30, "yoga.cueCow"),
+          pose("yoga.posePuppy", "puppy-pose", 60, "yoga.cuePuppy"),
+          pose("yoga.poseThreadTheNeedle", "thread-the-needle", 60, "yoga.cueThreadTheNeedle", "left"),
+          pose("yoga.poseThreadTheNeedle", "thread-the-needle", 60, "yoga.cueThreadTheNeedle", "right"),
+          pose("yoga.poseSphinx", "sphinx-pose", 90, "yoga.cueSphinx"),
+          pose("yoga.poseSeatedForwardFold", "seated-forward-fold", 90, "yoga.cueSeatedForwardFold"),
+          pose("yoga.poseButterfly", "butterfly-pose", 90, "yoga.cueButterfly"),
+          pose("yoga.poseSeatedTwist", "seated-twist", 45, "yoga.cueSeatedTwist", "left"),
+          pose("yoga.poseSeatedTwist", "seated-twist", 45, "yoga.cueSeatedTwist", "right"),
+          pose("yoga.poseSupineTwist", "supine-twist", 60, "yoga.cueSupineTwist", "left"),
+          pose("yoga.poseSupineTwist", "supine-twist", 60, "yoga.cueSupineTwist", "right"),
+          pose("yoga.poseHappyBaby", "happy-baby", 60, "yoga.cueHappyBaby"),
+          pose("yoga.poseLegsUpTheWall", "legs-up-the-wall", 180, "yoga.cueLegsUpTheWall"),
+          pose("yoga.poseSavasana", "savasana", 150, "yoga.cueSavasana"),
+        ],
+      },
+    ],
+  },
+  {
+    key: "yoga-climber",
+    kind: "yoga",
+    titleKey: "preset.yogaClimberTitle",
+    focusKey: "preset.focusShouldersThoracic",
+    emoji: "🧗",
+    descriptionKey: "preset.yogaClimberDesc",
+    blocks: [
+      {
+        labelKey: "preset.blockFlow",
+        rounds: 1,
+        exercises: [
+          pose("yoga.poseChildsPose", "childs-pose", 45, "yoga.cueChildsPose"),
+          pose("yoga.poseCat", "cat-pose", 30, "yoga.cueCat"),
+          pose("yoga.poseCow", "cow-pose", 30, "yoga.cueCow"),
+          pose("yoga.poseThreadTheNeedle", "thread-the-needle", 60, "yoga.cueThreadTheNeedle", "left"),
+          pose("yoga.poseThreadTheNeedle", "thread-the-needle", 60, "yoga.cueThreadTheNeedle", "right"),
+          pose("yoga.posePuppy", "puppy-pose", 60, "yoga.cuePuppy"),
+          pose("yoga.poseSphinx", "sphinx-pose", 45, "yoga.cueSphinx"),
+          pose("yoga.poseCobra", "cobra-pose", 30, "yoga.cueCobra"),
+          pose("yoga.poseDownwardDog", "downward-dog", 45, "yoga.cueDownwardDog"),
+          pose("yoga.poseCamel", "camel-pose", 45, "yoga.cueCamel"),
+          pose("yoga.poseLocust", "locust-pose", 30, "yoga.cueLocust"),
+          pose("yoga.poseSeatedTwist", "seated-twist", 45, "yoga.cueSeatedTwist", "left"),
+          pose("yoga.poseSeatedTwist", "seated-twist", 45, "yoga.cueSeatedTwist", "right"),
+          pose("yoga.poseSupineTwist", "supine-twist", 45, "yoga.cueSupineTwist", "left"),
+          pose("yoga.poseSupineTwist", "supine-twist", 45, "yoga.cueSupineTwist", "right"),
+          pose("yoga.poseSavasana", "savasana", 60, "yoga.cueSavasana"),
+        ],
+      },
+    ],
+  },
+  {
+    key: "yoga-yin",
+    kind: "yoga",
+    titleKey: "preset.yogaYinTitle",
+    focusKey: "preset.focusRecovery",
+    emoji: "🕯️",
+    descriptionKey: "preset.yogaYinDesc",
+    blocks: [
+      {
+        labelKey: "preset.blockFlow",
+        rounds: 1,
+        exercises: [
+          pose("yoga.poseChildsPose", "childs-pose", 120, "yoga.cueYinEdge"),
+          pose("yoga.poseButterfly", "butterfly-pose", 180, "yoga.cueButterfly"),
+          pose("yoga.poseLowLunge", "low-lunge", 120, "yoga.cueLowLunge", "left"),
+          pose("yoga.poseLowLunge", "low-lunge", 120, "yoga.cueLowLunge", "right"),
+          pose("yoga.poseSphinx", "sphinx-pose", 150, "yoga.cueSphinx"),
+          pose("yoga.posePigeon", "pigeon-pose", 180, "yoga.cuePigeon", "left"),
+          pose("yoga.posePigeon", "pigeon-pose", 180, "yoga.cuePigeon", "right"),
+          pose("yoga.poseSeatedForwardFold", "seated-forward-fold", 180, "yoga.cueSeatedForwardFold"),
+          pose("yoga.poseSupineTwist", "supine-twist", 90, "yoga.cueSupineTwist", "left"),
+          pose("yoga.poseSupineTwist", "supine-twist", 90, "yoga.cueSupineTwist", "right"),
+          pose("yoga.poseSavasana", "savasana", 90, "yoga.cueSavasana"),
+        ],
+      },
+    ],
+  },
+  {
+    key: "yoga-sun",
+    kind: "yoga",
+    titleKey: "preset.yogaSunTitle",
+    focusKey: "preset.focusWarmUp",
+    emoji: "☀️",
+    descriptionKey: "preset.yogaSunDesc",
+    blocks: [
+      {
+        labelKey: "preset.blockSunSalutation",
+        rounds: 3,
+        exercises: [
+          pose("yoga.poseMountain", "mountain-pose", 15, "yoga.cueSunFlow"),
+          pose("yoga.poseChair", "chair-pose", 15, "yoga.cueChair"),
+          pose("yoga.poseStandingForwardFold", "standing-forward-fold", 15, "yoga.cueStandingForwardFold"),
+          pose("yoga.poseLowLunge", "low-lunge", 15, "yoga.cueLowLunge", "left"),
+          pose("yoga.posePlank", "plank", 15, "yoga.cuePlank"),
+          pose("yoga.poseCobra", "cobra-pose", 15, "yoga.cueCobra"),
+          pose("yoga.poseDownwardDog", "downward-dog", 20, "yoga.cueDownwardDog"),
+          pose("yoga.poseLowLunge", "low-lunge", 15, "yoga.cueLowLunge", "right"),
+          pose("yoga.poseStandingForwardFold", "standing-forward-fold", 15, "yoga.cueStandingForwardFold"),
+          pose("yoga.poseMountain", "mountain-pose", 20, "yoga.cueMountain"),
+        ],
+      },
+    ],
+  },
+];
+
 /** A keyed preset turned into a playable, fully-worded workout in `lang`. */
 export function resolvePreset(src: PresetSource, lang: Lang): PresetWorkout {
   const t = translator(lang);
+  const kind = src.kind ?? "sc";
   return {
     key: src.key,
+    kind,
     title: t(src.titleKey),
     focus: t(src.focusKey),
     emoji: src.emoji,
     description: t(src.descriptionKey),
     definition: {
+      kind,
       ...(src.warmupSec ? { warmupSec: src.warmupSec } : {}),
       ...(src.cooldownSec ? { cooldownSec: src.cooldownSec } : {}),
       blocks: src.blocks.map((b) => ({
@@ -589,13 +880,23 @@ export function resolvePreset(src: PresetSource, lang: Lang): PresetWorkout {
   };
 }
 
-/** The preset list for an athlete, worded in `lang`: climbing gets its own rotation. */
-export function presetsForSport(primarySport: string | null | undefined, lang: Lang = DEFAULT_LANG): PresetWorkout[] {
-  const sources =
-    primarySport && primarySport.includes("climb")
+/**
+ * The preset list for an athlete, worded in `lang`. S&C: climbing gets its
+ * own rotation. Yoga: every flow is for everyone, but the one written for
+ * the athlete's sport leads the list.
+ */
+export function presetsForSport(primarySport: string | null | undefined, lang: Lang = DEFAULT_LANG, kind: "sc" | "yoga" = "sc"): PresetWorkout[] {
+  const climber = !!primarySport && primarySport.includes("climb");
+  let sources: PresetSource[];
+  if (kind === "yoga") {
+    const lead = climber ? "yoga-climber" : "yoga-postrun";
+    sources = [...YOGA_PRESET_WORKOUTS.filter((p) => p.key === lead), ...YOGA_PRESET_WORKOUTS.filter((p) => p.key !== lead)];
+  } else {
+    sources = climber
       ? // Tabata + Full-Body are sport-agnostic keepers.
         [...CLIMBING_PRESET_WORKOUTS, ...PRESET_WORKOUTS.filter((p) => p.key === "tabata" || p.key === "fullbody")]
       : PRESET_WORKOUTS;
+  }
   return sources.map((p) => resolvePreset(p, lang));
 }
 
@@ -608,7 +909,16 @@ export function describeDefinition(def: WorkoutDefinition, lang: Lang = DEFAULT_
   const t = translator(lang);
   const lines: string[] = [];
   if (def.warmupSec) lines.push(`${t("workout.warmUp")} ${Math.round(def.warmupSec / 60)} ${t("common.min")}`);
+  const yoga = def.kind === "yoga";
   def.blocks.forEach((b, i) => {
+    if (yoga) {
+      // A flow reads as a list of holds; the block line only earns its place when it repeats or there are several.
+      if (b.rounds > 1 || def.blocks.length > 1) {
+        lines.push(`${b.label || `${t("workout.block")} ${i + 1}`}: ${b.rounds} ${b.rounds === 1 ? t("workout.round") : t("workout.roundsPlural")}`);
+      }
+      for (const e of b.exercises) lines.push(`- ${e.name} (${e.workSec}s)`);
+      return;
+    }
     const head = `${b.label || `${t("workout.block")} ${i + 1}`}: ${b.rounds} ${b.rounds === 1 ? t("workout.round") : t("workout.roundsPlural")}${
       b.restBetweenRoundsSec ? `, ${b.restBetweenRoundsSec}s ${t("workout.betweenRounds")}` : ""
     }`;

@@ -127,9 +127,9 @@ ${week.notes ? `Notes: ${week.notes}` : ""}
 
 ${context}
 
-Each workout object must have: date (ISO), title, workout_type (easy/long/tempo/interval/race_pace/recovery/rest/cross_training/strength/race/climbing), activity_type (run/cycle/swim/hike/strength/climb/other), ${sport ? "target_duration_min (number)" : 'target_distance_km (number) for runs, target_pace (string like "5:00-5:15/km")'}, description (string with warm-up, main set, cool-down details). For interval/tempo/race_pace workouts ALSO include steps: an array of structured steps for the watch — [{kind:"warmup",duration_min,pace},{kind:"repeat",times,steps:[{kind:"work",distance_km,pace},{kind:"recovery",duration_min,pace}]},{kind:"cooldown",duration_min,pace}] with pace like "4:25-4:35/km". Omit steps for easy/long/recovery runs.
+Each workout object must have: date (ISO), title, workout_type (easy/long/tempo/interval/race_pace/recovery/rest/cross_training/strength/yoga/race/climbing), activity_type (run/cycle/swim/hike/strength/yoga/climb/other), ${sport ? "target_duration_min (number)" : 'target_distance_km (number) for runs, target_pace (string like "5:00-5:15/km")'}, description (string with warm-up, main set, cool-down details). For interval/tempo/race_pace workouts ALSO include steps: an array of structured steps for the watch — [{kind:"warmup",duration_min,pace},{kind:"repeat",times,steps:[{kind:"work",distance_km,pace},{kind:"recovery",duration_min,pace}]},{kind:"cooldown",duration_min,pace}] with pace like "4:25-4:35/km". Omit steps for easy/long/recovery runs.
 
-Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a race or taper week, include 1-2 short S&C sessions (workout_type "strength", activity_type "strength", target_duration_min 15-25, title like "S&C: Core & Hips", short description like "core + hip stability circuit") on easy or rest days, never the day before a hard session — these get a guided timer session in the app automatically.`,
+Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a race or taper week, include 1-2 short S&C sessions (workout_type "strength", activity_type "strength", target_duration_min 15-25, title like "S&C: Core & Hips", short description like "core + hip stability circuit") on easy or rest days, never the day before a hard session — these get a guided timer session in the app automatically. A session code "Y" is a yoga/mobility flow: workout_type "yoga", activity_type "yoga", target_duration_min 10-25, title like "Yoga: post-run hips", a one-line description ("hips + hamstrings wind-down") — it gets a guided held-pose flow in the app automatically too, so never list poses.`,
           messages: [{ role: "user", content: "Generate the detailed workouts for this week as a JSON array." }],
         })
         .finalMessage();
@@ -195,8 +195,8 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
         const fields = {
           date: new Date(w.date),
           title: w.title,
-          workoutType: (w.workout_type || "easy") as "easy" | "long" | "tempo" | "interval" | "race_pace" | "recovery" | "rest" | "cross_training" | "strength" | "race" | "climbing",
-          activityType: (w.activity_type || "run") as "run" | "cycle" | "swim" | "hike" | "strength" | "rest" | "other" | "climb",
+          workoutType: (w.workout_type || "easy") as "easy" | "long" | "tempo" | "interval" | "race_pace" | "recovery" | "rest" | "cross_training" | "strength" | "yoga" | "race" | "climbing",
+          activityType: (w.activity_type || "run") as "run" | "cycle" | "swim" | "hike" | "strength" | "yoga" | "rest" | "other" | "climb",
           detailLevel: "detailed" as const,
           targetDistanceKm: w.target_distance_km ?? null,
           targetPace: w.target_pace || null,
@@ -262,8 +262,8 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
 
       // One row per session code: what it is, what sport, whether it is
       // measured in km. "X" used to become "Cross_training Run 7.1 km".
-      type Wt = "easy" | "long" | "tempo" | "interval" | "race_pace" | "recovery" | "rest" | "cross_training" | "strength" | "race" | "climbing";
-      type At = "run" | "cycle" | "swim" | "hike" | "strength" | "rest" | "other" | "climb";
+      type Wt = "easy" | "long" | "tempo" | "interval" | "race_pace" | "recovery" | "rest" | "cross_training" | "strength" | "yoga" | "race" | "climbing";
+      type At = "run" | "cycle" | "swim" | "hike" | "strength" | "yoga" | "rest" | "other" | "climb";
       const CODES: Record<string, { wt: Wt; at: At; title: string; km: boolean }> = {
         E: { wt: "easy", at: "run", title: "Easy Run", km: true },
         I: { wt: "interval", at: "run", title: "Intervals", km: true },
@@ -273,6 +273,7 @@ Generate one workout per day (Mon-Sun). Include rest days. Unless the week is a 
         P: { wt: "race_pace", at: "run", title: "Race-pace Run", km: true },
         R: { wt: "rest", at: "rest", title: "Rest", km: false },
         S: { wt: "strength", at: "strength", title: "S&C session", km: false },
+        Y: { wt: "yoga", at: "yoga", title: "Yoga flow", km: false },
         X: { wt: "cross_training", at: "other", title: "Cross-training", km: false },
         B: { wt: "climbing", at: "climb", title: "Bouldering", km: false },
         C: { wt: "climbing", at: "climb", title: "Climbing session", km: false },
