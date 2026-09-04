@@ -245,6 +245,10 @@ export const en = {
   "yoga.cuePlank": "One straight line, breathe steadily",
   "yoga.cueSunFlow": "Move on the breath — one movement per inhale or exhale",
   "yoga.cueYinEdge": "Find your edge, then back off a little — settle in for the long hold",
+  "art.viewTop": "from above",
+  "art.viewFront": "from the front",
+  "art.viewSide": "from the side",
+  "art.viewBack": "from behind",
 } as const;
 
 export const de: Partial<Record<keyof typeof en, string>> = {
@@ -475,6 +479,10 @@ export const de: Partial<Record<keyof typeof en, string>> = {
   "yoga.cuePlank": "Eine gerade Linie, ruhig weiteratmen",
   "yoga.cueSunFlow": "Mit dem Atem bewegen — eine Bewegung pro Ein- oder Ausatmen",
   "yoga.cueYinEdge": "Deine Grenze finden, dann etwas zurücknehmen — für die lange Haltung einrichten",
+  "art.viewTop": "von oben",
+  "art.viewFront": "von vorn",
+  "art.viewSide": "von der Seite",
+  "art.viewBack": "von hinten",
 };
 
 export const es: Partial<Record<keyof typeof en, string>> = {
@@ -705,4 +713,8 @@ export const es: Partial<Record<keyof typeof en, string>> = {
   "yoga.cuePlank": "Una línea recta, respira de forma constante",
   "yoga.cueSunFlow": "Muévete con la respiración — un movimiento por inhalación o exhalación",
   "yoga.cueYinEdge": "Encuentra tu límite y retrocede un poco — acomódate para la postura larga",
+  "art.viewTop": "desde arriba",
+  "art.viewFront": "de frente",
+  "art.viewSide": "de lado",
+  "art.viewBack": "desde atrás",
 };

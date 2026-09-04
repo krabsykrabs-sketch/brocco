@@ -18,6 +18,8 @@ interface FlowStageProps {
   elapsedSec: number;
   showBreath: boolean;
   artSrc: string | null;
+  /** Extra perspectives (top/front/side) shown small under the pose name. */
+  artViews?: Array<{ src: string; view: "top" | "front" | "side" | "back" | "primary" }>;
   t: (key: DictKey) => string;
 }
 
@@ -26,7 +28,9 @@ const BREATH_SEC = 5;
 const RING_R = 46;
 const RING_C = 2 * Math.PI * RING_R;
 
-export default function FlowStage({ seg, pct, elapsedSec, showBreath, artSrc, t }: FlowStageProps) {
+export default function FlowStage({ seg, pct, elapsedSec, showBreath, artSrc, artViews = [], t }: FlowStageProps) {
+  const extraViews = artViews.filter((v) => v.view !== "primary");
+  const VIEW_KEY: Record<string, DictKey> = { top: "art.viewTop", front: "art.viewFront", side: "art.viewSide", back: "art.viewBack" };
   const inhale = Math.floor(elapsedSec / BREATH_SEC) % 2 === 0;
   const breathing = showBreath && seg.kind === "work";
 
@@ -61,6 +65,17 @@ export default function FlowStage({ seg, pct, elapsedSec, showBreath, artSrc, t 
       </div>
 
       <h1 className="text-3xl md:text-4xl font-extrabold text-ink mt-5 mb-1">{seg.label}</h1>
+      {extraViews.length > 0 && (
+        <div className="flex justify-center gap-4 mb-1">
+          {extraViews.map((v) => (
+            <figure key={v.src} className="flex flex-col items-center m-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={v.src} alt="" className="w-20 h-20 object-contain rounded-xl bg-card border-2 border-shade" />
+              <figcaption className="text-[10px] text-sage font-bold mt-0.5">{t(VIEW_KEY[v.view])}</figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
       {seg.note && <p className="text-sm text-moss font-semibold max-w-xs">{seg.note}</p>}
 
       {/* Fixed-height slot so the layout doesn't jump when pacing is off or during "Settle in" */}

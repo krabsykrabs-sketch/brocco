@@ -17,7 +17,15 @@ export interface ExerciseArt {
   label: string;
   /** Pose description handed to the image model. One position, no ambiguity. */
   prompt: string;
+  /**
+   * Extra perspectives for poses one drawing can't carry (a figure-four from
+   * the side hides which leg crosses which). Rendered next to the primary
+   * picture. File: `<slug>--<key>.png`, promoted like any other diagram.
+   */
+  views?: Array<{ key: ArtViewKey; prompt: string }>;
 }
+
+export type ArtViewKey = "top" | "front" | "side" | "back";
 
 /**
  * Left/right are the same picture; anything else in parentheses is a real
@@ -41,11 +49,13 @@ export const EXERCISE_ART: ExerciseArt[] = [
   { slug: "plank", label: "Plank", prompt: "holding a forearm plank, side view: body in one straight line from head to heels, forearms flat on the ground, elbows under shoulders, toes on the ground" },
   { slug: "side-plank", label: "Side plank", prompt: "holding a side plank, facing the viewer: body straight and angled, supported on one forearm on the ground, hips lifted high, feet stacked" },
   { slug: "hollow-body-hold", label: "Hollow body hold", prompt: "lying face up in a hollow body hold, side view: lower back pressed to the floor, arms extended straight overhead, legs straight and lifted just off the floor" },
-  { slug: "dead-bug", label: "Dead bug", prompt: "lying flat on the back, side view: one arm reaching straight back overhead close to the floor while the OPPOSITE leg is extended straight out just above the floor, and at the same time the other arm points straight up at the ceiling and the other knee is bent ninety degrees directly above the hip" },
+  { slug: "dead-bug", label: "Dead bug", prompt: "lying flat on the back, side view: one arm reaching straight back overhead close to the floor while the OPPOSITE leg is extended straight out just above the floor, and at the same time the other arm points straight up at the ceiling and the other knee is bent ninety degrees directly above the hip",
+    views: [{ key: "top", prompt: "lying face up seen from directly above: one arm extended straight overhead along the floor and the OPPOSITE leg extended straight out along the floor, while the other arm points straight up toward the viewer and the other knee is bent above the hip" }] },
   { slug: "glute-bridge", label: "Glute bridge", prompt: "lying face up in a glute bridge, side view: knees bent with feet flat on the floor, hips lifted so the body makes a straight line from knees to shoulders, arms flat at the sides" },
   { slug: "single-leg-glute-bridge", label: "Single-leg glute bridge", prompt: "lying face up in a single leg glute bridge, side view: one foot flat on the floor with hips lifted, the other leg extended straight out in the air" },
   { slug: "superman-hold", label: "Superman hold", prompt: "lying face down in a superman hold, side view: arms extended forward and legs extended back, both lifted off the floor, chest raised" },
-  { slug: "clamshells", label: "Clamshells", prompt: "lying on one side for a clamshell exercise, facing the viewer: knees bent and stacked, feet together, top knee lifted open away from the bottom knee" },
+  { slug: "clamshells", label: "Clamshells", prompt: "lying on one side for a clamshell exercise, facing the viewer: knees bent and stacked, feet together, top knee lifted open away from the bottom knee",
+    views: [{ key: "top", prompt: "lying on one side seen from directly above: hips and knees bent with the feet together, the top knee lifted open away from the bottom knee like an opening shell while the feet stay touching, the lower arm folded under the head" }] },
   { slug: "fire-hydrants", label: "Fire hydrants", prompt: "on hands and knees in the fire hydrant position, side view: back flat, one knee lifted out to the side while staying bent at ninety degrees" },
   { slug: "squats", label: "Squats", prompt: "at the bottom of a bodyweight squat, side view: hips pushed back and down, thighs near parallel to the floor, chest up, arms reaching forward for balance, feet flat" },
   { slug: "reverse-lunges", label: "Reverse lunges", prompt: "in the bottom of a reverse lunge, side view: one leg stepped back with the knee low toward the floor, front knee bent over the front foot, torso upright" },
@@ -143,9 +153,12 @@ export const EXERCISE_ART: ExerciseArt[] = [
   { slug: "face-pulls", label: "Face pulls", prompt: "standing performing a band face pull, front view: both arms pulling a stretched elastic band back toward the face at head height, elbows high and wide out to the sides, shoulder blades squeezed" },
   { slug: "scapular-pulls", label: "Scapular pulls", prompt: "hanging from a horizontal bar performing a scapular pull, front view: arms completely straight throughout, the whole body pulled up only slightly by the shoulder blades drawing down and together, legs hanging straight" },
   { slug: "negative-pull-ups", label: "Negative pull-ups", prompt: "lowering slowly from the top of a pull up on a horizontal bar, front view: chin near the bar with elbows bent, the body descending under control, legs hanging straight below" },
-  { slug: "ninety-ninety-hip-stretch", label: "90/90 hip stretch", prompt: "seated on the floor in the 90/90 hip stretch seen from directly above looking down: the front leg is bent so the thigh points forward and the shin crosses the body at a sharp right angle, the rear leg is bent so that thigh points out to the side with the shin trailing behind, both knees form clear right angles, the legs are NOT crossed" },
-  { slug: "band-inversion", label: "Band inversion", prompt: "close cropped view from directly above of one lower leg and foot, seated with the leg straight: a flat resistance band is looped around the forefoot and anchored far out to the OUTSIDE of the foot, and the foot is turned INWARD so the sole faces the other leg, pulling against the band; a small arrow shows the foot rotating inward" },
-  { slug: "band-eversion", label: "Band eversion", prompt: "close cropped view from directly above of one lower leg and foot, seated with the leg straight: a flat resistance band is looped around the forefoot and anchored far out to the INSIDE across the other leg, and the foot is turned OUTWARD so the sole faces away from the body, pulling against the band; a small arrow shows the foot rotating outward" },
+  { slug: "ninety-ninety-hip-stretch", label: "90/90 hip stretch", prompt: "seated on the floor in the 90/90 hip stretch seen from directly above looking down: the front leg is bent so the thigh points forward and the shin crosses the body at a sharp right angle, the rear leg is bent so that thigh points out to the side with the shin trailing behind, both knees form clear right angles, the legs are NOT crossed",
+    views: [{ key: "front", prompt: "seated in the 90/90 hip stretch seen from the front at eye level: the front shin lies flat on the floor across the body with the knee bent at a right angle, the rear leg is bent at a right angle with the thigh out to the side and the shin pointing backward, the torso is upright with hands on the floor" }] },
+  { slug: "band-inversion", label: "Band inversion", prompt: "close cropped view from directly above of one lower leg and foot, seated with the leg straight: a flat resistance band is looped around the forefoot and anchored far out to the OUTSIDE of the foot, and the foot is turned INWARD so the sole faces the other leg, pulling against the band; a small arrow shows the foot rotating inward",
+    views: [{ key: "front", prompt: "close view of one foot from directly in front at floor level: a flat resistance band is looped around the forefoot and pulls out to the OUTSIDE of the foot, and the whole foot is tilted INWARD so the sole faces toward the other leg, a small arrow shows the sole turning inward" }] },
+  { slug: "band-eversion", label: "Band eversion", prompt: "close cropped view from directly above of one lower leg and foot, seated with the leg straight: a flat resistance band is looped around the forefoot and anchored far out to the INSIDE across the other leg, and the foot is turned OUTWARD so the sole faces away from the body, pulling against the band; a small arrow shows the foot rotating outward",
+    views: [{ key: "front", prompt: "close view of one foot from directly in front at floor level: a flat resistance band is looped around the forefoot and pulls across to the INSIDE toward the other leg, and the whole foot is tilted OUTWARD so the sole faces away from the other leg, a small arrow shows the sole turning outward" }] },
   { slug: "band-dorsiflexion", label: "Band dorsiflexion", prompt: "close cropped side view of one lower leg and foot, seated with the leg straight: a flat resistance band is looped over the top of the forefoot and anchored far in front, and the toes are pulled UP toward the shin against the band; a small arrow shows the foot lifting" },
   { slug: "band-plantarflexion", label: "Band plantarflexion", prompt: "close cropped side view of one lower leg and foot, seated with the leg straight: a flat resistance band is looped under the ball of the foot and held taut by two hands near the knee, and the foot is pointed AWAY like pressing a pedal; a small arrow shows the foot pressing down" },
   { slug: "cat-pose", label: "Cat pose", prompt: "on hands and knees in cat pose, side view: hands under shoulders and knees under hips, back rounded strongly upward toward the ceiling, head dropped down" },
@@ -160,27 +173,35 @@ export const EXERCISE_ART: ExerciseArt[] = [
   { slug: "reverse-warrior", label: "Reverse warrior", prompt: "in reverse warrior, facing the viewer: legs wide with the front knee bent, torso leaning back over the straight back leg, front arm reaching up and back overhead, back hand resting on the back leg" },
   { slug: "triangle-pose", label: "Triangle", prompt: "in triangle pose, facing the viewer: both legs straight and wide, torso tilted sideways over the front leg, lower hand resting on the shin, upper arm pointing straight up, gaze up" },
   { slug: "extended-side-angle", label: "Extended side angle", prompt: "in extended side angle pose, facing the viewer: front knee bent deeply, back leg straight, front forearm resting on the front thigh, top arm extended over the ear in one long line from the back foot to the fingertips" },
-  { slug: "pigeon-pose", label: "Pigeon", prompt: "in pigeon pose, side view: front leg bent on the floor with the shin angled in front of the hips, back leg extended straight behind along the floor, hips square and low, torso upright with hands on the floor" },
-  { slug: "reclined-figure-four", label: "Reclined figure four", prompt: "lying face up in a reclined figure four stretch, side view: one ankle crossed over the opposite knee making a four shape, hands holding behind the thigh of the bottom leg, pulling the legs toward the chest" },
-  { slug: "happy-baby", label: "Happy baby", prompt: "lying face up in happy baby pose, side view: knees drawn toward the armpits, feet in the air with soles facing the ceiling, hands holding the outer edges of the feet" },
-  { slug: "supine-twist", label: "Supine twist", prompt: "lying face up in a supine spinal twist, seen from above: knees bent and dropped together to one side onto the floor, arms extended out to the sides in a T, head turned to the opposite side" },
+  { slug: "pigeon-pose", label: "Pigeon", prompt: "in pigeon pose, side view: front leg bent on the floor with the shin angled in front of the hips, back leg extended straight behind along the floor, hips square and low, torso upright with hands on the floor",
+    views: [{ key: "top", prompt: "in pigeon pose seen from directly above: the front leg is bent flat on the floor with the shin angled across in front of the hips, the back leg extends straight behind along the floor, the torso is upright with the hands on the floor either side of the front shin" }] },
+  { slug: "reclined-figure-four", label: "Reclined figure four", prompt: "lying face up in a reclined figure four stretch, side view: one ankle crossed over the opposite knee making a four shape, hands holding behind the thigh of the bottom leg, pulling the legs toward the chest",
+    views: [{ key: "top", prompt: "lying face up seen from directly above: one ankle rests across the opposite thigh just above the knee so the legs make a clear figure four shape, the bottom leg is bent with the foot lifted off the floor, both hands hold behind the bottom thigh" }] },
+  { slug: "happy-baby", label: "Happy baby", prompt: "lying face up in happy baby pose, side view: knees drawn toward the armpits, feet in the air with soles facing the ceiling, hands holding the outer edges of the feet",
+    views: [{ key: "front", prompt: "in happy baby pose seen from the feet end looking toward the head: lying on the back, knees pulled wide apart toward the armpits, both feet in the air with the soles facing the ceiling, each hand holding the outer edge of the same-side foot" }] },
+  { slug: "supine-twist", label: "Supine twist", prompt: "lying face up in a supine spinal twist, seen from above: knees bent and dropped together to one side onto the floor, arms extended out to the sides in a T, head turned to the opposite side",
+    views: [{ key: "side", prompt: "in a supine spinal twist seen from the side: lying on the back with the shoulders flat, both knees bent and dropped together to one side onto the floor, the arms extended out on the floor" }] },
   { slug: "seated-forward-fold", label: "Seated forward fold", prompt: "seated on the floor in a forward fold, side view: both legs straight out in front, torso folding forward over the legs, hands reaching toward the feet" },
   { slug: "wide-leg-forward-fold", label: "Wide-leg forward fold", prompt: "in a wide legged standing forward fold, facing the viewer: feet very wide apart, legs straight, torso folded down between the legs, hands flat on the floor, head hanging down" },
   { slug: "half-split", label: "Half split", prompt: "in a half split hamstring stretch, side view: kneeling on one knee with the other leg extended straight in front with the heel on the floor and toes up, hips back over the kneeling leg, torso folding forward over the straight leg, hands on the floor" },
-  { slug: "lizard-pose", label: "Lizard", prompt: "in lizard pose, side view: deep lunge with the front foot placed outside the hands, both forearms on the floor inside the front foot, back leg extended straight behind with the knee lifted" },
-  { slug: "garland-pose", label: "Garland (deep squat)", prompt: "in a deep yoga squat, facing the viewer: feet flat and slightly wider than the hips, hips sunk all the way down between the heels, torso upright, palms pressed together at the chest with the elbows pushing the knees apart" },
-  { slug: "thread-the-needle", label: "Thread the needle", prompt: "in thread the needle pose, side view: on hands and knees with one arm threaded under the body along the floor, that shoulder and the side of the head resting on the floor, the other hand on the floor above the head" },
+  { slug: "lizard-pose", label: "Lizard", prompt: "in lizard pose seen from the side on the front-foot side: a very deep low lunge where the FRONT foot is planted flat on the floor OUTSIDE the same-side hand, so that both forearms rest flat on the floor INSIDE the front foot with the front knee beside the shoulder, hips sunk low, back leg long behind with the knee lifted and toes tucked" },
+  { slug: "garland-pose", label: "Garland (deep squat)", prompt: "in a deep yoga squat, facing the viewer: feet flat and slightly wider than the hips, hips sunk all the way down between the heels, torso upright, palms pressed together at the chest with the elbows pushing the knees apart",
+    views: [{ key: "side", prompt: "in a deep yoga squat seen from the side: feet flat on the floor, hips sunk all the way down close to the heels, torso upright, palms together at the chest with the elbows pressing into the inner knees" }] },
+  { slug: "thread-the-needle", label: "Thread the needle", prompt: "in thread the needle pose, side view: on hands and knees with one arm threaded under the body along the floor, that shoulder and the side of the head resting on the floor, the other hand on the floor above the head",
+    views: [{ key: "front", prompt: "in thread the needle pose seen from the front: on the knees with one arm threaded sideways under the chest along the floor with the palm up, that shoulder and the side of the head resting on the floor, the other arm reaching up and over the head with the hand on the floor" }] },
   { slug: "puppy-pose", label: "Puppy pose", prompt: "in extended puppy pose, side view: kneeling with the hips stacked directly above the knees, arms stretched far forward along the floor, chest melting toward the floor, forehead on the floor" },
   { slug: "legs-up-the-wall", label: "Legs up the wall", prompt: "lying face up with the legs up a wall, side view: hips close to the wall, both legs resting straight up against the wall, arms relaxed out to the sides on the floor" },
   { slug: "butterfly-pose", label: "Butterfly", prompt: "seated in butterfly pose, facing the viewer: soles of the feet pressed together in front, knees dropped open out to the sides, hands holding the feet, torso upright" },
-  { slug: "seated-twist", label: "Seated twist", prompt: "seated in a spinal twist, seen from a three quarter view: one leg straight, the other knee bent with the foot planted outside the straight leg, torso twisted toward the bent knee, opposite elbow hooked outside that knee, other hand on the floor behind" },
+  { slug: "seated-twist", label: "Seated twist", prompt: "seated in a spinal twist, seen from a three quarter view: one leg straight, the other knee bent with the foot planted outside the straight leg, torso twisted toward the bent knee, opposite elbow hooked outside that knee, other hand on the floor behind",
+    views: [{ key: "top", prompt: "seated spinal twist seen from directly above: one leg straight along the floor, the other knee bent with the foot planted on the floor OUTSIDE the straight leg, the torso rotated toward the bent knee with the opposite elbow hooked on the outside of that knee, the other hand on the floor behind the hips" }] },
   { slug: "mountain-pose", label: "Mountain pose", prompt: "standing tall in mountain pose, facing the viewer: feet together, legs straight, arms relaxed at the sides with palms facing forward, shoulders back, chin level" },
   { slug: "chair-pose", label: "Chair pose", prompt: "in chair pose, side view: feet together, knees bent as if sitting into a chair, thighs angled, torso leaning slightly forward, arms straight up overhead" },
   { slug: "tree-pose", label: "Tree pose", prompt: "in tree pose, facing the viewer: standing on one straight leg, the other foot placed against the inner thigh of the standing leg with the knee out to the side, palms together at the chest" },
   { slug: "boat-pose", label: "Boat pose", prompt: "in boat pose, side view: seated balancing on the sit bones, legs lifted straight so the body forms a V, arms extended forward parallel to the floor, chest lifted" },
   { slug: "camel-pose", label: "Camel pose", prompt: "in camel pose, side view: kneeling upright with the shins on the floor, back arched, hands reaching back to hold the heels, chest lifted and open, head gently back" },
   { slug: "locust-pose", label: "Locust pose", prompt: "lying face down in locust pose, side view: arms extended back along the sides, chest, arms and both legs lifted off the floor, gaze slightly forward" },
-  { slug: "frog-pose", label: "Frog pose", prompt: "in frog pose, seen from a three quarter view: kneeling with the knees spread very wide, shins on the floor angled out with feet turned outward, forearms on the floor, hips sinking down and back" },
+  { slug: "frog-pose", label: "Frog pose", prompt: "in frog pose, seen from a three quarter view: kneeling with the knees spread very wide, shins on the floor angled out with feet turned outward, forearms on the floor, hips sinking down and back",
+    views: [{ key: "top", prompt: "in frog pose seen from directly above: the knees spread very wide to both sides, shins on the floor angled outward with the feet turned out, the torso flat on the forearms between the knees" }] },
   { slug: "savasana", label: "Savasana (rest)", prompt: "lying flat on the back in savasana, side view: legs straight and slightly apart, arms relaxed at the sides with palms up, eyes closed, completely at rest" },
   { slug: "kneeling-hip-flexor-stretch", label: "Kneeling hip flexor stretch", prompt: "in a kneeling hip flexor stretch, side view: one knee on the floor with the shin behind, front foot flat in front with the knee bent, hips pressed forward, torso upright, hands on the front thigh" },
 ];
@@ -280,4 +301,17 @@ const READY_SLUGS = new Set(READY as string[]);
 export function artPathFor(name: string, artKey?: string | null): string | null {
   const entry = (artKey ? BY_SLUG.get(artKey) : undefined) ?? artEntryFor(name);
   return entry && READY_SLUGS.has(entry.slug) ? `/exercise-art/${entry.slug}.png` : null;
+}
+
+/** Every promoted picture for an exercise: the primary first, then extra perspectives. */
+export function artViewsFor(name: string, artKey?: string | null): Array<{ src: string; view: ArtViewKey | "primary" }> {
+  const entry = (artKey ? BY_SLUG.get(artKey) : undefined) ?? artEntryFor(name);
+  if (!entry) return [];
+  const out: Array<{ src: string; view: ArtViewKey | "primary" }> = [];
+  if (READY_SLUGS.has(entry.slug)) out.push({ src: `/exercise-art/${entry.slug}.png`, view: "primary" });
+  for (const v of entry.views || []) {
+    const id = `${entry.slug}--${v.key}`;
+    if (READY_SLUGS.has(id)) out.push({ src: `/exercise-art/${id}.png`, view: v.key });
+  }
+  return out;
 }

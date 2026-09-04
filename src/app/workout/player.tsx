@@ -4,7 +4,11 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { flattenSegments, type WorkoutDefinition, type Segment } from "@/lib/guided-workout";
 import { emitToast } from "@/lib/toast";
 import { emitDataChanged } from "@/lib/capture-context";
-import { artPathFor } from "@/lib/exercise-art";
+import { artPathFor, artViewsFor, type ArtViewKey } from "@/lib/exercise-art";
+
+const VIEW_KEY: Record<ArtViewKey, "art.viewTop" | "art.viewFront" | "art.viewSide" | "art.viewBack"> = {
+  top: "art.viewTop", front: "art.viewFront", side: "art.viewSide", back: "art.viewBack",
+};
 import { useT, useLang } from "@/app/features-provider";
 import { localeFor } from "@/lib/i18n";
 import FlowStage from "./flow-stage";
@@ -117,6 +121,9 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
   const segLabel = seg?.label ?? "";
   // A picture of the position beats a sentence you have to read mid-effort.
   const artSrc = seg?.kind === "work" ? artPathFor(seg.label, seg.art) : null;
+  // Poses one drawing can't carry (which leg crosses which) come with a second
+  // perspective; both are shown, captioned, so the athlete never has to guess.
+  const artViews = seg?.kind === "work" ? artViewsFor(seg.label, seg.art) : [];
 
   // Restore audio prefs
   useEffect(() => {
@@ -456,7 +463,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
             pct={segPct / 100}
             elapsedSec={seg.seconds != null ? seg.seconds - remaining : 0}
             showBreath={breathOn}
-            artSrc={artSrc}
+            artSrc={artSrc} artViews={artViews}
             t={t}
           />
         ) : (
@@ -470,10 +477,20 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
             <h1 className="text-3xl md:text-4xl font-extrabold text-ink mb-1">
               {segLabel}
             </h1>
-            {artSrc && (
+            {artViews.length > 1 ? (
+              <div className="flex items-end justify-center gap-4 mt-1">
+                {artViews.map((v) => (
+                  <figure key={v.src} className="flex flex-col items-center m-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={v.src} alt="" className="w-24 h-24 md:w-32 md:h-32 object-contain" />
+                    <figcaption className="text-[10px] text-sage font-bold mt-0.5">{v.view === "primary" ? "" : t(VIEW_KEY[v.view])}</figcaption>
+                  </figure>
+                ))}
+              </div>
+            ) : artSrc ? (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img src={artSrc} alt="" className="w-28 h-28 md:w-36 md:h-36 object-contain mt-1" />
-            )}
+            ) : null}
             {seg.note && <p className="text-sm text-moss font-semibold mb-4 max-w-xs">{seg.note}</p>}
 
             {isTimed ? (

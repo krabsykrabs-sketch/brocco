@@ -167,7 +167,8 @@ function promote(slug: string, index: string) {
   if (!ready.includes(slug)) ready.push(slug);
   ready.sort();
   writeFileSync(READY_JSON, `${JSON.stringify(ready, null, 2)}\n`);
-  console.log(`Promoted ${slug} #${index} -> ${FINAL_DIR}/${slug}.png  (${ready.length}/${EXERCISE_ART.length} done)`);
+  const total = EXERCISE_ART.reduce((n, e) => n + 1 + (e.views?.length || 0), 0);
+  console.log(`Promoted ${slug} #${index} -> ${FINAL_DIR}/${slug}.png  (${ready.length}/${total} done)`);
 }
 
 async function main() {
@@ -179,7 +180,13 @@ async function main() {
   mkdirSync(CAND_DIR, { recursive: true });
   const ready: string[] = JSON.parse(readFileSync(READY_JSON, "utf8"));
 
-  let targets = EXERCISE_ART;
+  // One target per PICTURE: the primary drawing (id = slug) plus every extra
+  // perspective (id = slug--view). Candidates, promotion and the ready list
+  // all key on the id, so a view is handled exactly like a diagram.
+  let targets: ExerciseArt[] = EXERCISE_ART.flatMap((e) => [
+    e,
+    ...(e.views || []).map((v) => ({ slug: `${e.slug}--${v.key}`, label: `${e.label} (${v.key})`, prompt: v.prompt })),
+  ]);
   if (a.only) targets = targets.filter((e) => e.slug === a.only);
   else if (!a.force) targets = targets.filter((e) => !ready.includes(e.slug));
 
