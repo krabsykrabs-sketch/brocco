@@ -223,6 +223,18 @@ export default function ChatUI({
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState(draftMessage || "");
   const [sending, setSending] = useState(false);
+  // Set while a dropped stream is being recovered from the session; a
+  // visibilitychange back to "visible" wakes the poll loop immediately.
+  const recoveringRef = useRef(false);
+  const accumulatedRef = useRef("");
+  const wakeRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && recoveringRef.current) wakeRef.current?.();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
   const [streamingText, setStreamingText] = useState("");
   const [streamingNotifications, setStreamingNotifications] = useState<ToolNotification[]>([]);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
@@ -503,6 +515,61 @@ export default function ChatUI({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * The phone locked or the user switched apps mid-reply: the browser cut
+   * the stream, but the server keeps generating and persists the reply.
+   * Poll the session until that reply appears (or the request evidently
+   * never arrived), instead of showing "Something went wrong".
+   */
+  async function recoverReply(sid: string, sentText: string, partial: string): Promise<boolean> {
+    recoveringRef.current = true;
+    setStreamingText(`${partial ? partial + "\n\n" : ""}_${t("chat.reconnecting")}_`);
+    const deadline = Date.now() + 150_000;
+    let sawUserMessage = false;
+    try {
+      while (Date.now() < deadline) {
+        // Wait 2.5s, or until the app becomes visible again.
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 2500);
+          wakeRef.current = () => { clearTimeout(timer); resolve(); };
+        });
+        wakeRef.current = null;
+        if (document.visibilityState !== "visible") continue; // don't burn the battery in the background
+        try {
+          const res = await fetch(`/api/chat/sessions/${sid}`, { cache: "no-store" });
+          if (!res.ok) continue;
+          const data = await res.json();
+          const msgs = (data.messages || []) as Array<{ id: string; role: string; displayText: string | null; createdAt: string }>;
+          let userIdx = -1;
+          for (let i = msgs.length - 1; i >= 0; i--) {
+            if (msgs[i].role === "user" && (msgs[i].displayText || "").trim() === sentText) { userIdx = i; break; }
+          }
+          if (userIdx < 0) {
+            // Not stored yet: either still in flight or it never reached the
+            // server. Give it a couple of rounds, then hand the text back.
+            if (sawUserMessage) return false;
+            if (Date.now() > deadline - 135_000) return false;
+            continue;
+          }
+          sawUserMessage = true;
+          const reply = msgs.slice(userIdx + 1).find((m) => m.role === "assistant" && (m.displayText || "").trim());
+          if (reply) {
+            setMessages((prev) => [...prev, { id: reply.id, role: "assistant", displayText: reply.displayText }]);
+            setStreamingText("");
+            setStreamingNotifications([]);
+            return true;
+          }
+        } catch {
+          // transient — poll again
+        }
+      }
+      return false;
+    } finally {
+      recoveringRef.current = false;
+      wakeRef.current = null;
+    }
+  }
+
   async function handleSend(preset?: unknown) {
     // Called from onClick (event) or with a preset string (check-in chip).
     const text = (typeof preset === "string" ? preset : input).trim();
@@ -531,8 +598,10 @@ export default function ChatUI({
     };
     setMessages((prev) => [...prev, userMsg]);
 
+    let sid: string | null = null;
+    let completed = false; // the done frame arrived — nothing to recover
     try {
-      const sid = await ensureSession();
+      sid = await ensureSession();
 
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -549,6 +618,7 @@ export default function ChatUI({
 
       const decoder = new TextDecoder();
       let accumulated = "";
+      accumulatedRef.current = "";
       const notifications: ToolNotification[] = [];
 
       let buffer = "";
@@ -570,6 +640,7 @@ export default function ChatUI({
             const data = JSON.parse(jsonStr);
             if (data.text) {
               accumulated += data.text;
+              accumulatedRef.current = accumulated;
               setStreamingText(accumulated);
             }
             if (data.tool) {
@@ -577,6 +648,7 @@ export default function ChatUI({
               setStreamingNotifications([...notifications]);
             }
             if (data.done) {
+              completed = true;
               // finalText arrives when the server corrected the status marker
               // (a [STATUS:done] on a turn that changed nothing).
               const finalText = (data.finalText as string) ?? accumulated;
@@ -610,14 +682,21 @@ export default function ChatUI({
         }
       }
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `error-${Date.now()}`,
-          role: "assistant",
-          displayText: `Something went wrong. ${err instanceof Error ? err.message : ""}`,
-        },
-      ]);
+      // A cut connection is the common case on a phone (screen off, app
+      // switch) — the reply is usually sitting in the session already.
+      const recovered = completed ? true : sid ? await recoverReply(sid, text, accumulatedRef.current) : false;
+      if (!recovered) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            role: "assistant",
+            displayText: t("chat.replyLost"),
+          },
+        ]);
+        setInput(text); // hand the message back for a one-tap resend
+        console.error("chat send failed:", err);
+      }
       setStreamingText("");
       setStreamingNotifications([]);
     } finally {

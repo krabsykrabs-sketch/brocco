@@ -11,6 +11,21 @@ import { rateLimit } from "@/lib/rate-limit";
 
 const anthropic = new Anthropic();
 
+/**
+ * Enqueue that survives a gone client. When the phone locks or the user
+ * switches apps, the browser cancels the response stream and every further
+ * enqueue throws. The turn must still run to completion and persist —
+ * the client recovers the reply from the session when it comes back.
+ */
+function safeEnqueue(controller: ReadableStreamDefaultController, encoder: TextEncoder, payload: unknown): boolean {
+  try {
+    controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(request: NextRequest) {
   const session = await getSession();
   if (!session.userId) {
@@ -231,8 +246,8 @@ export async function POST(request: NextRequest) {
         const donePayload: Record<string, unknown> = { done: true };
         if (groundedText !== result.fullText) donePayload.finalText = groundedText;
 
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(donePayload)}\n\n`));
-        controller.close();
+        safeEnqueue(controller, encoder, donePayload);
+        try { controller.close(); } catch { /* client already gone */ }
       } catch (err) {
         console.error("Chat stream error:", err);
         // Never leave the empty placeholder behind — it bricked the session.
@@ -346,9 +361,7 @@ async function runWithTools(
 
     // Stream text chunks to client as they arrive
     stream.on("text", (text) => {
-      controller.enqueue(
-        encoder.encode(`data: ${JSON.stringify({ text })}\n\n`)
-      );
+      safeEnqueue(controller, encoder, { text });
     });
 
     const response = await stream.finalMessage();
@@ -445,11 +458,7 @@ async function runWithTools(
 
       if (result.notification) {
         appliedMutation = true;
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ tool: result.notification })}\n\n`
-          )
-        );
+        safeEnqueue(controller, encoder, { tool: result.notification });
       }
 
       // is_error is what the model actually keys on; failed adjust/modify
