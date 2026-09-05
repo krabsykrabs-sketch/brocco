@@ -12,6 +12,7 @@ const VIEW_KEY: Record<ArtViewKey, "art.viewTop" | "art.viewFront" | "art.viewSi
 import { useT, useLang } from "@/app/features-provider";
 import { localeFor } from "@/lib/i18n";
 import FlowStage from "./flow-stage";
+import RpePills from "@/app/activity/rpe-pills";
 
 /**
  * Full-screen workout player. Deadline-based timing (endTime vs Date.now())
@@ -103,6 +104,11 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
   // Auto-log state: sessions log themselves on finish; undo removes it all.
   const [logState, setLogState] = useState<"logging" | "logged" | "failed" | "undone">("logging");
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // The logged Activity — the RPE / note on the finish screen PATCH it
+  const [activityId, setActivityId] = useState<string | null>(null);
+  const [rpe, setRpe] = useState<number | null>(null);
+  const [note, setNote] = useState("");
+  const [ratingState, setRatingState] = useState<"open" | "saving" | "saved" | "skipped">("open");
   const loggedRef = useRef(false);
 
   const endTimeRef = useRef<number>(0);
@@ -342,6 +348,7 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
         if (!r.ok) throw new Error();
         const d = await r.json();
         setSessionId(d.sessionId || null);
+        setActivityId(d.activityId || null);
         setLogState("logged");
         emitDataChanged(["activities"]);
       })
@@ -353,10 +360,40 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
     const res = await fetch(`/api/guided-workouts/sessions/${sessionId}`, { method: "DELETE" }).catch(() => null);
     if (res?.ok) {
       setLogState("undone");
+      setActivityId(null);
       emitDataChanged(["activities"]);
     } else {
       emitToast({ text: t("player.undoFailed"), kind: "error" });
     }
+  }
+
+  // "How hard was that?" — writes RPE (and the optional note) onto the
+  // activity the auto-log just created. Tapping a pill saves straight away;
+  // the note goes with it, or on its own via the Save-note button.
+  async function saveRating(next: { perceivedEffort?: number | null; notes?: string | null }) {
+    if (!activityId) return;
+    setRatingState("saving");
+    const res = await fetch(`/api/activities/${activityId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(next),
+    }).catch(() => null);
+    if (res?.ok) {
+      setRatingState("saved");
+      emitDataChanged(["activities"]);
+    } else {
+      setRatingState("open");
+      emitToast({ text: t("player.effortFailed"), kind: "error" });
+    }
+  }
+
+  function pickRpe(n: number) {
+    setRpe(n);
+    void saveRating({ perceivedEffort: n, ...(note.trim() ? { notes: note.trim() } : {}) });
+  }
+
+  function saveNote() {
+    void saveRating({ notes: note.trim() || null, ...(rpe != null ? { perceivedEffort: rpe } : {}) });
   }
 
   // Quitting mid-workout records the bail for history (no activity is
@@ -413,6 +450,48 @@ export default function WorkoutPlayer({ title, definition, workoutId, onExit }: 
           )}
           {logState === "undone" && <p className="text-xs text-sage font-bold">{t("player.notLogged")}</p>}
         </div>
+
+        {/* RPE + note, once the activity exists to hang them on */}
+        {logState === "logged" && activityId && ratingState !== "skipped" && (
+          <div className="w-full max-w-xs mb-6 text-left">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-extrabold text-ink">{t("player.howHard")}</p>
+              <button
+                type="button"
+                onClick={() => setRatingState("skipped")}
+                className="text-xs text-sage font-bold underline"
+              >
+                {t("player.skipRating")}
+              </button>
+            </div>
+            <RpePills value={rpe} onChange={pickRpe} disabled={ratingState === "saving"} compact />
+            <div className="flex gap-2 mt-3">
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") saveNote(); }}
+                maxLength={1000}
+                placeholder={t("player.notePlaceholder")}
+                aria-label={t("activity.notesLabel")}
+                className="field text-xs"
+              />
+              <button
+                type="button"
+                onClick={saveNote}
+                disabled={ratingState === "saving" || !note.trim()}
+                className="btn-quiet px-3 text-xs flex-shrink-0 disabled:opacity-40"
+                aria-label={t("player.saveNote")}
+              >
+                {t("common.save")}
+              </button>
+            </div>
+            <p className="text-[11px] font-bold mt-2 min-h-[1rem]">
+              {ratingState === "saving" && <span className="text-sage">{t("common.saving")}</span>}
+              {ratingState === "saved" && <span className="text-leaf">{t("player.effortSaved")}</span>}
+            </p>
+          </div>
+        )}
+
         <div className="w-full max-w-xs">
           <button onClick={onExit} className="btn-brocco w-full py-3">
             {t("common.done")}

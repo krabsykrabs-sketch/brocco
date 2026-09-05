@@ -211,6 +211,8 @@ export async function GET() {
       stravaConnected: !!profile.stravaAccessToken,
       stravaNeedsReconnect: profile.stravaNeedsReconnect,
       activityCount,
+      // False only for accounts that have never seen the first-run sheet
+      onboardingCompleted: profile.onboardingCompleted,
     });
   } catch (err) {
     console.error("Today error:", err);

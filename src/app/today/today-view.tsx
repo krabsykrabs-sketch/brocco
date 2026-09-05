@@ -13,6 +13,7 @@ import { useFeatures } from "../features-provider";
 import { anyLifeFeature } from "@/lib/features";
 import { isCompatibleType } from "@/lib/activity-types";
 import { ResolveButtons } from "@/app/resolve-buttons";
+import OnboardingSheet from "@/app/onboarding-sheet";
 
 // --- Types (mirror /api/today) ---
 
@@ -45,6 +46,7 @@ interface TodayData {
   };
   hasActivePlan: boolean; planExpired: boolean; activePlanName: string | null;
   stravaConnected: boolean; stravaNeedsReconnect: boolean; activityCount: number;
+  onboardingCompleted: boolean;
 }
 
 function timeOf(e: EventOccurrence): string {
@@ -545,6 +547,17 @@ export default function TodayView() {
           <span>💬</span><span>{t("today.openChat")}</span>
         </Link>
       </section>
+
+      {/* First run: language, sport, timezone — asked once, then never again */}
+      {data.onboardingCompleted === false && (
+        <OnboardingSheet
+          onDone={() => {
+            // Close at once; the refetch brings the new timezone's "today"
+            setData((d) => (d ? { ...d, onboardingCompleted: true } : d));
+            fetchData();
+          }}
+        />
+      )}
     </main>
   );
 }

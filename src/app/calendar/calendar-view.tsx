@@ -14,6 +14,7 @@ import { isCompatibleType, isRunning } from "@/lib/activity-types";
 import { isAutoDetectable } from "@/lib/plan-progress";
 import { ResolveButtons } from "@/app/resolve-buttons";
 import { emitToast } from "@/lib/toast";
+import { SessionContent, SessionNotBuiltYet, useLinkedSession } from "./session-content";
 
 // --- Types ---
 
@@ -552,6 +553,11 @@ function WorkoutDetailCard({
   const t = useT();
   const lang = useLang();
   const startable = canStartWorkout(workout, state, today);
+  // Strength/yoga: the exercise list lives in the linked guided session, a
+  // separate table — fetched once per card so the athlete sees what the
+  // coach sees without opening the player.
+  const guided = isGuidedWorkout(workout);
+  const linked = useLinkedSession(workout.workoutId, guided);
   // The range endpoint already carries the description, so the "why" is on
   // screen before the detail request lands.
   const description = detail?.workout.description ?? workout.description;
@@ -599,6 +605,12 @@ function WorkoutDetailCard({
             )}
           </div>
         )}
+
+        {guided && linked ? (
+          <SessionContent session={linked} />
+        ) : guided && linked === null && state !== "done" && state !== "missed" ? (
+          <SessionNotBuiltYet />
+        ) : null}
 
         {detail === undefined ? (
           <p className="text-xs text-sage font-semibold">{t("calendar.loadingDetail")}</p>

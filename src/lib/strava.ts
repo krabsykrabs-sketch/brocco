@@ -298,7 +298,20 @@ function computePace(distanceMeters: number, movingTimeSeconds: number): { displ
 /**
  * Convert a Strava activity to our DB shape and upsert it.
  */
-export async function storeStravaActivity(userId: string, stravaActivity: Record<string, unknown>, timezone: string) {
+export async function storeStravaActivity(
+  userId: string,
+  stravaActivity: Record<string, unknown>,
+  timezone: string
+): Promise<Activity | null> {
+  // The user deleted this one from Brocco on purpose — every import path
+  // (webhook, backfill, auto-sync) funnels through here, so this is the one
+  // place that keeps it from coming back.
+  const tombstone = await prisma.activityTombstone.findUnique({
+    where: { userId_stravaId: { userId, stravaId: String((stravaActivity as { id: number }).id) } },
+    select: { id: true },
+  });
+  if (tombstone) return null;
+
   const activity = stravaActivity as {
     id: number;
     name: string;
@@ -420,9 +433,9 @@ export async function backfillActivities(
           select: { id: true },
         });
         const stored = await storeStravaActivity(userId, activity, timezone);
-        if (!existing) {
+        if (!existing && stored) {
           newCount++;
-          if (stored) newActivities.push(stored);
+          newActivities.push(stored);
         }
       } catch (err) {
         // Skip duplicates or errors, continue with next
@@ -481,7 +494,7 @@ export async function syncRecentActivities(
           select: { id: true },
         });
         const stored = await storeStravaActivity(userId, activity, timezone);
-        if (!existing) {
+        if (!existing && stored) {
           newCount++;
           newActivities.push(stored);
         }
@@ -527,8 +540,8 @@ export async function backfillActivitiesFull(userId: string): Promise<{ newCount
           where: { userId_stravaId: { userId, stravaId } },
           select: { id: true },
         });
-        await storeStravaActivity(userId, activity, timezone);
-        if (!existing) {
+        const stored = await storeStravaActivity(userId, activity, timezone);
+        if (!existing && stored) {
           newCount++;
         }
       } catch (err) {

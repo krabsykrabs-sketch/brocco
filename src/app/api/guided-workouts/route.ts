@@ -4,10 +4,30 @@ import { prisma } from "@/lib/db";
 import { validateWorkoutDefinition, estimateDurationMin } from "@/lib/guided-workout";
 import { userTranslator } from "@/lib/i18n-server";
 
-/** GET /api/guided-workouts?kind=sc|yoga — the user's saved workouts, most recent first. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * GET /api/guided-workouts?kind=sc|yoga — the user's saved workouts, most recent first.
+ * GET /api/guided-workouts?plannedWorkoutId=<id> — the one session linked to a
+ * plan entry (with its full definition, so the calendar can list the
+ * exercises), or `{ workout: null }` when none has been built yet.
+ */
 export async function GET(request: NextRequest) {
   const session = await getSession();
   if (!session.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const plannedWorkoutId = request.nextUrl.searchParams.get("plannedWorkoutId");
+  if (plannedWorkoutId) {
+    // The column is a uuid — a malformed id would make Prisma throw, and it
+    // can only mean "no session", so answer that directly.
+    if (!UUID_RE.test(plannedWorkoutId)) return NextResponse.json({ workout: null });
+    const w = await prisma.guidedWorkout.findFirst({
+      where: { userId: session.userId, plannedWorkoutId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, title: true, focus: true, durationMin: true, kind: true, definition: true },
+    });
+    return NextResponse.json({ workout: w ?? null });
+  }
 
   const kindParam = request.nextUrl.searchParams.get("kind");
   const kind = kindParam === "sc" || kindParam === "yoga" ? kindParam : null;

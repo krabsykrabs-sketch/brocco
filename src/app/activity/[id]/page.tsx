@@ -2,12 +2,17 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
 import type { StravaLap } from "@/lib/strava";
 import { getWorkoutTypeColor } from "@/lib/categories";
 import { useT, useFmt } from "@/app/features-provider";
 import type { DictKey } from "@/lib/dict";
+import { emitToast } from "@/lib/toast";
+import { emitDataChanged } from "@/lib/capture-context";
+import ActivityMenu from "../activity-menu";
+import EditActivitySheet from "../edit-activity-sheet";
+import DeleteActivitySheet from "../delete-activity-sheet";
 
 interface Split {
   distance: number;
@@ -46,6 +51,7 @@ interface ActivityDetail {
   avgWatts: number | null;
   calories: number | null;
   perceivedEffort: number | null;
+  notes: string | null;
   startDate: string;
   startDateLocal: string;
   splits: Split[] | null;
@@ -366,10 +372,12 @@ export default function ActivityDetailPage() {
   const t = useT();
   const fmt = useFmt();
   const params = useParams();
+  const router = useRouter();
   const id = params.id as string;
   const [activity, setActivity] = useState<ActivityDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [sheet, setSheet] = useState<"edit" | "delete" | null>(null);
 
   useEffect(() => {
     fetch(`/api/activities/${id}`)
@@ -413,6 +421,19 @@ export default function ActivityDetailPage() {
 
   const mw = activity.matchedWorkout;
 
+  async function handleDelete() {
+    const res = await fetch(`/api/activities/${activity!.id}`, { method: "DELETE" }).catch(() => null);
+    const data = res ? await res.json().catch(() => ({})) : {};
+    if (!res?.ok) {
+      emitToast({ text: data.error || t("activity.deleteFailed"), kind: "error" });
+      return;
+    }
+    emitToast({ text: t("activity.deleted"), kind: "success" });
+    emitDataChanged(["activities"]);
+    setSheet(null);
+    router.push("/history");
+  }
+
   return (
     <main className="min-h-screen max-w-2xl mx-auto px-4 py-6 pb-24">
       {/* Header */}
@@ -423,16 +444,19 @@ export default function ActivityDetailPage() {
         >
           &larr; {t("history.title")}
         </Link>
-        {activity.stravaId && (
-          <a
-            href={`https://www.strava.com/activities/${activity.stravaId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-[#FC4C02] font-bold hover:underline"
-          >
-            {t("activity.viewOnStrava")}
-          </a>
-        )}
+        <div className="flex items-center gap-3">
+          {activity.stravaId && (
+            <a
+              href={`https://www.strava.com/activities/${activity.stravaId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-[#FC4C02] font-bold hover:underline"
+            >
+              {t("activity.viewOnStrava")}
+            </a>
+          )}
+          <ActivityMenu onEdit={() => setSheet("edit")} onDelete={() => setSheet("delete")} />
+        </div>
       </div>
 
       {/* Title */}
@@ -506,9 +530,19 @@ export default function ActivityDetailPage() {
           <Stat label={t("activity.calories")} value={`${activity.calories} kcal`} />
         )}
         {activity.perceivedEffort != null && (
-          <Stat label={t("activity.effort")} value={`${activity.perceivedEffort}/10`} />
+          <Stat label={t("activity.effort")} value={`${fmt.number(activity.perceivedEffort, 0)}/10`} />
         )}
       </div>
+
+      {/* Notes — what the athlete wrote about the session */}
+      {activity.notes && (
+        <section className="mb-6">
+          <h2 className="label-xs mb-3">{t("activity.notesLabel")}</h2>
+          <div className="sticker p-4">
+            <p className="text-sm text-ink font-semibold whitespace-pre-wrap">{activity.notes}</p>
+          </div>
+        </section>
+      )}
 
       {/* Intensity */}
       <IntensitySection
@@ -539,6 +573,17 @@ export default function ActivityDetailPage() {
             <SplitsTable splits={activity.splits} />
           </div>
         </section>
+      )}
+
+      {sheet === "edit" && (
+        <EditActivitySheet
+          activity={activity}
+          onClose={() => setSheet(null)}
+          onSaved={(updated) => setActivity(updated)}
+        />
+      )}
+      {sheet === "delete" && (
+        <DeleteActivitySheet onClose={() => setSheet(null)} onConfirm={handleDelete} />
       )}
     </main>
   );

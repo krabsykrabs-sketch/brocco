@@ -40,6 +40,7 @@ model User {
   guidedWorkoutSessions GuidedWorkoutSession[]
   recipes           Recipe[]
   weeklyGoals       WeeklyGoal[]
+  activityTombstones ActivityTombstone[]
 
   @@map("users")
 }
@@ -266,6 +267,8 @@ model Activity {
   avgWatts          Int?          @map("avg_watts")
   calories          Int?
   perceivedEffort   Int?          @map("perceived_effort")
+  // Free-text the athlete adds after the fact ("legs heavy", "new shoes")
+  notes             String?
   startDate         DateTime      @map("start_date")
   startDateLocal    DateTime      @map("start_date_local")
   splits            Json?         @db.JsonB
@@ -288,6 +291,23 @@ model Activity {
 enum ActivitySource {
   strava
   manual
+}
+
+/**
+ * A Strava activity the user deleted from Brocco on purpose. The webhook,
+ * backfill and auto-sync all upsert by stravaId, so without this marker the
+ * next pass would quietly resurrect it.
+ */
+model ActivityTombstone {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  stravaId  String   @map("strava_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, stravaId])
+  @@map("activity_tombstones")
 }
 
 model HealthLog {

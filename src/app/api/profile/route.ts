@@ -60,7 +60,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, timezone, goalRace, goalTime, goalRaceDate, hrMaxBpm, features, language, primarySport } = body;
+    const { name, timezone, goalRace, goalTime, goalRaceDate, hrMaxBpm, features, language, primarySport, onboardingCompleted } = body;
 
     if (name !== undefined) {
       await prisma.user.update({
@@ -89,6 +89,8 @@ export async function PUT(request: NextRequest) {
       const v = String(primarySport || "").trim().toLowerCase().slice(0, 40);
       profileUpdate.primarySport = v && v !== "running" && v !== "run" ? v : null;
     }
+    // One-way: the first-run sheet marks itself done; nothing un-does it.
+    if (onboardingCompleted === true) profileUpdate.onboardingCompleted = true;
     if (features !== undefined) {
       // Normalize through resolveFeatures so only known keys with boolean
       // values are ever stored

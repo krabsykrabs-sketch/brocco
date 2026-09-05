@@ -165,6 +165,15 @@ export const en = {
   "api.validation.workout.workSecRange": "Block {block}, exercise {exercise}: work time must be {min}–{max} seconds",
   "api.validation.workout.repsRange": "Block {block}, exercise {exercise}: reps must be a whole number {min}–{max}",
   "api.validation.workout.restSecRange": "Block {block}, exercise {exercise}: rest must be 0–{max} seconds",
+  "api.activity.notFound": "Activity not found",
+  "api.activity.nothingToUpdate": "Nothing to update",
+  "api.activity.invalidName": "Name must be 1–120 characters",
+  "api.activity.invalidType": "Unknown activity type",
+  "api.activity.invalidDistance": "Distance must be between 0 and 500 km",
+  "api.activity.invalidDuration": "Duration must be between 1 and 1440 minutes",
+  "api.activity.invalidEffort": "Effort must be a whole number from 1 to 10",
+  "api.activity.invalidNotes": "Notes can be at most 1000 characters",
+  "api.activity.invalidDate": "Invalid start date",
 } as const;
 
 export const de: Partial<Record<keyof typeof en, string>> = {
@@ -309,6 +318,15 @@ export const de: Partial<Record<keyof typeof en, string>> = {
   "api.validation.workout.repsRange": "Block {block}, Übung {exercise}: Wiederholungen müssen eine ganze Zahl von {min}–{max} sein",
   "api.validation.workout.restSecRange": "Block {block}, Übung {exercise}: Pause muss 0–{max} Sekunden betragen",
 
+  "api.activity.notFound": "Aktivität nicht gefunden",
+  "api.activity.nothingToUpdate": "Nichts zu aktualisieren",
+  "api.activity.invalidName": "Der Name muss 1–120 Zeichen lang sein",
+  "api.activity.invalidType": "Unbekannte Sportart",
+  "api.activity.invalidDistance": "Die Distanz muss zwischen 0 und 500 km liegen",
+  "api.activity.invalidDuration": "Die Dauer muss zwischen 1 und 1440 Minuten liegen",
+  "api.activity.invalidEffort": "Die Anstrengung muss eine ganze Zahl von 1 bis 10 sein",
+  "api.activity.invalidNotes": "Notizen dürfen höchstens 1000 Zeichen lang sein",
+  "api.activity.invalidDate": "Ungültiges Startdatum",
 };
 
 export const es: Partial<Record<keyof typeof en, string>> = {
@@ -453,4 +471,13 @@ export const es: Partial<Record<keyof typeof en, string>> = {
   "api.validation.workout.repsRange": "Bloque {block}, ejercicio {exercise}: las repeticiones deben ser un número entero de {min}–{max}",
   "api.validation.workout.restSecRange": "Bloque {block}, ejercicio {exercise}: el descanso debe ser de 0–{max} segundos",
 
+  "api.activity.notFound": "Actividad no encontrada",
+  "api.activity.nothingToUpdate": "Nada que actualizar",
+  "api.activity.invalidName": "El nombre debe tener entre 1 y 120 caracteres",
+  "api.activity.invalidType": "Tipo de actividad desconocido",
+  "api.activity.invalidDistance": "La distancia debe estar entre 0 y 500 km",
+  "api.activity.invalidDuration": "La duración debe estar entre 1 y 1440 minutos",
+  "api.activity.invalidEffort": "El esfuerzo debe ser un número entero de 1 a 10",
+  "api.activity.invalidNotes": "Las notas pueden tener como máximo 1000 caracteres",
+  "api.activity.invalidDate": "Fecha de inicio no válida",
 };

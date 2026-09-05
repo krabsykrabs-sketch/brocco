@@ -87,6 +87,10 @@ export async function POST(request: NextRequest) {
       const token = await getValidToken(userId);
       const stravaActivity = await fetchStravaActivity(token, activityId);
       const stored = await storeStravaActivity(userId, stravaActivity, profile.timezone);
+      if (!stored) {
+        console.log(`[webhook] Skipped tombstoned activity: strava_id=${activityId}`);
+        return NextResponse.json({ ok: true });
+      }
       console.log(`[webhook] Stored activity: strava_id=${activityId}, db_id=${stored.id}, type=${stored.activityType}`);
 
       if (isEligibleForAnalysis(stored)) {

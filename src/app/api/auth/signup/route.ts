@@ -71,7 +71,9 @@ export async function POST(request: NextRequest) {
       await tx.userProfile.create({
         data: {
           userId: newUser.id,
-          onboardingCompleted: true,
+          // False until the first-run sheet on Today has asked language,
+          // sport and timezone; existing accounts were created with true.
+          onboardingCompleted: false,
         },
       });
 

@@ -249,6 +249,12 @@ export const en = {
   "art.viewFront": "from the front",
   "art.viewSide": "from the side",
   "art.viewBack": "from behind",
+  "player.howHard": "How hard was that?",
+  "player.notePlaceholder": "A quick note (optional)",
+  "player.skipRating": "Skip",
+  "player.effortSaved": "Effort saved",
+  "player.effortFailed": "Couldn't save your effort",
+  "player.saveNote": "Save note",
 } as const;
 
 export const de: Partial<Record<keyof typeof en, string>> = {
@@ -483,6 +489,12 @@ export const de: Partial<Record<keyof typeof en, string>> = {
   "art.viewFront": "von vorn",
   "art.viewSide": "von der Seite",
   "art.viewBack": "von hinten",
+  "player.howHard": "Wie anstrengend war das?",
+  "player.notePlaceholder": "Kurze Notiz (optional)",
+  "player.skipRating": "Überspringen",
+  "player.effortSaved": "Anstrengung gespeichert",
+  "player.effortFailed": "Anstrengung konnte nicht gespeichert werden",
+  "player.saveNote": "Notiz speichern",
 };
 
 export const es: Partial<Record<keyof typeof en, string>> = {
@@ -717,4 +729,10 @@ export const es: Partial<Record<keyof typeof en, string>> = {
   "art.viewFront": "de frente",
   "art.viewSide": "de lado",
   "art.viewBack": "desde atrás",
+  "player.howHard": "¿Qué tan duro fue?",
+  "player.notePlaceholder": "Una nota rápida (opcional)",
+  "player.skipRating": "Omitir",
+  "player.effortSaved": "Esfuerzo guardado",
+  "player.effortFailed": "No se pudo guardar tu esfuerzo",
+  "player.saveNote": "Guardar nota",
 };
