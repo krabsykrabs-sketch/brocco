@@ -123,10 +123,12 @@ export async function testConnection(
 // --- Workout DSL rendering ---
 
 function stepLine(s: WorkoutStep): string {
+  // intervals.icu reads a bare "m" suffix as MINUTES, never metres: "800m"
+  // became an 800-minute, 160 km rep on the watch. Distances are always
+  // written in km (decimals are accepted: 0.8km, 0.08km); only durations
+  // use "m".
   const amount = s.distanceKm
-    ? s.distanceKm >= 1
-      ? `${Number(s.distanceKm.toFixed(2))}km`
-      : `${Math.round(s.distanceKm * 1000)}m`
+    ? `${Number(s.distanceKm.toFixed(3))}km`
     : `${Math.max(1, Math.round(s.durationMin || 5))}m`;
   const pace = s.pace ? ` ${s.pace.replace(/\s*pace$/i, "")} pace` : "";
   const label = s.label ? `${s.label} ` : "";
