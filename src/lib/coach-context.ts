@@ -17,6 +17,7 @@ import { groupActivitiesByDay, workoutOutcome, activityDayKey, isAutoDetectable 
 import { getPaceCurve, formatTimeSec, formatPaceSec } from "@/lib/run-trends";
 import type { StravaLap } from "@/lib/strava";
 import type { ActivityAnalysis } from "@/lib/heart-rate-analysis";
+import { renderCoachingNotes } from "@/lib/coaching-notes";
 import { resolveFeatures, anyLifeFeature, type Features } from "@/lib/features";
 import { recentConversationSummaries, recentConversationTail } from "@/lib/conversation-memory";
 import { resolveLang, LANGUAGE_FULL } from "@/lib/i18n";
@@ -57,6 +58,8 @@ export async function buildCoachContext(userId: string, opts?: { currentSessionI
       where: { userId, status: "active" },
       orderBy: { createdAt: "desc" },
       select: {
+        id: true,
+        value: true,
         entryType: true,
         description: true,
         bodyPart: true,
@@ -89,20 +92,7 @@ export async function buildCoachContext(userId: string, opts?: { currentSessionI
   ].filter(Boolean).join("\n");
 
   // --- Coaching notes ---
-  let coachingNotesBlock = "";
-  const notes = profile.coachingNotes as Record<string, unknown> | null;
-  if (notes && Object.keys(notes).length > 0) {
-    coachingNotesBlock = "COACHING NOTES:\n";
-    for (const [key, value] of Object.entries(notes)) {
-      if (typeof value === "string") {
-        coachingNotesBlock += `- ${key}: ${value}\n`;
-      } else if (Array.isArray(value)) {
-        coachingNotesBlock += `- ${key}: ${JSON.stringify(value)}\n`;
-      } else if (typeof value === "object" && value !== null) {
-        coachingNotesBlock += `- ${key}: ${JSON.stringify(value)}\n`;
-      }
-    }
-  }
+  const coachingNotesBlock = renderCoachingNotes(profile.coachingNotes);
 
   // --- Current plan (this week reconciled + next 2 weeks) ---
   const planBlock = await buildPlanContext(userId, profile.timezone);
@@ -153,19 +143,7 @@ export async function buildCoachContext(userId: string, opts?: { currentSessionI
     : "";
 
   // --- Health notes ---
-  let healthBlock = "ACTIVE HEALTH NOTES:\n";
-  if (healthNotes.length === 0) {
-    healthBlock += "None.";
-  } else {
-    healthBlock += healthNotes
-      .map((n) => {
-        const date = format(new Date(n.date), "MMM d");
-        const sev = n.severity ? ` (${n.severity})` : "";
-        const bp = n.bodyPart ? ` [${n.bodyPart}]` : "";
-        return `- ${date}: ${n.entryType}${bp}${sev} — ${n.description}`;
-      })
-      .join("\n");
-  }
+  const healthBlock = renderHealthNotes(healthNotes, now);
 
   // --- Life planner: schedule + birthdays (next 7 days) ---
   // Respects the user's feature toggles — with everything off, Brocco's
@@ -181,6 +159,50 @@ export async function buildCoachContext(userId: string, opts?: { currentSessionI
     blocks.push(await buildLifeContext(userId, profile.timezone, features));
   }
   return blocks.join("\n\n");
+}
+
+/**
+ * Active health notes, budgeted. Nothing used to mark a note resolved, so
+ * every injury, weight and race result ever logged stayed "active" and the
+ * block reached ~12k characters in production. Now: every active injury,
+ * general notes from the last 45 days, the latest weight and the last three
+ * race results — each description capped. The short id lets the coach
+ * resolve a note with resolve_health_note.
+ */
+function renderHealthNotes(
+  notes: Array<{ id: string; value: unknown; entryType: string; description: string; bodyPart: string | null; severity: string | null; date: Date }>,
+  now: Date
+): string {
+  const recentCutoff = subDays(now, 45);
+  const isRecent = (n: { date: Date }) => new Date(n.date) >= recentCutoff;
+  const shown = [
+    ...notes.filter((n) => n.entryType === "injury"),
+    ...notes.filter((n) => n.entryType === "note" && isRecent(n)),
+    // Older notes can still matter (a condition mentioned once months ago),
+    // so the newest few stay, shortened.
+    ...notes.filter((n) => n.entryType === "note" && !isRecent(n)).slice(0, 8),
+    ...notes.filter((n) => n.entryType === "weight").slice(0, 1),
+    ...notes.filter((n) => n.entryType === "race_result").slice(0, 3),
+  ];
+  const hidden = notes.length - shown.length;
+
+  let block = "ACTIVE HEALTH NOTES:\n";
+  if (shown.length === 0) return block + "None.";
+  block += shown
+    .map((n) => {
+      const date = format(new Date(n.date), "MMM d, yyyy");
+      const sev = n.severity ? ` (${n.severity})` : "";
+      const bp = n.bodyPart ? ` [${n.bodyPart}]` : "";
+      const desc = n.description.replace(/\s+/g, " ").trim();
+      const cap = n.entryType === "note" && !isRecent(n) ? 90 : 200;
+      const short = desc.length > cap ? desc.slice(0, cap - 1) + "…" : desc;
+      const val = n.entryType === "weight" && n.value != null ? ` ${Number(n.value)}kg` : "";
+      return `- ${date}: ${n.entryType}${bp}${sev}${val} — ${short} (id: ${n.id.slice(0, 8)})`;
+    })
+    .join("\n");
+  if (hidden > 0) block += `\n(${hidden} older notes and earlier weights/race results not shown.)`;
+  block += "\nWhen the athlete says an injury or niggle has healed, mark it with resolve_health_note.";
+  return block;
 }
 
 /**

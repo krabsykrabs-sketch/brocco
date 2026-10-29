@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSession } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { buildCoachContext, buildSystemPrompt } from "@/lib/coach-context";
+import { consolidateCoachingNotesIfLarge } from "@/lib/coaching-notes";
 import { toolsForFeatures, handleToolCall } from "@/lib/tools";
 import { resolveFeatures } from "@/lib/features";
 import { ensureFreshStravaData } from "@/lib/strava-fresh";
@@ -96,6 +97,9 @@ export async function POST(request: NextRequest) {
   const userName = user?.name || "Athlete";
 
   const context = await buildCoachContext(session.userId, { currentSessionId: sessionId });
+  // Oversized coaching notes get condensed in the background; this request
+  // still sends the current ones, the next gets the compact version.
+  void consolidateCoachingNotesIfLarge(session.userId);
   const { staticPart, contextPart, clockPart } = await buildSystemPrompt(
     session.userId,
     userName,

@@ -99,6 +99,18 @@ export const toolDefinitions: Anthropic.Tool[] = [
     },
   },
   {
+    name: "resolve_health_note",
+    description:
+      "Mark an active health note as resolved — an injury or niggle that has healed, or a note that no longer applies. Resolved notes leave your context. Use the id shown after the note in ACTIVE HEALTH NOTES.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        id: { type: "string", description: "The note's id as shown in ACTIVE HEALTH NOTES (the first 8 characters are enough)." },
+      },
+      required: ["id"],
+    },
+  },
+  {
     name: "log_activity",
     description:
       "Log a manual activity the user did but didn't record on Strava.",
@@ -299,7 +311,7 @@ export const toolDefinitions: Anthropic.Tool[] = [
         coaching_notes_update: {
           type: "object",
           description:
-            "Partial update deep-merged into coaching_notes. Can include: injury_history, preferences, nutrition, race_history, training_history_summary, other.",
+            "Partial update deep-merged into coaching_notes. Can include: injury_history, preferences, nutrition, race_history, training_history_summary, other. Prefer updating an EXISTING key (send its full new value) over adding a new one, and keep each value to a sentence or two. Set a key to null to delete it once it no longer applies (a follow-up that's done, a date that has passed).",
         },
       },
     },
@@ -663,6 +675,8 @@ export async function handleToolCall(
   switch (toolName) {
     case "log_health":
       return handleLogHealth(input, userId);
+    case "resolve_health_note":
+      return handleResolveHealthNote(input, userId);
     case "log_activity":
       return handleLogActivity(input, userId);
     case "query_data":
@@ -690,6 +704,26 @@ export async function handleToolCall(
     default:
       return { success: false, error: `Unknown tool: ${toolName}` };
   }
+}
+
+// --- resolve_health_note ---
+
+async function handleResolveHealthNote(
+  input: Record<string, unknown>,
+  userId: string
+): Promise<ToolResult> {
+  const id = String(input.id || "").trim().toLowerCase();
+  if (id.length < 6) return { success: false, error: "Give the note's id as shown in ACTIVE HEALTH NOTES." };
+  const matches = await prisma.healthLog.findMany({
+    where: { userId, status: "active" },
+    select: { id: true, description: true },
+  });
+  const hit = matches.filter((n) => n.id.startsWith(id));
+  if (hit.length !== 1) {
+    return { success: false, error: hit.length === 0 ? `No active health note with id ${id}.` : `Id ${id} is ambiguous — give more characters.` };
+  }
+  await prisma.healthLog.update({ where: { id: hit[0].id }, data: { status: "resolved" } });
+  return { success: true, data: { resolved: hit[0].id, description: hit[0].description } };
 }
 
 // --- log_health ---
@@ -1617,6 +1651,7 @@ import {
 } from "@/lib/schedule";
 import { validateWorkoutDefinition, describeWorkoutValidation, estimateDurationMin } from "@/lib/guided-workout";
 import { userTranslator } from "@/lib/i18n-server";
+import { consolidateCoachingNotesIfLarge } from "@/lib/coaching-notes";
 import { validateRecipeInput, describeRecipeValidation, recipeMatches, normalizeStaples } from "@/lib/recipes";
 import type { EventCategory, RecurrenceFreq } from "@prisma/client";
 
@@ -2013,6 +2048,11 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
   for (const key of Object.keys(source)) {
     const tVal = target[key];
     const sVal = source[key];
+    // null deletes: the coach's only way to retire a note that no longer applies
+    if (sVal === null) {
+      delete result[key];
+      continue;
+    }
     if (
       tVal && sVal &&
       typeof tVal === "object" && !Array.isArray(tVal) &&
@@ -2126,6 +2166,7 @@ async function handleSaveProfile(
     where: { userId },
     data: updateData,
   });
+  if (updateData.coachingNotes) void consolidateCoachingNotesIfLarge(userId);
 
   const { t } = await notifyT(userId);
   return {
