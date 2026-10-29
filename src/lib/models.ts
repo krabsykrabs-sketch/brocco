@@ -9,10 +9,13 @@
 /**
  * The coach itself: chat, voice capture, the daily opener and briefing, the
  * weekly review, and generating the next week's detail. Everything here is
- * either user-facing conversation or tool-calling, which is where the strongest
- * model earns its keep.
+ * either user-facing conversation or tool-calling.
+ *
+ * Sonnet, not Opus, for cost: at three active users the coach was ~$75/month
+ * on Opus 5. Must be Sonnet 5.5 or later, not Sonnet 5 — the chat route sends
+ * a mid-conversation `role: "system"` message, which Sonnet 5 rejects.
  */
-export const COACH_MODEL = "claude-opus-5";
+export const COACH_MODEL = "claude-sonnet-5-5";
 
 /**
  * Structured extraction with a narrow, well-specified output — building a

@@ -27,6 +27,20 @@ function safeEnqueue(controller: ReadableStreamDefaultController, encoder: TextE
   }
 }
 
+/**
+ * "total=98000 PROFILE=600 CURRENT PLAN=7400 …" — size of each section of
+ * the athlete context, split at its upper-case headers. Shows what to slim
+ * when the context grows; character counts, roughly 4 per token.
+ */
+function contextBreakdown(contextPart: string): string {
+  const sections = contextPart.split(/\n\n(?=[A-Z][A-Z \-]{3,}[:(])/);
+  const parts = sections.slice(1).map((s) => {
+    const label = s.slice(0, s.search(/[:(]/)).trim().slice(0, 24);
+    return `${label}=${s.length}`;
+  });
+  return [`total=${contextPart.length}`, `preamble=${sections[0].length}`, ...parts].join(" ");
+}
+
 export async function POST(request: NextRequest) {
   const session = await getSession();
   if (!session.userId) {
@@ -82,21 +96,28 @@ export async function POST(request: NextRequest) {
   const userName = user?.name || "Athlete";
 
   const context = await buildCoachContext(session.userId, { currentSessionId: sessionId });
-  const { staticPart, dynamicPart } = await buildSystemPrompt(
+  const { staticPart, contextPart, clockPart } = await buildSystemPrompt(
     session.userId,
     userName,
     context,
     chatSession.type === "kitchen" ? "kitchen" : "chat"
   );
-  // Prompt caching: the breakpoint on staticPart caches tools + the static
-  // prompt (the bulk of every request) at ~10% input price on reads. 1h TTL
-  // so the entry survives a "chat, go run, come back" gap. The volatile
-  // block (clock, live context) rides as a trailing system MESSAGE instead
-  // (Opus 5 supports mid-conversation system role), so even a context change
-  // never invalidates the cached history prefix.
+  // Prompt caching, ordered by how often each part changes: tools + static
+  // instructions, then the athlete context (~28k tokens), then the history.
+  // The context used to trail the history uncached, so it was paid at full
+  // price on every request and every tool round — about half the bill. It
+  // changes a few times a day (a run syncs, the plan changes, the day
+  // turns), and each change costs one cache rewrite of context + history.
+  //
+  // 5-minute TTL, not 1h: production logs showed visits hours apart, so the
+  // 1h entry was rarely read again, and a 1h write costs 2x base input
+  // against 1.25x for 5 minutes. Within a visit, consecutive messages and
+  // tool rounds still read from the cache.
   const systemBlocks: Anthropic.TextBlockParam[] = [
-    { type: "text", text: staticPart, cache_control: { type: "ephemeral", ttl: "1h" } },
+    { type: "text", text: staticPart, cache_control: { type: "ephemeral" } },
+    { type: "text", text: contextPart, cache_control: { type: "ephemeral" } },
   ];
+  console.log(`[chat] context chars: ${contextBreakdown(contextPart)}`);
 
   const profileFlags = await prisma.userProfile.findUnique({
     where: { userId: session.userId },
@@ -132,7 +153,7 @@ export async function POST(request: NextRequest) {
 
   // Build messages array for Anthropic. The last entry is always the user
   // message stored above; it gets the conversation cache marker, and the
-  // volatile context block trails it as a system message.
+  // clock trails it as a system message.
   const messages: Anthropic.MessageParam[] = history
     .filter((m) => m.role === "user" || m.role === "assistant")
     .map((m) => {
@@ -166,10 +187,11 @@ export async function POST(request: NextRequest) {
       { type: "text", text: lastMsg.content, cache_control: { type: "ephemeral" } },
     ];
   }
-  // Volatile context (clock + live data) AFTER the cached history. The SDK's
-  // MessageParam type lags the API here — mid-conversation system role is
-  // supported on Opus 5 (no beta), hence the cast.
-  messages.push({ role: "system", content: dynamicPart } as unknown as Anthropic.MessageParam);
+  // The clock AFTER the cached history — it changes every 15 minutes and
+  // would otherwise invalidate everything behind it. The SDK's MessageParam
+  // type lags the API here — mid-conversation system role is supported on
+  // Sonnet 5.5 (no beta, but not on Sonnet 5), hence the cast.
+  messages.push({ role: "system", content: clockPart } as unknown as Anthropic.MessageParam);
 
   // Stream the response with tool use support
   const encoder = new TextEncoder();
@@ -371,9 +393,11 @@ async function runWithTools(
 
     // The only ground truth that caching works. If `read` stays 0 across
     // consecutive messages, something upstream broke the prefix again.
+    // user= makes per-athlete cost countable from the logs.
     console.log(
       `[chat] cache: read=${response.usage.cache_read_input_tokens ?? 0} ` +
-        `wrote=${response.usage.cache_creation_input_tokens ?? 0} uncached=${response.usage.input_tokens}`
+        `wrote=${response.usage.cache_creation_input_tokens ?? 0} uncached=${response.usage.input_tokens} ` +
+        `out=${response.usage.output_tokens} user=${userId.slice(0, 8)}`
     );
 
     // Detect truncation — if response was cut off, the tool call may be incomplete

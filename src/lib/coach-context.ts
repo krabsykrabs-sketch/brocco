@@ -678,16 +678,20 @@ function todayString(timezone?: string): string {
  * mode "capture" = voice quick-capture: terse, act immediately, no status line.
  */
 /**
- * Returns the system prompt split at its cache boundary. Send as two system
- * blocks with a cache_control marker on staticPart — tools + staticPart then
- * serve from the prompt cache (~90% cheaper) while dynamicPart varies freely.
+ * Returns the system prompt split at its cache boundaries:
+ * - staticPart: instructions; changes only with the user's configuration.
+ * - contextPart: the athlete's data (~28k tokens). Changes when a run syncs,
+ *   the plan changes or the day turns — a few times a day, not per message.
+ * - clockPart: date and quarter-hour time; changes every 15 minutes.
+ * Send staticPart and contextPart as two cached system blocks, and clockPart
+ * as a trailing system message after the cached history.
  */
 export async function buildSystemPrompt(
   userId: string,
   userName: string,
   context: string,
   mode: "chat" | "capture" | "kitchen" = "chat"
-): Promise<{ staticPart: string; dynamicPart: string }> {
+): Promise<{ staticPart: string; contextPart: string; clockPart: string }> {
   // Check coaching notes to determine if background gathering is needed
   const profile = await prisma.userProfile.findUnique({ where: { userId } });
   const coachingNotes = profile?.coachingNotes as Record<string, unknown> | null;
@@ -805,11 +809,8 @@ You see training AND life in one place — use it. Before adding events, and whe
   const hhmm = nowWall.slice(11, 16);
   const roundedTime = `${hhmm.slice(0, 3)}${String(Math.floor(Number(hhmm.slice(3, 5)) / 15) * 15).padStart(2, "0")}`;
 
-  // The prompt is returned in two parts so callers can prompt-cache it:
-  // staticPart changes only with the user's configuration (features, sport,
-  // active plan, coaching-notes state) and is served from cache; dynamicPart
-  // (clock + live context data) changes freely without invalidating it.
-  // Instructions first, data last — the standard cache-friendly order.
+  // Instructions first, data last, clock at the very end — ordered by how
+  // often each part changes, which is what keeps the cached prefix long.
   const lang = resolveLang(profile?.language);
   const languageBlock =
     lang === "en"
@@ -822,8 +823,9 @@ ${accessLine}
 ${routingBlock}${crossDomainBlock}
 COACHING GUIDELINES:`;
 
-  const dynamicPart = `Today's date is ${todayString(profile?.timezone)} and the CURRENT TIME is about ${roundedTime}. All times are the user's local time (${tz}).
-Factor the time of day into everything: at 7am, today's workout simply hasn't happened yet — that's normal, not a missed session. A planned workout only counts as missed once its day is over. Never claim the user hasn't trained without checking the reconciled plan (✓/✗ annotations) and recent-training list below — they include workouts from ALL sources (Strava, chat-logged, in-app workout player).
+  const clockPart = `Today's date is ${todayString(profile?.timezone)} and the CURRENT TIME is about ${roundedTime}. All times are the user's local time (${tz}).`;
+
+  const contextPart = `The current date and time are given in a system message after the conversation history. Factor the time of day into everything: at 7am, today's workout simply hasn't happened yet — that's normal, not a missed session. A planned workout only counts as missed once its day is over. Never claim the user hasn't trained without checking the reconciled plan (✓/✗ annotations) and recent-training list below — they include workouts from ALL sources (Strava, chat-logged, in-app workout player).
 
 ${context}
 ${staplesBlock}${equipmentBlock}`;
@@ -992,6 +994,6 @@ This conversation happens in the Kitchen tab — a dedicated cooking chat, separ
 - Groceries, portions, substitutions, technique questions — all fair game.
 - Status lines still apply. Vegetable enthusiasm is permitted at slightly elevated levels; you are, after all, an ingredient.` : ""}`;
 
-  return { staticPart, dynamicPart: dynamicPart + modeBlock };
+  return { staticPart, contextPart: contextPart + modeBlock, clockPart };
 }
 
